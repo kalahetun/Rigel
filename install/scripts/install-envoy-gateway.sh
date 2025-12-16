@@ -74,9 +74,9 @@ admin:
     socket_address:
       address: 0.0.0.0
       port_value: 9901
-    static_resources:
-      listeners: []
-      clusters: []
+static_resources:
+    listeners: []
+    clusters: []
 EOF
 chown matth:matth "${ENVOY_CONFIG}"
 
@@ -84,7 +84,7 @@ chown matth:matth "${ENVOY_CONFIG}"
 # 6. 配置systemd服务文件（sudo）
 # --------------------------
 echo -e "\033[32m⚙️  步骤4：配置systemd服务...\033[0m"
-sudo cat > "${ENVOY_SERVICE}" << EOF
+sudo tee "${ENVOY_SERVICE}" > /dev/null << EOF
 [Unit]
 Description=Envoy Proxy (matth user)
 After=network.target
