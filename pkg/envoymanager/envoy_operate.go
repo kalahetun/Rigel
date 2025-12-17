@@ -3,12 +3,13 @@ package envoymanager
 import (
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
+	"os"
 	"os/exec"
 	"path/filepath"
-	"time"
+	"strconv"
 )
+
+const EnvoyPath = "/home/matth/envoy"
 
 // EnvoyOperator Envoy操作器（适配matth目录）
 type EnvoyOperator struct {
@@ -110,84 +111,41 @@ func (o *EnvoyOperator) GetEnvoyPortConfig(port int) (EnvoyPortConfig, error) {
 	return EnvoyPortConfig{}, errors.New("端口未找到")
 }
 
-// HotReloadEnvoyConfig 正确的Envoy静态配置热加载（先写配置文件，再触发重载）
-//func (o *EnvoyOperator) HotReloadEnvoyConfig() error {
-//	// 外面已经做了
-//	// 步骤1：先将最新的GlobalCfg渲染为配置文件（核心！确保磁盘配置是最新的）
-//	//if err := RenderEnvoyYamlConfig(o.GlobalCfg, o.ConfigPath); err != nil {
-//	//	return fmt.Errorf("热加载前渲染配置文件失败: %w", err)
-//	//}
-//
-//	// 步骤2：构造热加载请求（静态配置热加载无需请求体）
-//	hotReloadURL := fmt.Sprintf("%s/admin/v3/config_reload", o.AdminAddr)
-//	req, err := http.NewRequest("POST", hotReloadURL, nil) // 请求体为nil（关键修正）
-//	if err != nil {
-//		return fmt.Errorf("构造热加载请求失败: %w", err)
-//	}
-//	// 无需设置Content-Type（无请求体）
-//
-//	// 步骤3：发送热加载请求
-//	client := &http.Client{
-//		Timeout: 10 * time.Second, // 增加超时，避免卡死
-//	}
-//	resp, err := client.Do(req)
-//	if err != nil {
-//		// 降级方案：执行curl命令热加载（matth用户可执行）
-//		cmd := exec.Command("curl", "-X", "POST", "-s", "-o", "/dev/null", hotReloadURL)
-//		output, cmdErr := cmd.CombinedOutput()
-//		if cmdErr != nil {
-//			return fmt.Errorf("API热加载失败，curl降级也失败: %w, curl输出: %s", err, string(output))
-//		}
-//		return nil
-//	}
-//	defer resp.Body.Close()
-//
-//	// 步骤4：检查响应状态（200/201都算成功）
-//	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-//		// 读取响应体，便于排查错误
-//		body, _ := io.ReadAll(resp.Body)
-//		return fmt.Errorf("热加载响应异常: %s, 响应体: %s", resp.Status, string(body))
-//	}
-//
-//	return nil
-//}
-
-// HotReloadEnvoyConfig 正确的Envoy静态配置热加载（先写配置文件，再触发重载）
 func (o *EnvoyOperator) HotReloadEnvoyConfig() error {
-	// 步骤1：先将最新的GlobalCfg渲染为配置文件（核心！确保磁盘配置是最新的）
+	// 步骤1：渲染最新配置
 	//if err := RenderEnvoyYamlConfig(o.GlobalCfg, o.ConfigPath); err != nil {
-	//	return fmt.Errorf("热加载前渲染配置文件失败: %w", err)
+	//	return fmt.Errorf("渲染配置失败: %w", err)
 	//}
 
-	// 步骤2：构造热加载请求（静态配置热加载无需请求体）
-	hotReloadURL := fmt.Sprintf("%s/admin/v3/config_reload", o.AdminAddr)
-	req, err := http.NewRequest("POST", hotReloadURL, nil) // 请求体为nil（关键修正）
-	if err != nil {
-		return fmt.Errorf("构造热加载请求失败: %w", err)
-	}
-	// 无需设置Content-Type（无请求体）
-
-	// 步骤3：发送热加载请求
-	client := &http.Client{
-		Timeout: 10 * time.Second, // 增加超时，避免卡死
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		// 降级方案：执行curl命令热加载（matth用户可执行）
-		cmd := exec.Command("curl", "-X", "POST", "-s", "-o", "/dev/null", hotReloadURL)
-		output, cmdErr := cmd.CombinedOutput()
-		if cmdErr != nil {
-			return fmt.Errorf("API热加载失败，curl降级也失败: %w, curl输出: %s", err, string(output))
+	// 步骤2：读取上一次 epoch
+	epoch := 0
+	if data, err := os.ReadFile("/tmp/envoy_epoch"); err == nil {
+		if n, err := strconv.Atoi(string(data)); err == nil {
+			epoch = n
 		}
-		return nil
 	}
-	defer resp.Body.Close()
 
-	// 步骤4：检查响应状态（200/201都算成功）
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		// 读取响应体，便于排查错误
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("热加载响应异常: %s, 响应体: %s", resp.Status, string(body))
+	newEpoch := epoch + 1
+
+	// 步骤3：启动新 Envoy 进程
+	cmd := exec.Command(EnvoyPath,
+		"-c", o.ConfigPath,
+		"--restart-epoch", fmt.Sprintf("%d", newEpoch),
+		"--hot-restart-epoch", fmt.Sprintf("%d", newEpoch),
+		"--base-id", "1",
+		"--admin-address", "0.0.0.0:9901",
+		"--log-level", "info",
+	)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("启动新 Envoy 失败: %w", err)
+	}
+
+	// 步骤4：更新 epoch 文件
+	if err := os.WriteFile("/tmp/envoy_epoch", []byte(fmt.Sprintf("%d", newEpoch)), 0644); err != nil {
+		return fmt.Errorf("写入 epoch 文件失败: %w", err)
 	}
 
 	return nil
