@@ -132,7 +132,7 @@ func (o *EnvoyOperator) HotReloadEnvoyConfig() error {
 		"-c", o.ConfigPath,
 		"--restart-epoch", fmt.Sprintf("%d", newEpoch),
 		//"--hot-restart-epoch", fmt.Sprintf("%d", newEpoch),
-		"--base-id", "1",
+		"--base-id", "1000",
 		//"--admin-address", "0.0.0.0:9901",
 		"--log-level", "info",
 	)
