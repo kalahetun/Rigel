@@ -24,12 +24,6 @@ static_resources:
         port_value: {{.Port}}
     filter_chains:
     - filters:
-      //- name: envoy.filters.network.bandwidth_limit
-      //  typed_config:
-      //    "@type": type.googleapis.com/envoy.extensions.filters.network.bandwidth_limit.v3.BandwidthLimit
-      //    stat_prefix: bandwidth_limit_{{.Port}}
-      //    max_download_bandwidth: {{.RateLimit.Bandwidth}}
-      //    max_upload_bandwidth: {{.RateLimit.Bandwidth}}
       - name: envoy.filters.network.http_connection_manager
         typed_config:
           "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
@@ -95,3 +89,10 @@ func RenderEnvoyYamlConfig(cfg EnvoyGlobalConfig, outputPath string) error {
 	}
 	return yaml.Unmarshal(yamlFile, &validate)
 }
+
+//- name: envoy.filters.network.bandwidth_limit
+//  typed_config:
+//    "@type": type.googleapis.com/envoy.extensions.filters.network.bandwidth_limit.v3.BandwidthLimit
+//    stat_prefix: bandwidth_limit_{{.Port}}
+//    max_download_bandwidth: {{.RateLimit.Bandwidth}}
+//    max_upload_bandwidth: {{.RateLimit.Bandwidth}}
