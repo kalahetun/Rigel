@@ -136,8 +136,8 @@ func (o *EnvoyOperator) HotReloadEnvoyConfig() error {
 		//"--admin-address", "0.0.0.0:9901",
 		"--log-level", "info",
 	)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd.Stdout = nil
+	cmd.Stderr = nil
 
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("启动新 Envoy 失败: %w", err)
