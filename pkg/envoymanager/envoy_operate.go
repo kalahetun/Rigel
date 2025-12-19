@@ -3,10 +3,12 @@ package envoymanager
 import (
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 )
 
 const EnvoyPath = "/home/matth/envoy"
@@ -111,40 +113,88 @@ func (o *EnvoyOperator) GetEnvoyPortConfig(port int) (EnvoyPortConfig, error) {
 	return EnvoyPortConfig{}, errors.New("端口未找到")
 }
 
-func (o *EnvoyOperator) HotReloadEnvoyConfig() error {
-	// 步骤1：渲染最新配置
-	//if err := RenderEnvoyYamlConfig(o.GlobalCfg, o.ConfigPath); err != nil {
-	//	return fmt.Errorf("渲染配置失败: %w", err)
-	//}
+//func (o *EnvoyOperator) HotReloadEnvoyConfig() error {
+//	// 步骤1：渲染最新配置
+//	//if err := RenderEnvoyYamlConfig(o.GlobalCfg, o.ConfigPath); err != nil {
+//	//	return fmt.Errorf("渲染配置失败: %w", err)
+//	//}
+//
+//	// 步骤2：读取上一次 epoch
+//	epoch := 0
+//	if data, err := os.ReadFile("/tmp/envoy_epoch"); err == nil {
+//		if n, err := strconv.Atoi(string(data)); err == nil {
+//			epoch = n
+//		}
+//	}
+//
+//	newEpoch := epoch + 1
+//
+//	// 步骤3：启动新 Envoy 进程
+//	cmd := exec.Command(EnvoyPath,
+//		"-c", o.ConfigPath,
+//		"--restart-epoch", fmt.Sprintf("%d", newEpoch),
+//		//"--hot-restart-epoch", fmt.Sprintf("%d", newEpoch),
+//		"--base-id", "1000",
+//		//"--admin-address", "0.0.0.0:9901",
+//		"--log-level", "info",
+//	)
+//	cmd.Stdout = nil
+//	cmd.Stderr = nil
+//
+//	if err := cmd.Start(); err != nil {
+//		return fmt.Errorf("启动新 Envoy 失败: %w", err)
+//	}
+//
+//	// 步骤4：更新 epoch 文件
+//	if err := os.WriteFile("/tmp/envoy_epoch", []byte(fmt.Sprintf("%d", newEpoch)), 0644); err != nil {
+//		return fmt.Errorf("写入 epoch 文件失败: %w", err)
+//	}
+//
+//	return nil
+//}
 
-	// 步骤2：读取上一次 epoch
+func (o *EnvoyOperator) HotReloadEnvoyConfig() error {
+	// ===== 1. 读取上一次 epoch =====
 	epoch := 0
 	if data, err := os.ReadFile("/tmp/envoy_epoch"); err == nil {
-		if n, err := strconv.Atoi(string(data)); err == nil {
+		s := strings.TrimSpace(string(data)) // 🔴 必须 trim
+		if n, err := strconv.Atoi(s); err == nil {
 			epoch = n
 		}
 	}
 
 	newEpoch := epoch + 1
 
-	// 步骤3：启动新 Envoy 进程
-	cmd := exec.Command(EnvoyPath,
+	// ===== 2. 启动新 Envoy（等价 shell）=====
+	cmd := exec.Command(
+		EnvoyPath,
 		"-c", o.ConfigPath,
-		"--restart-epoch", fmt.Sprintf("%d", newEpoch),
-		//"--hot-restart-epoch", fmt.Sprintf("%d", newEpoch),
+		"--restart-epoch", strconv.Itoa(newEpoch),
 		"--base-id", "1000",
-		//"--admin-address", "0.0.0.0:9901",
 		"--log-level", "info",
 	)
-	cmd.Stdout = nil
-	cmd.Stderr = nil
+
+	// 🔴 必须把日志打出来
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
 
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("启动新 Envoy 失败: %w", err)
 	}
 
-	// 步骤4：更新 epoch 文件
-	if err := os.WriteFile("/tmp/envoy_epoch", []byte(fmt.Sprintf("%d", newEpoch)), 0644); err != nil {
+	// 🔴 必须 wait，否则 zombie
+	go func() {
+		if err := cmd.Wait(); err != nil {
+			log.Printf("envoy exited: %v", err)
+		}
+	}()
+
+	// ===== 3. 更新 epoch 文件 =====
+	if err := os.WriteFile(
+		"/tmp/envoy_epoch",
+		[]byte(strconv.Itoa(newEpoch)),
+		0644,
+	); err != nil {
 		return fmt.Errorf("写入 epoch 文件失败: %w", err)
 	}
 
