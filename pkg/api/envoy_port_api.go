@@ -38,7 +38,7 @@ func (h *EnvoyPortAPIHandler) HandleEnvoyPortCreate(c *gin.Context) {
 	}
 
 	// 创建/更新端口（配置文件写入/home/matth/envoy.yaml）
-	portCfg, err := h.operator.CreateOrUpdateEnvoyPort(req)
+	portCfg, err := h.operator.CreateOrUpdateEnvoyPort(req, h.logger)
 	if err != nil {
 		h.logger.Error("创建Envoy端口失败", "port", req.Port, "error", err)
 		c.JSON(http.StatusInternalServerError, envoymanager.APICommonResp{
@@ -68,7 +68,7 @@ func (h *EnvoyPortAPIHandler) HandleEnvoyPortDisable(c *gin.Context) {
 	}
 
 	// 禁用端口
-	if err := h.operator.DisableEnvoyPort(req.Port); err != nil {
+	if err := h.operator.DisableEnvoyPort(req.Port, h.logger); err != nil {
 		h.logger.Error("禁用Envoy端口失败", "port", req.Port, "error", err)
 		c.JSON(http.StatusInternalServerError, envoymanager.APICommonResp{
 			Code:    500,
@@ -132,7 +132,7 @@ func InitEnvoyAPIRouter(router *gin.Engine, logger *slog.Logger) {
 	// 初始化全局配置（管理端口9901）
 	operator.InitEnvoyGlobalConfig(9901)
 
-	operator.StartFirstEnvoy()
+	operator.StartFirstEnvoy(logger)
 
 	// 3. 创建API处理器
 	handler := NewEnvoyPortAPIHandler(operator, logger)

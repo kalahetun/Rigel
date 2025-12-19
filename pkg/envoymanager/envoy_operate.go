@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -44,7 +45,7 @@ func (o *EnvoyOperator) InitEnvoyGlobalConfig(adminPort int) error {
 }
 
 // CreateOrUpdateEnvoyPort 新增/更新Envoy端口配置
-func (o *EnvoyOperator) CreateOrUpdateEnvoyPort(req EnvoyPortCreateReq) (EnvoyPortConfig, error) {
+func (o *EnvoyOperator) CreateOrUpdateEnvoyPort(req EnvoyPortCreateReq, logger *slog.Logger) (EnvoyPortConfig, error) {
 	// 1. 检查端口是否已存在
 	portIdx := -1
 	for i, p := range o.GlobalCfg.Ports {
@@ -76,11 +77,11 @@ func (o *EnvoyOperator) CreateOrUpdateEnvoyPort(req EnvoyPortCreateReq) (EnvoyPo
 
 	// 5. 先检查是否有运行的Envoy，没有则首次启动，有则热重启
 	if !o.IsEnvoyRunning() {
-		if err := o.StartFirstEnvoy(); err != nil {
+		if err := o.StartFirstEnvoy(logger); err != nil {
 			return EnvoyPortConfig{}, fmt.Errorf("首次启动Envoy失败: %w", err)
 		}
 	} else {
-		if err := o.HotReloadEnvoyConfig(); err != nil {
+		if err := o.HotReloadEnvoyConfig(logger); err != nil {
 			return EnvoyPortConfig{}, fmt.Errorf("热加载配置失败: %w", err)
 		}
 	}
@@ -89,7 +90,7 @@ func (o *EnvoyOperator) CreateOrUpdateEnvoyPort(req EnvoyPortCreateReq) (EnvoyPo
 }
 
 // DisableEnvoyPort 禁用Envoy端口
-func (o *EnvoyOperator) DisableEnvoyPort(port int) error {
+func (o *EnvoyOperator) DisableEnvoyPort(port int, logger *slog.Logger) error {
 	// 1. 查找端口并禁用
 	portIdx := -1
 	for i, p := range o.GlobalCfg.Ports {
@@ -110,7 +111,7 @@ func (o *EnvoyOperator) DisableEnvoyPort(port int) error {
 	}
 
 	// 3. 热加载配置
-	return o.HotReloadEnvoyConfig()
+	return o.HotReloadEnvoyConfig(logger)
 }
 
 // GetEnvoyPortConfig 查询指定端口配置
@@ -124,7 +125,7 @@ func (o *EnvoyOperator) GetEnvoyPortConfig(port int) (EnvoyPortConfig, error) {
 }
 
 // StartFirstEnvoy 首次启动Envoy（epoch=0）
-func (o *EnvoyOperator) StartFirstEnvoy() error {
+func (o *EnvoyOperator) StartFirstEnvoy(logger *slog.Logger) error {
 	// 检查配置文件是否存在
 	if _, err := os.Stat(o.ConfigPath); os.IsNotExist(err) {
 		return fmt.Errorf("配置文件不存在: %s", o.ConfigPath)
@@ -144,7 +145,7 @@ func (o *EnvoyOperator) StartFirstEnvoy() error {
 	cmd.Stderr = os.Stderr
 
 	// 启动进程
-	log.Println("🚀 首次启动Envoy（epoch=0）")
+	logger.Info("🚀 首次启动Envoy（epoch=0）")
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("启动失败: %w", err)
 	}
@@ -157,7 +158,7 @@ func (o *EnvoyOperator) StartFirstEnvoy() error {
 
 	// 初始化epoch文件
 	if err := os.WriteFile("/tmp/envoy_epoch", []byte("0"), 0644); err != nil {
-		log.Printf("⚠️ 写入epoch文件警告: %v", err)
+		logger.Error("⚠️ 写入epoch文件警告: %v", err)
 	}
 
 	// 后台等待进程（防止僵尸）
@@ -167,12 +168,12 @@ func (o *EnvoyOperator) StartFirstEnvoy() error {
 		}
 	}()
 
-	log.Printf("✅ Envoy首次启动成功，PID: %d", cmd.Process.Pid)
+	logger.Info("✅ Envoy首次启动成功，PID: %d", cmd.Process.Pid)
 	return nil
 }
 
 // HotReloadEnvoyConfig 修复后的热重启函数
-func (o *EnvoyOperator) HotReloadEnvoyConfig() error {
+func (o *EnvoyOperator) HotReloadEnvoyConfig(logger *slog.Logger) error {
 	// 前置检查：确保Envoy正在运行
 	if !o.IsEnvoyRunning() {
 		return errors.New("Envoy未运行，无法热重启")
@@ -215,7 +216,7 @@ func (o *EnvoyOperator) HotReloadEnvoyConfig() error {
 	// 后台等待新进程（防止僵尸）
 	go func() {
 		if err := cmd.Wait(); err != nil {
-			log.Printf("新Envoy进程退出: %v", err)
+			logger.Error("新Envoy进程退出: %v", err)
 		}
 	}()
 
@@ -228,7 +229,7 @@ func (o *EnvoyOperator) HotReloadEnvoyConfig() error {
 		return fmt.Errorf("写入epoch文件失败: %w", err)
 	}
 
-	log.Printf("✅ Envoy热重启成功，旧epoch: %d → 新epoch: %d", epoch, newEpoch)
+	logger.Info("✅ Envoy热重启成功，旧epoch: %d → 新epoch: %d", epoch, newEpoch)
 	return nil
 }
 
