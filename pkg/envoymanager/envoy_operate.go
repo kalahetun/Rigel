@@ -137,7 +137,6 @@ func (o *EnvoyOperator) StartFirstEnvoy() error {
 		"--restart-epoch", "0",
 		"--base-id", "1000",
 		"--log-level", "info",
-		"--enable-shared-memory",
 	)
 
 	// 日志输出
@@ -196,7 +195,6 @@ func (o *EnvoyOperator) HotReloadEnvoyConfig() error {
 		"--restart-epoch", strconv.Itoa(newEpoch),
 		"--base-id", "1000",
 		"--log-level", "info",
-		"--enable-shared-memory",
 	)
 
 	// 日志输出
