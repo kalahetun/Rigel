@@ -1,6 +1,4 @@
 #!/bin/bash
-# Envoy(gateway) 一键安装脚本（matth 用户专属）
-# ✅ 修复：支持 Envoy Hot Restart（systemd 只拉起 epoch=0）
 set -euo pipefail
 
 # --------------------------
@@ -18,8 +16,6 @@ ENVOY_VERSION="1.28.0"
 ENVOY_HOME="/home/matth"
 ENVOY_BIN="${ENVOY_HOME}/envoy"
 ENVOY_CONFIG="${ENVOY_HOME}/envoy-mini.yaml"
-ENVOY_SERVICE="/etc/systemd/system/envoy.service"
-ENVOY_LOG="${ENVOY_HOME}/envoy-service.log"
 DOWNLOAD_URL=""
 
 # --------------------------
@@ -72,51 +68,5 @@ EOF
 
 chown matth:matth "${ENVOY_CONFIG}"
 
-# --------------------------
-# 6. systemd（🔥关键修复）
-# --------------------------
-sudo tee "${ENVOY_SERVICE}" > /dev/null << EOF
-[Unit]
-Description=Envoy Proxy (hot restart enabled)
-After=network.target
-
-[Service]
-User=matth
-Group=matth
-
-# ⚠️ systemd 只允许启动 epoch=0
-ExecStart=${ENVOY_BIN} \\
-  -c ${ENVOY_CONFIG} \\
-  --restart-epoch 0 \\
-  --base-id 1000 \\
-  --log-level info
-
-# ❌ 禁止 systemd 自动重启（热重启由 Envoy 自己做）
-Restart=no
-
-WorkingDirectory=${ENVOY_HOME}
-StandardOutput=append:${ENVOY_LOG}
-StandardError=append:${ENVOY_LOG}
-
-Type=simple
-
-# ✅ 允许 fork/exec 子进程
-KillMode=mixed
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-# --------------------------
-# 7. 启动（❌ 不再 pkill -9）
-# --------------------------
-sudo systemctl daemon-reload
-sudo systemctl start envoy
-sudo systemctl enable envoy
-
-# --------------------------
-# 8. 验证
-# --------------------------
-sleep 2
-systemctl status envoy --no-pager
-ps -ef | grep envoy | grep -v grep
+echo "✅ Envoy 安装完成！配置文件：${ENVOY_CONFIG}，二进制：${ENVOY_BIN}"
+echo "⚠️ 请通过 Go 程序启动 Envoy"

@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
+	"time"
 )
 
 const EnvoyPath = "/home/matth/envoy"
@@ -24,6 +26,8 @@ type EnvoyOperator struct {
 func NewEnvoyOperator(adminAddr, configPath string) *EnvoyOperator {
 	// 标准化配置文件路径（确保是绝对路径）
 	absPath, _ := filepath.Abs(configPath)
+	// 初始化时检查当前运行用户是否为matth
+	checkCurrentUserIsMatth()
 	return &EnvoyOperator{
 		AdminAddr:  adminAddr,
 		ConfigPath: absPath,
@@ -70,9 +74,15 @@ func (o *EnvoyOperator) CreateOrUpdateEnvoyPort(req EnvoyPortCreateReq) (EnvoyPo
 		return EnvoyPortConfig{}, fmt.Errorf("渲染配置失败: %w", err)
 	}
 
-	// 5. 热加载配置
-	if err := o.HotReloadEnvoyConfig(); err != nil {
-		return EnvoyPortConfig{}, fmt.Errorf("热加载配置失败: %w", err)
+	// 5. 先检查是否有运行的Envoy，没有则首次启动，有则热重启
+	if !o.IsEnvoyRunning() {
+		if err := o.StartFirstEnvoy(); err != nil {
+			return EnvoyPortConfig{}, fmt.Errorf("首次启动Envoy失败: %w", err)
+		}
+	} else {
+		if err := o.HotReloadEnvoyConfig(); err != nil {
+			return EnvoyPortConfig{}, fmt.Errorf("热加载配置失败: %w", err)
+		}
 	}
 
 	return newPortCfg, nil
@@ -113,79 +123,101 @@ func (o *EnvoyOperator) GetEnvoyPortConfig(port int) (EnvoyPortConfig, error) {
 	return EnvoyPortConfig{}, errors.New("端口未找到")
 }
 
-//func (o *EnvoyOperator) HotReloadEnvoyConfig() error {
-//	// 步骤1：渲染最新配置
-//	//if err := RenderEnvoyYamlConfig(o.GlobalCfg, o.ConfigPath); err != nil {
-//	//	return fmt.Errorf("渲染配置失败: %w", err)
-//	//}
-//
-//	// 步骤2：读取上一次 epoch
-//	epoch := 0
-//	if data, err := os.ReadFile("/tmp/envoy_epoch"); err == nil {
-//		if n, err := strconv.Atoi(string(data)); err == nil {
-//			epoch = n
-//		}
-//	}
-//
-//	newEpoch := epoch + 1
-//
-//	// 步骤3：启动新 Envoy 进程
-//	cmd := exec.Command(EnvoyPath,
-//		"-c", o.ConfigPath,
-//		"--restart-epoch", fmt.Sprintf("%d", newEpoch),
-//		//"--hot-restart-epoch", fmt.Sprintf("%d", newEpoch),
-//		"--base-id", "1000",
-//		//"--admin-address", "0.0.0.0:9901",
-//		"--log-level", "info",
-//	)
-//	cmd.Stdout = nil
-//	cmd.Stderr = nil
-//
-//	if err := cmd.Start(); err != nil {
-//		return fmt.Errorf("启动新 Envoy 失败: %w", err)
-//	}
-//
-//	// 步骤4：更新 epoch 文件
-//	if err := os.WriteFile("/tmp/envoy_epoch", []byte(fmt.Sprintf("%d", newEpoch)), 0644); err != nil {
-//		return fmt.Errorf("写入 epoch 文件失败: %w", err)
-//	}
-//
-//	return nil
-//}
+// StartFirstEnvoy 首次启动Envoy（epoch=0）
+func (o *EnvoyOperator) StartFirstEnvoy() error {
+	// 检查配置文件是否存在
+	if _, err := os.Stat(o.ConfigPath); os.IsNotExist(err) {
+		return fmt.Errorf("配置文件不存在: %s", o.ConfigPath)
+	}
 
+	// 构造首次启动命令（epoch=0）
+	cmd := exec.Command(
+		EnvoyPath,
+		"-c", o.ConfigPath,
+		"--restart-epoch", "0",
+		"--base-id", "1000",
+		"--log-level", "info",
+		"--enable-shared-memory",
+	)
+
+	// 日志输出
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	// 启动进程
+	log.Println("🚀 首次启动Envoy（epoch=0）")
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("启动失败: %w", err)
+	}
+
+	// 验证进程是否存活
+	time.Sleep(1 * time.Second)
+	if !isProcessAlive(cmd.Process.Pid) {
+		return errors.New("Envoy启动后立即退出")
+	}
+
+	// 初始化epoch文件
+	if err := os.WriteFile("/tmp/envoy_epoch", []byte("0"), 0644); err != nil {
+		log.Printf("⚠️ 写入epoch文件警告: %v", err)
+	}
+
+	// 后台等待进程（防止僵尸）
+	go func() {
+		if err := cmd.Wait(); err != nil {
+			log.Printf("Envoy进程退出: %v", err)
+		}
+	}()
+
+	log.Printf("✅ Envoy首次启动成功，PID: %d", cmd.Process.Pid)
+	return nil
+}
+
+// HotReloadEnvoyConfig 修复后的热重启函数
 func (o *EnvoyOperator) HotReloadEnvoyConfig() error {
+	// 前置检查：确保Envoy正在运行
+	if !o.IsEnvoyRunning() {
+		return errors.New("Envoy未运行，无法热重启")
+	}
+
 	// ===== 1. 读取上一次 epoch =====
 	epoch := 0
 	if data, err := os.ReadFile("/tmp/envoy_epoch"); err == nil {
-		s := strings.TrimSpace(string(data)) // 🔴 必须 trim
+		s := strings.TrimSpace(string(data))
 		if n, err := strconv.Atoi(s); err == nil {
 			epoch = n
 		}
 	}
-
 	newEpoch := epoch + 1
 
-	// ===== 2. 启动新 Envoy（等价 shell）=====
+	// ===== 2. 启动新 Envoy =====
 	cmd := exec.Command(
 		EnvoyPath,
 		"-c", o.ConfigPath,
 		"--restart-epoch", strconv.Itoa(newEpoch),
 		"--base-id", "1000",
 		"--log-level", "info",
+		"--enable-shared-memory",
 	)
 
-	// 🔴 必须把日志打出来
+	// 日志输出
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
+	// 启动新进程
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("启动新 Envoy 失败: %w", err)
+		return fmt.Errorf("启动新Envoy失败: %w", err)
 	}
 
-	// 🔴 必须 wait，否则 zombie
+	// 验证新进程存活
+	time.Sleep(2 * time.Second)
+	if !isProcessAlive(cmd.Process.Pid) {
+		return fmt.Errorf("新Envoy进程启动后立即退出（PID: %d）", cmd.Process.Pid)
+	}
+
+	// 后台等待新进程（防止僵尸）
 	go func() {
 		if err := cmd.Wait(); err != nil {
-			log.Printf("envoy exited: %v", err)
+			log.Printf("新Envoy进程退出: %v", err)
 		}
 	}()
 
@@ -195,8 +227,41 @@ func (o *EnvoyOperator) HotReloadEnvoyConfig() error {
 		[]byte(strconv.Itoa(newEpoch)),
 		0644,
 	); err != nil {
-		return fmt.Errorf("写入 epoch 文件失败: %w", err)
+		return fmt.Errorf("写入epoch文件失败: %w", err)
 	}
 
+	log.Printf("✅ Envoy热重启成功，旧epoch: %d → 新epoch: %d", epoch, newEpoch)
 	return nil
+}
+
+// IsEnvoyRunning 检查Envoy是否正在运行
+func (o *EnvoyOperator) IsEnvoyRunning() bool {
+	cmd := exec.Command("pgrep", "-u", "matth", "envoy")
+	output, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(string(output)) != ""
+}
+
+// -------------------------- 私有辅助函数 --------------------------
+// checkCurrentUserIsMatth 检查当前运行用户是否为matth
+func checkCurrentUserIsMatth() {
+	currentUser := os.Getenv("USER")
+	if currentUser != "matth" {
+		log.Fatalf("❌ 必须以matth用户运行此程序（当前用户：%s）", currentUser)
+	}
+}
+
+// isProcessAlive 检查进程是否存活
+func isProcessAlive(pid int) bool {
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	// 发送空信号检查进程是否存在
+	if err := proc.Signal(syscall.Signal(0)); err != nil {
+		return false
+	}
+	return true
 }
