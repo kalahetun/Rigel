@@ -45,6 +45,7 @@ func (h *VmReportAPIHandler) PostVMReport(c *gin.Context) {
 		resp.Code = 400
 		resp.Msg = "请求格式错误：不是合法的ApiResponse结构 - " + err.Error()
 		c.JSON(http.StatusOK, resp)
+		h.logger.Error(resp.Msg)
 		return
 	}
 
@@ -55,6 +56,7 @@ func (h *VmReportAPIHandler) PostVMReport(c *gin.Context) {
 		resp.Code = 400
 		resp.Msg = "请求Data字段格式错误：无法序列化为JSON - " + err.Error()
 		c.JSON(http.StatusOK, resp)
+		h.logger.Error(resp.Msg)
 		return
 	}
 	// 3.2 反序列化为VMReport
@@ -63,6 +65,7 @@ func (h *VmReportAPIHandler) PostVMReport(c *gin.Context) {
 		resp.Code = 400
 		resp.Msg = "Data字段解析失败：不是合法的VMReport结构 - " + err.Error()
 		c.JSON(http.StatusOK, resp)
+		h.logger.Error(resp.Msg)
 		return
 	}
 
@@ -89,6 +92,7 @@ func (h *VmReportAPIHandler) PostVMReport(c *gin.Context) {
 		resp.Code = 400
 		resp.Msg = "VMReport参数校验失败：" + strings.Join(validateErrors, "；")
 		c.JSON(http.StatusOK, resp)
+		h.logger.Error(resp.Msg)
 		return
 	}
 
@@ -108,6 +112,7 @@ func (h *VmReportAPIHandler) PostVMReport(c *gin.Context) {
 		resp.Code = 500
 		resp.Msg = "数据保存失败：" + err.Error()
 		c.JSON(http.StatusOK, resp)
+		h.logger.Error(resp.Msg)
 		return
 	}
 
@@ -115,6 +120,9 @@ func (h *VmReportAPIHandler) PostVMReport(c *gin.Context) {
 	resp.Code = 200
 	resp.Msg = "VM信息上报成功"
 	resp.Data = reportData // 响应的Data放回完整的VMReport
+
+	b, _ := json.Marshal(reportData)
+	h.logger.Info(string(b))
 
 	// 8. 返回最终响应
 	c.JSON(http.StatusOK, resp)
