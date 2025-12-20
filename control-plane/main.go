@@ -1,13 +1,12 @@
 package main
 
 import (
+	"control-plane/pkg/api"
 	"log/slog"
 	"os"
 	"path/filepath"
 
 	"github.com/gin-gonic/gin"
-
-	"Rigel/pkg/api" // 替换为实际项目模块名（如：github.com/your-name/envoy-manager/pkg/api）
 )
 
 func main() {

@@ -1,7 +1,7 @@
 package api
 
 import (
-	"Rigel/pkg/envoymanager"
+	envoymanager2 "control-plane/pkg/envoymanager"
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"log/slog"
@@ -13,12 +13,12 @@ const envoyConfigPath = "/home/matth/envoy-mini.yaml"
 
 // EnvoyPortAPIHandler Envoy端口API处理器
 type EnvoyPortAPIHandler struct {
-	operator *envoymanager.EnvoyOperator
+	operator *envoymanager2.EnvoyOperator
 	logger   *slog.Logger
 }
 
 // NewEnvoyPortAPIHandler 创建API处理器实例
-func NewEnvoyPortAPIHandler(operator *envoymanager.EnvoyOperator, logger *slog.Logger) *EnvoyPortAPIHandler {
+func NewEnvoyPortAPIHandler(operator *envoymanager2.EnvoyOperator, logger *slog.Logger) *EnvoyPortAPIHandler {
 	return &EnvoyPortAPIHandler{
 		operator: operator,
 		logger:   logger,
@@ -27,10 +27,10 @@ func NewEnvoyPortAPIHandler(operator *envoymanager.EnvoyOperator, logger *slog.L
 
 // HandleEnvoyPortCreate 处理创建Envoy端口请求（POST /envoy/port/create）
 func (h *EnvoyPortAPIHandler) HandleEnvoyPortCreate(c *gin.Context) {
-	var req envoymanager.EnvoyPortCreateReq
+	var req envoymanager2.EnvoyPortCreateReq
 	if err := c.ShouldBindJSON(&req); err != nil {
 		h.logger.Error("绑定创建端口请求失败", "error", err)
-		c.JSON(http.StatusBadRequest, envoymanager.APICommonResp{
+		c.JSON(http.StatusBadRequest, envoymanager2.APICommonResp{
 			Code:    400,
 			Message: "参数错误: " + err.Error(),
 		})
@@ -41,14 +41,14 @@ func (h *EnvoyPortAPIHandler) HandleEnvoyPortCreate(c *gin.Context) {
 	portCfg, err := h.operator.CreateOrUpdateEnvoyPort(req, h.logger)
 	if err != nil {
 		h.logger.Error("创建Envoy端口失败", "port", req.Port, "error", err)
-		c.JSON(http.StatusInternalServerError, envoymanager.APICommonResp{
+		c.JSON(http.StatusInternalServerError, envoymanager2.APICommonResp{
 			Code:    500,
 			Message: "创建端口失败: " + err.Error(),
 		})
 		return
 	}
 
-	c.JSON(http.StatusOK, envoymanager.APICommonResp{
+	c.JSON(http.StatusOK, envoymanager2.APICommonResp{
 		Code:    0,
 		Message: "端口创建/更新成功",
 		Data:    portCfg,
@@ -57,10 +57,10 @@ func (h *EnvoyPortAPIHandler) HandleEnvoyPortCreate(c *gin.Context) {
 
 // HandleEnvoyPortDisable 处理禁用Envoy端口请求（POST /envoy/port/disable）
 func (h *EnvoyPortAPIHandler) HandleEnvoyPortDisable(c *gin.Context) {
-	var req envoymanager.EnvoyPortDisableReq
+	var req envoymanager2.EnvoyPortDisableReq
 	if err := c.ShouldBindJSON(&req); err != nil {
 		h.logger.Error("绑定禁用端口请求失败", "error", err)
-		c.JSON(http.StatusBadRequest, envoymanager.APICommonResp{
+		c.JSON(http.StatusBadRequest, envoymanager2.APICommonResp{
 			Code:    400,
 			Message: "参数错误: " + err.Error(),
 		})
@@ -70,14 +70,14 @@ func (h *EnvoyPortAPIHandler) HandleEnvoyPortDisable(c *gin.Context) {
 	// 禁用端口
 	if err := h.operator.DisableEnvoyPort(req.Port, h.logger); err != nil {
 		h.logger.Error("禁用Envoy端口失败", "port", req.Port, "error", err)
-		c.JSON(http.StatusInternalServerError, envoymanager.APICommonResp{
+		c.JSON(http.StatusInternalServerError, envoymanager2.APICommonResp{
 			Code:    500,
 			Message: "禁用端口失败: " + err.Error(),
 		})
 		return
 	}
 
-	c.JSON(http.StatusOK, envoymanager.APICommonResp{
+	c.JSON(http.StatusOK, envoymanager2.APICommonResp{
 		Code:    0,
 		Message: "端口禁用成功",
 	})
@@ -88,7 +88,7 @@ func (h *EnvoyPortAPIHandler) HandleEnvoyPortQuery(c *gin.Context) {
 	// 从URL参数获取端口号
 	portStr := c.Query("port")
 	if portStr == "" {
-		c.JSON(http.StatusBadRequest, envoymanager.APICommonResp{
+		c.JSON(http.StatusBadRequest, envoymanager2.APICommonResp{
 			Code:    400,
 			Message: "参数错误: 端口号不能为空",
 		})
@@ -97,7 +97,7 @@ func (h *EnvoyPortAPIHandler) HandleEnvoyPortQuery(c *gin.Context) {
 
 	var port int
 	if _, err := fmt.Sscanf(portStr, "%d", &port); err != nil {
-		c.JSON(http.StatusBadRequest, envoymanager.APICommonResp{
+		c.JSON(http.StatusBadRequest, envoymanager2.APICommonResp{
 			Code:    400,
 			Message: "参数错误: 端口号必须是数字",
 		})
@@ -108,14 +108,14 @@ func (h *EnvoyPortAPIHandler) HandleEnvoyPortQuery(c *gin.Context) {
 	portCfg, err := h.operator.GetEnvoyPortConfig(port)
 	if err != nil {
 		h.logger.Error("查询Envoy端口失败", "port", port, "error", err)
-		c.JSON(http.StatusNotFound, envoymanager.APICommonResp{
+		c.JSON(http.StatusNotFound, envoymanager2.APICommonResp{
 			Code:    404,
 			Message: "端口未找到: " + err.Error(),
 		})
 		return
 	}
 
-	c.JSON(http.StatusOK, envoymanager.APICommonResp{
+	c.JSON(http.StatusOK, envoymanager2.APICommonResp{
 		Code:    0,
 		Message: "查询端口成功",
 		Data:    portCfg,
@@ -128,7 +128,7 @@ func InitEnvoyAPIRouter(router *gin.Engine, logger *slog.Logger) {
 	configPath := envoyConfigPath
 
 	// 2. 创建Envoy操作器（固定管理地址+matth配置路径）
-	operator := envoymanager.NewEnvoyOperator("http://127.0.0.1:9901", configPath)
+	operator := envoymanager2.NewEnvoyOperator("http://127.0.0.1:9901", configPath)
 	// 初始化全局配置（管理端口9901）
 	operator.InitEnvoyGlobalConfig(9901)
 
