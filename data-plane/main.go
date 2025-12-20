@@ -1,12 +1,14 @@
-package control_plane
+package data_plane
 
 import (
-	"control-plane/pkg/api"
+	model "data-plane/pkg/local_info_report"
+	"data-plane/pkg/local_info_report/reporter"
+	"github.com/gin-gonic/gin"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
-
-	"github.com/gin-gonic/gin"
+	"time"
 )
 
 func main() {
@@ -29,15 +31,20 @@ func main() {
 	// 2. 初始化Gin路由
 	router := gin.Default()
 
-	// 3. 注册Envoy端口API（已适配matth目录）
-	api.InitEnvoyAPIRouter(router, logger)
-
-	//
-	api.InitVmReportAPIRouter(router, logger)
+	router.GET("/health", func(c *gin.Context) {
+		c.JSON(http.StatusOK, model.ApiResponse{
+			Code: 200,
+			Msg:  "success",
+			Data: gin.H{"time": time.Now().UTC().Format(time.RFC3339)},
+		})
+	})
+	
+	// 3. 初始化上报器
+	go reporter.ReportCycle(logger)
 
 	// 4. 启动API服务
 	logger.Info("Envoy端口管理API启动", "addr", ":8081")
-	if err := router.Run(":8081"); err != nil {
+	if err := router.Run(":8082"); err != nil {
 		logger.Error("API服务启动失败", "error", err)
 		os.Exit(1)
 	}
