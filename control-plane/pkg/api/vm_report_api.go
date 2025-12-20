@@ -1,0 +1,150 @@
+package api
+
+import (
+	"log/slog"
+	"net/http"
+	"path/filepath"
+	"strings"
+	"time"
+
+	model "control-plane/pkg/local_info_manager" // 保持你的实际导入路径
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	// 修正存储层导入路径（需匹配你的项目实际路径）
+	"control-plane/storage"
+	"encoding/json"
+)
+
+// ReportHandler 接收VM上报数据的Handler
+// 职责：解析上报请求、校验参数、调用存储层、返回统一响应
+type VmReportAPIHandler struct {
+	storage storage.Storage // 注入文件存储实现（依赖倒置，解耦具体存储）
+	logger  *slog.Logger
+}
+
+// NewReportHandler 初始化ReportHandler
+// 参数：存储层实现实例
+// 返回：初始化后的ReportHandler指针
+func NewVmReportAPIHandler(s storage.Storage, l *slog.Logger) *VmReportAPIHandler {
+	return &VmReportAPIHandler{storage: s, logger: l}
+}
+
+// PostVMReport 处理POST /api/v1/vm/report请求
+// 核心：请求体是ApiResponse（Data=VMReport），响应体也是ApiResponse（Data=填充后的VMReport）
+func (h *VmReportAPIHandler) PostVMReport(c *gin.Context) {
+	// 1. 初始化响应体（默认失败，后续覆盖）
+	resp := model.ApiResponse{
+		Code: 500,
+		Msg:  "服务端内部错误",
+		Data: nil,
+	}
+
+	// 2. 【核心】先绑定外层ApiResponse
+	var req model.ApiResponse
+	if err := c.ShouldBindJSON(&req); err != nil {
+		resp.Code = 400
+		resp.Msg = "请求格式错误：不是合法的ApiResponse结构 - " + err.Error()
+		c.JSON(http.StatusOK, resp)
+		return
+	}
+
+	// 3. 解析内层Data为VMReport
+	// 3.1 先将Data转为JSON字节（兼容各种数据类型）
+	reqDataBytes, err := json.Marshal(req.Data)
+	if err != nil {
+		resp.Code = 400
+		resp.Msg = "请求Data字段格式错误：无法序列化为JSON - " + err.Error()
+		c.JSON(http.StatusOK, resp)
+		return
+	}
+	// 3.2 反序列化为VMReport
+	var reportData model.VMReport
+	if err := json.Unmarshal(reqDataBytes, &reportData); err != nil {
+		resp.Code = 400
+		resp.Msg = "Data字段解析失败：不是合法的VMReport结构 - " + err.Error()
+		c.JSON(http.StatusOK, resp)
+		return
+	}
+
+	// 4. 校验VMReport核心字段
+	var validateErrors []string
+	if reportData.VMID == "" {
+		validateErrors = append(validateErrors, "VMID不能为空")
+	}
+	if reportData.CPU.PhysicalCore < 0 {
+		validateErrors = append(validateErrors, "CPU物理核数不能为负数")
+	}
+	if reportData.CPU.LogicalCore < 0 {
+		validateErrors = append(validateErrors, "CPU逻辑核数不能为负数")
+	}
+	if reportData.Network.PublicIP == "" {
+		validateErrors = append(validateErrors, "外网IP（public_ip）不能为空，无则填\"no-public-ip\"")
+	}
+	if reportData.Memory.Total == 0 {
+		validateErrors = append(validateErrors, "总内存（total）不能为0")
+	}
+
+	// 校验失败返回
+	if len(validateErrors) > 0 {
+		resp.Code = 400
+		resp.Msg = "VMReport参数校验失败：" + strings.Join(validateErrors, "；")
+		c.JSON(http.StatusOK, resp)
+		return
+	}
+
+	// 5. 字段兜底填充（补全缺失的必填项）
+	if reportData.CollectTime.IsZero() {
+		reportData.CollectTime = time.Now().UTC()
+	}
+	if reportData.ReportID == "" {
+		reportData.ReportID = uuid.NewString()
+	}
+	if reportData.Network.PortCount < 0 {
+		reportData.Network.PortCount = 0
+	}
+
+	// 6. 保存数据到存储层
+	if _, err := h.storage.Save(&reportData); err != nil {
+		resp.Code = 500
+		resp.Msg = "数据保存失败：" + err.Error()
+		c.JSON(http.StatusOK, resp)
+		return
+	}
+
+	// 7. 构造成功响应（外层ApiResponse + 内层Data=填充后的VMReport）
+	resp.Code = 200
+	resp.Msg = "VM信息上报成功"
+	resp.Data = reportData // 响应的Data放回完整的VMReport
+
+	// 8. 返回最终响应
+	c.JSON(http.StatusOK, resp)
+}
+
+// NewRouter 初始化路由（无修改）
+func InitVmReportAPIRouter(router *gin.Engine, logger *slog.Logger) *gin.Engine {
+
+	logDir := filepath.Join(".", "vm_local_info_storage")
+	var s storage.Storage
+	s, _ = storage.NewFileStorage(logDir)
+
+	r := router
+
+	// 健康检查
+	r.GET("/health", func(c *gin.Context) {
+		c.JSON(http.StatusOK, model.ApiResponse{
+			Code: 200,
+			Msg:  "success",
+			Data: gin.H{"time": time.Now().UTC().Format(time.RFC3339)},
+		})
+	})
+	// 上报接口
+	apiV1 := r.Group("/api/v1")
+	{
+		vmGroup := apiV1.Group("/vm")
+		{
+			handler := NewVmReportAPIHandler(s, logger)
+			vmGroup.POST("/report", handler.PostVMReport)
+		}
+	}
+	return r
+}

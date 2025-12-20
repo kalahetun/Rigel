@@ -1,4 +1,4 @@
-package envoymanager
+package envoy_manager
 
 import (
 	"os"

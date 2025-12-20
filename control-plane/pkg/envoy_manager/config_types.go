@@ -1,4 +1,4 @@
-package envoymanager
+package envoy_manager
 
 // APICommonResp 通用API返回结构
 type APICommonResp struct {
