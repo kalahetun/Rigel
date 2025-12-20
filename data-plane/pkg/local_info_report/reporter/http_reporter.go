@@ -92,7 +92,7 @@ func ReportCycle(logger *slog.Logger) {
 	logger.Info("数据平面启动，开始定时上报（周期：%v），上报地址：%s", ReportInterval, ReportURL)
 
 	// 3. 立即执行一次上报，然后按周期执行
-	reportOnce(vmCollector, httpReporter, logger)
+	//reportOnce(vmCollector, httpReporter, logger)
 
 	for range ticker.C {
 		reportOnce(vmCollector, httpReporter, logger)

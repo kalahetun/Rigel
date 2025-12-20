@@ -38,12 +38,12 @@ func main() {
 			Data: gin.H{"time": time.Now().UTC().Format(time.RFC3339)},
 		})
 	})
-	
+
 	// 3. 初始化上报器
 	go reporter.ReportCycle(logger)
 
 	// 4. 启动API服务
-	logger.Info("Envoy端口管理API启动", "addr", ":8081")
+	logger.Info("API端口启动", "addr", ":8081")
 	if err := router.Run(":8082"); err != nil {
 		logger.Error("API服务启动失败", "error", err)
 		os.Exit(1)
