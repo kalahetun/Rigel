@@ -16,9 +16,10 @@ import (
 
 // 常量配置（写死）
 const (
-	ReportURL      = "http://localhost:8081/api/v1/vm/report" // 控制平面地址
-	ReportInterval = 5 * time.Second                          // 上报周期
-	Timeout        = 10 * time.Second                         // HTTP超时
+	ControlHost    = "http://localhost:8081"
+	ReportURL      = ControlHost + "/api/v1/vm/report" // 控制平面地址
+	ReportInterval = 5 * time.Second                   // 上报周期
+	Timeout        = 10 * time.Second                  // HTTP超时
 )
 
 // HTTPReporter HTTP上报器
