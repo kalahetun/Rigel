@@ -138,7 +138,7 @@ func InitVmReportAPIRouter(router *gin.Engine, logger *slog.Logger) *gin.Engine 
 
 	logDir := filepath.Join(".", "vm_local_info_storage")
 	var s storage.Storage
-	s, _ = storage.NewFileStorage(logDir)
+	s, _ = storage.NewFileStorage(logDir, 0, logger)
 
 	r := router
 

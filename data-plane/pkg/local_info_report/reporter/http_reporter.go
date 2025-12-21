@@ -18,7 +18,7 @@ import (
 const (
 	ControlHost    = "http://localhost:8081"
 	ReportURL      = ControlHost + "/api/v1/vm/report" // 控制平面地址
-	ReportInterval = 5 * time.Second                   // 上报周期
+	ReportInterval = 10 * time.Second                  // 上报周期
 	Timeout        = 10 * time.Second                  // HTTP超时
 )
 
