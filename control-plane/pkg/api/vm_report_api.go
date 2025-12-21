@@ -1,6 +1,7 @@
 package api
 
 import (
+	"control-plane/util"
 	"log/slog"
 	"net/http"
 	"path/filepath"
@@ -18,15 +19,16 @@ import (
 // ReportHandler 接收VM上报数据的Handler
 // 职责：解析上报请求、校验参数、调用存储层、返回统一响应
 type VmReportAPIHandler struct {
-	storage storage.Storage // 注入文件存储实现（依赖倒置，解耦具体存储）
-	logger  *slog.Logger
+	storage    storage.Storage // 注入文件存储实现（依赖倒置，解耦具体存储）
+	logger     *slog.Logger
+	activityVM *util.SafeMap
 }
 
 // NewReportHandler 初始化ReportHandler
 // 参数：存储层实现实例
 // 返回：初始化后的ReportHandler指针
 func NewVmReportAPIHandler(s storage.Storage, l *slog.Logger) *VmReportAPIHandler {
-	return &VmReportAPIHandler{storage: s, logger: l}
+	return &VmReportAPIHandler{storage: s, logger: l, activityVM: util.NewSafeMap()}
 }
 
 // PostVMReport 处理POST /api/v1/vm/report请求
@@ -115,6 +117,9 @@ func (h *VmReportAPIHandler) PostVMReport(c *gin.Context) {
 		h.logger.Error(resp.Msg)
 		return
 	}
+
+	//保存最近更新的vm列表 主要关注CollectTime 更新最近10s上报的vm
+	h.activityVM.Set(reportData.VMID, reportData)
 
 	// 7. 构造成功响应（外层ApiResponse + 内层Data=填充后的VMReport）
 	resp.Code = 200
