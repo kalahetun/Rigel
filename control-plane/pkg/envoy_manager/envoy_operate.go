@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -20,7 +21,9 @@ const EnvoyPath = "/home/matth/envoy"
 type EnvoyOperator struct {
 	AdminAddr  string // 管理地址（固定为http://127.0.0.1:9901）
 	ConfigPath string // 配置文件路径（固定为/home/matth/envoy.yaml）
-	GlobalCfg  EnvoyGlobalConfig
+	GlobalCfg  *EnvoyGlobalConfig
+	flag       bool         //flag == flase 系统不能服务 8083没有ip
+	mu         sync.RWMutex // 读写锁：读多写少场景更高效
 }
 
 // NewEnvoyOperator 创建Envoy操作器实例
@@ -32,20 +35,42 @@ func NewEnvoyOperator(adminAddr, configPath string) *EnvoyOperator {
 	return &EnvoyOperator{
 		AdminAddr:  adminAddr,
 		ConfigPath: absPath,
+		flag:       false,
+		mu:         sync.RWMutex{}, // 初始化锁
 	}
 }
 
 // InitEnvoyGlobalConfig 初始化Envoy全局配置
 func (o *EnvoyOperator) InitEnvoyGlobalConfig(adminPort int) error {
-	o.GlobalCfg = EnvoyGlobalConfig{
-		AdminPort: adminPort,
-		Ports:     make([]EnvoyPortConfig, 0),
+
+	o.mu.Lock()
+	defer o.mu.Unlock()
+
+	//8090-8099 默认端口
+	ports := make([]EnvoyPortConfig, 0)
+	for i := 8090; i <= 8099; i++ {
+		ports = append(ports, EnvoyPortConfig{8090, true})
+	}
+
+	//数据面转发端口8083
+	targetAddrs := make([]EnvoyTargetAddr, 0)
+	//todo 填充node内部的vm节点外网ips
+	//targetAddrs = append(targetAddrs, EnvoyTargetAddr{IP: "127.0.0.1", Port: 8083})
+
+	o.GlobalCfg = &EnvoyGlobalConfig{
+		AdminPort:   adminPort,
+		Ports:       ports,
+		TargetAddrs: targetAddrs,
 	}
 	return nil
 }
 
 // CreateOrUpdateEnvoyPort 新增/更新Envoy端口配置
 func (o *EnvoyOperator) CreateOrUpdateEnvoyPort(req EnvoyPortCreateReq, logger *slog.Logger) (EnvoyPortConfig, error) {
+
+	o.mu.Lock()
+	defer o.mu.Unlock()
+
 	// 1. 检查端口是否已存在
 	portIdx := -1
 	for i, p := range o.GlobalCfg.Ports {
@@ -57,10 +82,8 @@ func (o *EnvoyOperator) CreateOrUpdateEnvoyPort(req EnvoyPortCreateReq, logger *
 
 	// 2. 构造端口配置
 	newPortCfg := EnvoyPortConfig{
-		Port:       req.Port,
-		TargetPort: req.TargetPort,
-		Enabled:    true,
-		RateLimit:  req.RateLimit,
+		Port:    req.Port,
+		Enabled: true,
 	}
 
 	// 3. 更新/新增端口配置
@@ -69,6 +92,8 @@ func (o *EnvoyOperator) CreateOrUpdateEnvoyPort(req EnvoyPortCreateReq, logger *
 	} else {
 		o.GlobalCfg.Ports = append(o.GlobalCfg.Ports, newPortCfg)
 	}
+
+	logger.Info("CreateOrUpdateEnvoyPort, port:%d", req.Port)
 
 	// 4. 渲染配置文件到matth目录
 	if err := RenderEnvoyYamlConfig(o.GlobalCfg, o.ConfigPath); err != nil {
@@ -91,6 +116,10 @@ func (o *EnvoyOperator) CreateOrUpdateEnvoyPort(req EnvoyPortCreateReq, logger *
 
 // DisableEnvoyPort 禁用Envoy端口
 func (o *EnvoyOperator) DisableEnvoyPort(port int, logger *slog.Logger) error {
+
+	o.mu.Lock()
+	defer o.mu.Unlock()
+
 	// 1. 查找端口并禁用
 	portIdx := -1
 	for i, p := range o.GlobalCfg.Ports {
@@ -104,6 +133,7 @@ func (o *EnvoyOperator) DisableEnvoyPort(port int, logger *slog.Logger) error {
 	}
 
 	o.GlobalCfg.Ports[portIdx].Enabled = false
+	logger.Info("禁用端口: %d", port)
 
 	// 2. 重新渲染配置到matth目录
 	if err := RenderEnvoyYamlConfig(o.GlobalCfg, o.ConfigPath); err != nil {
@@ -114,14 +144,53 @@ func (o *EnvoyOperator) DisableEnvoyPort(port int, logger *slog.Logger) error {
 	return o.HotReloadEnvoyConfig(logger)
 }
 
-// GetEnvoyPortConfig 查询指定端口配置
-func (o *EnvoyOperator) GetEnvoyPortConfig(port int) (EnvoyPortConfig, error) {
-	for _, p := range o.GlobalCfg.Ports {
-		if p.Port == port {
-			return p, nil
-		}
+// UpdateGlobalTargetAddrs 更新后端地址（写锁）
+func (o *EnvoyOperator) UpdateGlobalTargetAddrs(targetAddrs []EnvoyTargetAddr, logger *slog.Logger) error {
+	// 写锁：修改TargetAddrs，独占锁
+	o.mu.Lock()
+	defer o.mu.Unlock()
+
+	if o.GlobalCfg == nil {
+		return errors.New("global config not initialized")
 	}
-	return EnvoyPortConfig{}, errors.New("端口未找到")
+	if len(targetAddrs) == 0 {
+		return errors.New("target addrs cannot be empty")
+	}
+
+	logger.Info("UpdateGlobalTargetAddrs", "targetAddrs", targetAddrs)
+
+	// 更新后端地址
+	o.GlobalCfg.TargetAddrs = targetAddrs
+
+	// 渲染配置
+	if err := RenderEnvoyYamlConfig(o.GlobalCfg, o.ConfigPath); err != nil {
+		return fmt.Errorf("render target addrs failed: %w", err)
+	}
+
+	// 2. 重新渲染配置到matth目录
+	if err := RenderEnvoyYamlConfig(o.GlobalCfg, o.ConfigPath); err != nil {
+		return fmt.Errorf("渲染禁用端口配置失败: %w", err)
+	}
+
+	o.flag = true
+	logger.Info("UpdateGlobalTargetAddrs, flag changed to true")
+
+	return nil
+}
+
+// GetCurrentConfig 获取当前配置（读锁，不修改数据）
+func (o *EnvoyOperator) GetCurrentConfig() (*EnvoyGlobalConfig, error) {
+	// 读锁：仅读取配置，共享锁（多个goroutine可同时读）
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+
+	if o.GlobalCfg == nil {
+		return nil, errors.New("global config not initialized")
+	}
+
+	// 返回拷贝：避免外部修改原指针（可选，增强安全性）
+	cfgCopy := *o.GlobalCfg
+	return &cfgCopy, nil
 }
 
 // StartFirstEnvoy 首次启动Envoy（epoch=0）

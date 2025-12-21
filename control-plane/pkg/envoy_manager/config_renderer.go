@@ -7,7 +7,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// EnvoyYamlTemplate Envoy配置模板（适配1.28.0，兼容matth目录）
+// EnvoyYamlTemplate Envoy config template (v1.28.0)
 const EnvoyYamlTemplate = `
 admin:
   address:
@@ -37,32 +37,42 @@ static_resources:
               - match:
                   prefix: "/"
                 route:
-                  cluster: target_cluster_{{.Port}}
+                  cluster: target_cluster # Fixed cluster name
           http_filters:
           - name: envoy.filters.http.router
             typed_config:
               "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
 {{end}}{{end}}
   clusters:
-{{range .Ports}}{{if .Enabled}}
-  - name: target_cluster_{{.Port}}
+  - name: target_cluster # Single cluster for all ports
     connect_timeout: 0.25s
     type: STATIC
     lb_policy: ROUND_ROBIN
     load_assignment:
-      cluster_name: target_cluster_{{.Port}}
+      cluster_name: target_cluster
       endpoints:
       - lb_endpoints:
+        {{range .TargetAddrs}}
         - endpoint:
             address:
               socket_address:
-                address: 127.0.0.1
-                port_value: {{.TargetPort}}
-{{end}}{{end}}
+                address: {{.IP}}
+                port_value: {{.Port}}
+            # Per-endpoint health check (independent for each target)
+            health_check_config:
+              timeout: 1s
+              interval: 5s
+              unhealthy_threshold: 2
+              healthy_threshold: 2
+              http_health_check:
+                path: /health
+                port_value: 8082  # Fixed health check port
+                host: {{.IP}}      # Host = current target IP (independent)
+        {{end}}
 `
 
 // RenderEnvoyYamlConfig 渲染Envoy YAML配置文件到matth目录
-func RenderEnvoyYamlConfig(cfg EnvoyGlobalConfig, outputPath string) error {
+func RenderEnvoyYamlConfig(cfg *EnvoyGlobalConfig, outputPath string) error {
 	// 解析模板
 	tpl, err := template.New("envoy_config").Parse(EnvoyYamlTemplate)
 	if err != nil {

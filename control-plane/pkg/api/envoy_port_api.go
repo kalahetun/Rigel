@@ -2,7 +2,6 @@ package api
 
 import (
 	envoymanager2 "control-plane/pkg/envoy_manager"
-	"fmt"
 	"github.com/gin-gonic/gin"
 	"log/slog"
 	"net/http"
@@ -84,41 +83,56 @@ func (h *EnvoyPortAPIHandler) HandleEnvoyPortDisable(c *gin.Context) {
 }
 
 // HandleEnvoyPortQuery 处理查询Envoy端口请求（GET /envoy/port/query）
-func (h *EnvoyPortAPIHandler) HandleEnvoyPortQuery(c *gin.Context) {
-	// 从URL参数获取端口号
-	portStr := c.Query("port")
-	if portStr == "" {
-		c.JSON(http.StatusBadRequest, envoymanager2.APICommonResp{
-			Code:    400,
-			Message: "参数错误: 端口号不能为空",
-		})
-		return
-	}
-
-	var port int
-	if _, err := fmt.Sscanf(portStr, "%d", &port); err != nil {
-		c.JSON(http.StatusBadRequest, envoymanager2.APICommonResp{
-			Code:    400,
-			Message: "参数错误: 端口号必须是数字",
-		})
-		return
-	}
+func (h *EnvoyPortAPIHandler) HandleEnvoyCfgQuery(c *gin.Context) {
 
 	// 查询端口配置
-	portCfg, err := h.operator.GetEnvoyPortConfig(port)
+	cfg, err := h.operator.GetCurrentConfig()
 	if err != nil {
-		h.logger.Error("查询Envoy端口失败", "port", port, "error", err)
+		h.logger.Error("查询 Envoy cfg 失败", "error", err)
 		c.JSON(http.StatusNotFound, envoymanager2.APICommonResp{
 			Code:    404,
-			Message: "端口未找到: " + err.Error(),
+			Message: "Envoy cfg 未找到: " + err.Error(),
 		})
 		return
 	}
 
 	c.JSON(http.StatusOK, envoymanager2.APICommonResp{
 		Code:    0,
-		Message: "查询端口成功",
-		Data:    portCfg,
+		Message: "查询 Envoy cfg 成功",
+		Data:    cfg,
+	})
+}
+
+func (o *EnvoyPortAPIHandler) UpdateGlobalTargetAddrsHandler(c *gin.Context) {
+	// 1. 绑定并校验请求体
+	var req []envoymanager2.EnvoyTargetAddr
+	if err := c.ShouldBindJSON(&req); err != nil {
+		o.logger.Error("Invalid request body", "error", err)
+		c.JSON(http.StatusOK, envoymanager2.APICommonResp{
+			Code:    400,
+			Message: "参数错误：" + err.Error(),
+			Data:    nil,
+		})
+		return
+	}
+
+	// 2. 调用核心方法更新配置
+	if err := o.operator.UpdateGlobalTargetAddrs(req, o.logger); err != nil {
+		o.logger.Error("Failed to update target addrs", "error", err)
+		c.JSON(http.StatusInternalServerError, envoymanager2.APICommonResp{
+			Code:    500,
+			Message: "更新后端地址失败：" + err.Error(),
+			Data:    nil,
+		})
+		return
+	}
+
+	// 3. 返回成功响应
+	o.logger.Info("Update envoy target addrs success", "target_addrs", req)
+	c.JSON(http.StatusOK, envoymanager2.APICommonResp{
+		Code:    0,
+		Message: "更新后端地址成功",
+		Data:    nil,
 	})
 }
 
@@ -142,6 +156,10 @@ func InitEnvoyAPIRouter(router *gin.Engine, logger *slog.Logger) {
 	{
 		envoyGroup.POST("/create", handler.HandleEnvoyPortCreate)
 		envoyGroup.POST("/disable", handler.HandleEnvoyPortDisable)
-		envoyGroup.GET("/query", handler.HandleEnvoyPortQuery)
+	}
+	envoyGroup1 := router.Group("/envoy/cfg")
+	{
+		envoyGroup1.GET("/setTargetIps", handler.HandleEnvoyCfgQuery)
+		envoyGroup1.GET("/query", handler.HandleEnvoyCfgQuery)
 	}
 }

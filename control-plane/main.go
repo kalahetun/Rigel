@@ -29,11 +29,11 @@ func main() {
 	// 2. 初始化Gin路由
 	router := gin.Default()
 
-	// 3. 注册Envoy端口API（已适配matth目录）
-	api.InitEnvoyAPIRouter(router, logger)
-
 	//
 	api.InitVmReportAPIRouter(router, logger)
+
+	// 3. 注册Envoy端口API（已适配matth目录）
+	api.InitEnvoyAPIRouter(router, logger)
 
 	// 4. 启动API服务
 	logger.Info("Envoy端口管理API启动", "addr", ":8081")

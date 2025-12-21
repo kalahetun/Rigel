@@ -1,12 +1,5 @@
 package envoy_manager
 
-// APICommonResp 通用API返回结构
-type APICommonResp struct {
-	Code    int         `json:"code"`    // 状态码 0成功/非0失败
-	Message string      `json:"message"` // 提示信息
-	Data    interface{} `json:"data"`    // 业务数据
-}
-
 // PortRateLimitConfig 端口维度限流配置
 type PortRateLimitConfig struct {
 	Enabled   bool     `json:"enabled"`   // 是否开启限流
@@ -16,28 +9,39 @@ type PortRateLimitConfig struct {
 	Bandwidth int64    `json:"bandwidth"` // 带宽限制 单位 Bytes/s, 1 Mbps = 125000 Bytes/s
 }
 
-// EnvoyPortConfig Envoy端口配置
+// APICommonResp Common API response structure
+type APICommonResp struct {
+	Code    int         `json:"code"`
+	Message string      `json:"message"`
+	Data    interface{} `json:"data"`
+}
+
+// EnvoyTargetAddr Multi target IP + Port
+type EnvoyTargetAddr struct {
+	IP   string `json:"ip" binding:"required,ip"`
+	Port int    `json:"port" binding:"required,min=1,max=65535"`
+}
+
+// EnvoyPortConfig Envoy port config (only listen port + enable status)
 type EnvoyPortConfig struct {
-	Port       int                 `json:"port"`        // 监听端口
-	TargetPort int                 `json:"target_port"` // 转发目标端口
-	Enabled    bool                `json:"enabled"`     // 是否启用
-	RateLimit  PortRateLimitConfig `json:"rate_limit"`  // 限流配置
+	Port    int  `json:"port" binding:"required,min=1,max=65535"`
+	Enabled bool `json:"enabled"`
+	//RateLimit  PortRateLimitConfig `json:"rate_limit"`  // 限流配置
 }
 
-// EnvoyGlobalConfig Envoy全局配置
+// EnvoyGlobalConfig Envoy global config (global target addrs + listen ports)
 type EnvoyGlobalConfig struct {
-	AdminPort int               `json:"admin_port"` // 管理端口（如9901）
-	Ports     []EnvoyPortConfig `json:"ports"`      // 所有端口配置
+	AdminPort   int               `json:"admin_port" binding:"required,min=1,max=65535"`
+	TargetAddrs []EnvoyTargetAddr `json:"target_addrs" binding:"required,dive"` // Global target addrs
+	Ports       []EnvoyPortConfig `json:"ports"`
 }
 
-// EnvoyPortCreateReq 创建Envoy端口请求
+// EnvoyPortCreateReq Create Envoy port request
 type EnvoyPortCreateReq struct {
-	Port       int                 `json:"port" binding:"required,min=1,max=65535"`        // 监听端口
-	TargetPort int                 `json:"target_port" binding:"required,min=1,max=65535"` // 转发端口
-	RateLimit  PortRateLimitConfig `json:"rate_limit"`                                     // 限流配置
+	Port int `json:"port" binding:"required,min=1,max=65535"`
 }
 
-// EnvoyPortDisableReq 禁用Envoy端口请求
+// EnvoyPortDisableReq Disable Envoy port request
 type EnvoyPortDisableReq struct {
-	Port int `json:"port" binding:"required,min=1,max=65535"` // 要禁用的端口
+	Port int `json:"port" binding:"required,min=1,max=65535"`
 }
