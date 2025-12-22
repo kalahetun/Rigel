@@ -163,29 +163,33 @@ EOF
 
 #场景 1：单跳代理（仅 B → S3）
 #Client 发起请求时携带的 Headers：
-# 核心 Headers
-#x-hops: S3                    # 仅包含最终转发目标 S3（Client→B 由 TCP 自动完成）
-#x-index: 2                    # 统一初始值 2（触发 B 节点兜底转发）
-#x-next-hop: S3                # 兜底下一跳（index=2 越界时使用）
-#x-proxy-type: single          # 标记单代理，触发简化翻转逻辑
+# 核心 Headers（替换为实际地址）
+#x-hops: s3.example.com:80    # 最终目标：S3 的 IP/域名+Port
+#x-index: 2                   # 固定值 2
+#x-next-hop: s3.example.com:80 # 兜底 S3 地址
+#x-proxy-type: single         # 单代理标记
 #
-## 可选通用 Headers（根据实际需求补充）
+## 关键：Host 指向 B 节点的实际地址（TCP 自动转发）
+#Host: 192.168.1.100:8080
+#
+## 通用 Headers
 #Content-Type: application/json
 #Accept: application/json
-#Host: B                       # 指向第一个代理节点 B（TCP 自动转发）
 
 #场景 2：2 跳代理（A → B → S3）
 #Client 发起请求时携带的 Headers：
-## 核心 Headers
-#x-hops: A,B,S3                # 完整代理链+最终目标（A 是接收节点，B 是转发节点，S3 是目标）
-#x-index: 2                    # 统一初始值 2（A 节点直接指向 B）
-#x-next-hop: B                 # 兜底下一跳（防止 index 异常）
-#x-proxy-type: multi           # 标记多代理，触发完整翻转逻辑
+## 核心 Headers（代理链+S3 均为 IP:Port）
+#x-hops: 192.168.1.90:8080,192.168.1.100:8080,s3.example.com:80
+#x-index: 2                   # 固定值 2（指向 B 节点）
+#x-next-hop: 192.168.1.100:8080 # 兜底 B 节点地址
+#x-proxy-type: multi          # 多代理标记
 #
-## 可选通用 Headers
+## 关键：Host 指向 A 节点的实际地址
+#Host: 192.168.1.90:8080
+#
+## 通用 Headers
 #Content-Type: application/json
 #Accept: application/json
-#Host: A                       # 指向第一个代理节点 A（TCP 自动转发）
 
 # --------------------------
 # 7. 生成 Lua 脚本
