@@ -96,6 +96,8 @@ static_resources:
                 common_http_protocol_options:
                   idle_timeout: 300s
                 stream_idle_timeout: 300s
+                # 核心新增：限制最大并发连接数（实现全局缓冲≈1GB）
+                max_connections: 8192  # 128KB/连接 × 8192连接 = 1GB 全局缓冲上限
                 # Route config (bind to dummy cluster for syntax validity)
                 route_config:
                   name: local_route
@@ -107,6 +109,10 @@ static_resources:
                             prefix: "/"
                           route:
                             cluster: dummy_cluster
+                # Buffer config (adapt to 8M file transfer) - 修正注释+逻辑
+                # buffer_pool_limit_bytes: 1073741824        # 1GB per connection buffer (deprecated, for compatibility)
+                per_connection_buffer_limit_bytes: 131072  # 128KB per connection buffer (core limit)
+                per_stream_buffer_limit_bytes: 65536       # 64KB per stream buffer (per request limit)
                 # HTTP filter chain (Lua + Router)
                 http_filters:
                   # Lua filter: handle hops routing & ACK reverse
@@ -154,11 +160,6 @@ static_resources:
                     socket_address:
                       address: 127.0.0.1
                       port_value: 8080
-
-# Buffer config (adapt to 8M file transfer)
-buffer_pool_limit_bytes: 1073741824        # 1GB global total buffer
-per_connection_buffer_limit_bytes: 131072  # 128KB per connection buffer
-per_stream_buffer_limit_bytes: 65536       # 64KB per stream buffer
 EOF
 
 #场景 1：单跳代理（仅 B → S3）

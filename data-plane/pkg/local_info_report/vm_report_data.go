@@ -26,6 +26,8 @@ type VMReport struct {
 
 	// 进程信息（可选）
 	Process ProcessInfo `json:"process,omitempty"`
+
+	EnvoyMem EnvoyBufferStats `json:"envoy_mem"`
 }
 
 // CPUInfo CPU维度信息
@@ -88,4 +90,14 @@ type ApiResponse struct {
 	Code int         `json:"code"` // 200=成功，400=参数错误，500=服务端错误
 	Msg  string      `json:"msg"`  // 提示信息
 	Data interface{} `json:"data"` // 业务数据：上报时放VMReport，响应时放回填充后的VMReport
+}
+
+// EnvoyBufferStats Envoy缓冲内存统计结果
+type EnvoyBufferStats struct {
+	MaxConnections            int64   `json:"max_connections"`               // 最大并发连接数（8192）
+	PerConnBufferLimitBytes   int64   `json:"per_conn_buffer_limit_bytes"`   // 单连接缓冲上限（128KB=131072字节）
+	GlobalBufferUsedBytes     int64   `json:"global_buffer_used_bytes"`      // 全局已用缓冲字节数
+	GlobalBufferLimitBytes    int64   `json:"global_buffer_limit_bytes"`     // 全局缓冲上限（MaxConnections * PerConnBufferLimitBytes）
+	GlobalBufferUsedPercent   float64 `json:"global_buffer_used_percent"`    // 全局缓冲使用率（已用/上限，百分比）
+	PerStreamBufferLimitBytes int64   `json:"per_stream_buffer_limit_bytes"` // 单流缓冲上限（64KB=65536字节）
 }
