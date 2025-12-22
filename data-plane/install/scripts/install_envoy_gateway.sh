@@ -17,6 +17,8 @@ ENVOY_HOME="/home/matth"
 ENVOY_BIN="${ENVOY_HOME}/envoy"
 ENVOY_CONFIG="${ENVOY_HOME}/envoy-mini.yaml"
 DOWNLOAD_URL=""
+LUA_SCRIPT_PATH="${ENVOY_HOME}/hop_router.lua"  # Lua script in same directory as config
+PROFILE_DIR="$(dirname ${ENVOY_CONFIG})/profile"
 
 # --------------------------
 # 2. 架构检测
@@ -42,31 +44,258 @@ sudo apt clean
 # 4. 下载 Envoy
 # --------------------------
 if [ -f "${ENVOY_BIN}" ]; then
+    echo "ℹ️  发现已存在 Envoy 二进制，备份为 ${ENVOY_BIN}.bak"
     mv "${ENVOY_BIN}" "${ENVOY_BIN}.bak"
 fi
 
+echo "📥 下载 Envoy ${ENVOY_VERSION} (${ARCH})..."
 curl -L "${DOWNLOAD_URL}" -o "${ENVOY_BIN}"
 chmod +x "${ENVOY_BIN}"
 chown matth:matth "${ENVOY_BIN}"
 
+echo "✅ Envoy 版本验证："
 "${ENVOY_BIN}" --version
 
 # --------------------------
-# 5. 生成最小配置
+# 5. 创建 profile 目录（避免Admin报错）
 # --------------------------
+mkdir -p "${PROFILE_DIR}"
+chown matth:matth "${PROFILE_DIR}"
+chmod 755 "${PROFILE_DIR}"
+
+# --------------------------
+# 6. 生成最小配置
+# --------------------------
+echo "📝 生成 Envoy 配置文件 ${ENVOY_CONFIG}..."
 cat > "${ENVOY_CONFIG}" << EOF
+# Envoy configuration: 8M file forwarding + dynamic hops routing + port 8095
 admin:
   address:
     socket_address:
       address: 127.0.0.1
       port_value: 9901
+  access_log_path: "$(dirname ${ENVOY_CONFIG})/admin_access.log"
+  profile_path: "${PROFILE_DIR}"
 
 static_resources:
-  listeners: []
-  clusters: []
+  listeners:
+    # Business listener port: 8095
+    - name: listener_8095
+      address:
+        socket_address:
+          address: 0.0.0.0
+          port_value: 8095
+      filter_chains:
+        - filters:
+            # HTTP connection manager (HTTP/1.1 core config)
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                codec_type: HTTP1.1
+                stat_prefix: ingress_http_8095
+                common_http_protocol_options:
+                  idle_timeout: 300s
+                stream_idle_timeout: 300s
+                # Route config (bind to dummy cluster for syntax validity)
+                route_config:
+                  name: local_route
+                  virtual_hosts:
+                    - name: local_service
+                      domains: ["*"]
+                      routes:
+                        - match:
+                            prefix: "/"
+                          route:
+                            cluster: dummy_cluster
+                # HTTP filter chain (Lua + Router)
+                http_filters:
+                  # Lua filter: handle hops routing & ACK reverse
+                  - name: envoy.filters.http.lua
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
+                      script_path: "${LUA_SCRIPT_PATH}"  # Lua script in ENVOY_HOME
+                      log_level: info
+                  # Router filter: final forward
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+  # Dummy cluster: config reuse, endpoint overwritten by Lua
+  clusters:
+    - name: dummy_cluster
+      connect_timeout: 0.25s
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      # HTTP/1.1 protocol config (core effective for large file)
+      http_protocol_options:
+        "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+        explicit_http_config:
+          http1_protocol_options:
+            keep_alive:
+              keep_alive_timeout: 300s
+              keep_alive_interval: 10s
+            max_request_header_kb: 16
+      # Connection pool circuit breakers (support high concurrency)
+      circuit_breakers:
+        thresholds:
+          - priority: DEFAULT
+            max_connections: 2000
+            max_pending_requests: 1000
+            max_requests: 4000
+      # Upstream idle connection management
+      common_http_protocol_options:
+        idle_timeout: 300s
+      # Dummy endpoint (placeholder, overwritten by Lua Host header)
+      load_assignment:
+        cluster_name: dummy_cluster
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: 127.0.0.1
+                      port_value: 8080
+
+# Buffer config (adapt to 8M file transfer)
+buffer_pool_limit_bytes: 1073741824        # 1GB global total buffer
+per_connection_buffer_limit_bytes: 131072  # 128KB per connection buffer
+per_stream_buffer_limit_bytes: 65536       # 64KB per stream buffer
 EOF
 
-chown matth:matth "${ENVOY_CONFIG}"
+# --------------------------
+# 7. 生成 Lua 脚本
+# --------------------------
+echo "📝 生成 Lua 脚本 ${LUA_SCRIPT_PATH}..."
+cat > "${LUA_SCRIPT_PATH}" << EOF
+-- Envoy Lua Filter: hops dynamic routing + S3 ACK reverse (HTTP/1.1)
+local HEADER_CONST = {
+    HOPS = "x-hops",
+    NEXT_HOP = "x-next-hop",
+    INDEX = "x-index",
+    HOST = "Host",
+    STATUS = ":status"
+}
 
-echo "✅ Envoy 安装完成！配置文件：${ENVOY_CONFIG}，二进制：${ENVOY_BIN}"
-echo "⚠️ 请通过 Go 程序启动 Envoy"
+local BUSINESS_RULE = {
+    S3_ACK_SUCCESS_STATUS = "200",
+    EMPTY_VALUE = "",
+    SEPARATOR = ",",
+    INIT_INDEX = "0"
+}
+
+-- Split string to array
+local function split_str(str, sep)
+    local arr = {}
+    if str == nil or str == BUSINESS_RULE.EMPTY_VALUE then
+        return arr
+    end
+    for val in string.gmatch(str, "[^" .. sep .. "]+") do
+        table.insert(arr, val)
+    end
+    return arr
+end
+
+-- Reverse array
+local function reverse_arr(arr)
+    local reversed = {}
+    for i = #arr, 1, -1 do
+        table.insert(reversed, arr[i])
+    end
+    return reversed
+end
+
+-- Join array to string
+local function join_arr(arr, sep)
+    if #arr == 0 then
+        return BUSINESS_RULE.EMPTY_VALUE
+    end
+    return table.concat(arr, sep)
+end
+
+-- Request phase handler
+function envoy_on_request(request_handle)
+    local hops_str = request_handle:headers():get(HEADER_CONST.HOPS) or BUSINESS_RULE.EMPTY_VALUE
+    local index_str = request_handle:headers():get(HEADER_CONST.INDEX) or BUSINESS_RULE.INIT_INDEX
+    local current_next_hop = request_handle:headers():get(HEADER_CONST.NEXT_HOP) or BUSINESS_RULE.EMPTY_VALUE
+
+    local hops_arr = split_str(hops_str, BUSINESS_RULE.SEPARATOR)
+    local current_index = tonumber(index_str) or tonumber(BUSINESS_RULE.INIT_INDEX)
+
+    if #hops_arr == 0 then
+        request_handle:logErr("Missing x-hops header, reject forwarding")
+        request_handle:respond({[HEADER_CONST.STATUS] = "400"}, "Missing x-hops header")
+        return
+    end
+
+    local target_hop = BUSINESS_RULE.EMPTY_VALUE
+    local new_index = current_index
+    local new_next_hop = BUSINESS_RULE.EMPTY_VALUE
+
+    if current_index < #hops_arr then
+        target_hop = hops_arr[current_index + 1]
+        new_index = current_index + 1
+        new_next_hop = new_index < #hops_arr and hops_arr[new_index + 1] or BUSINESS_RULE.EMPTY_VALUE
+        request_handle:headers():set(HEADER_CONST.HOST, target_hop)
+        request_handle:logInfo("Forward config updated: current index=" .. current_index .. " → new index=" .. new_index ..
+                               ", next hop=" .. target_hop .. ", next next hop=" .. new_next_hop)
+    else
+        request_handle:logWarn("Index=" .. current_index .. " exceeds hops length=" .. #hops_arr .. ", mark as last hop")
+        target_hop = current_next_hop
+    end
+
+    request_handle:headers():set(HEADER_CONST.INDEX, tostring(new_index))
+    request_handle:headers():set(HEADER_CONST.NEXT_HOP, new_next_hop)
+
+    local is_last_hop = (new_index >= #hops_arr)
+    request_handle:streamInfo():setMetadata("hop_router", "is_last_hop", tostring(is_last_hop))
+    request_handle:logInfo("Request processed: is_last_hop=" .. tostring(is_last_hop))
+end
+
+-- Response phase handler
+function envoy_on_response(response_handle)
+    local is_last_hop_str = response_handle:streamInfo():metadata():get("hop_router", "is_last_hop") or "false"
+    local is_last_hop = (is_last_hop_str == "true")
+
+    if not is_last_hop then
+        return
+    end
+
+    local status_code = response_handle:headers():get(HEADER_CONST.STATUS) or BUSINESS_RULE.EMPTY_VALUE
+    if status_code ~= BUSINESS_RULE.S3_ACK_SUCCESS_STATUS then
+        response_handle:logWarn("Last hop response status=" .. status_code .. ", not valid S3 ACK, skip hops reverse")
+        return
+    end
+
+    local hops_str = response_handle:headers():get(HEADER_CONST.HOPS) or BUSINESS_RULE.EMPTY_VALUE
+    local hops_arr = split_str(hops_str, BUSINESS_RULE.SEPARATOR)
+    local reversed_hops_arr = reverse_arr(hops_arr)
+    local reversed_hops_str = join_arr(reversed_hops_arr, BUSINESS_RULE.SEPARATOR)
+
+    response_handle:headers():set(HEADER_CONST.HOPS, reversed_hops_str)
+    response_handle:headers():set(HEADER_CONST.INDEX, BUSINESS_RULE.INIT_INDEX)
+    local new_next_hop = #reversed_hops_arr > 0 and reversed_hops_arr[1] or BUSINESS_RULE.EMPTY_VALUE
+    response_handle:headers():set(HEADER_CONST.NEXT_HOP, new_next_hop)
+
+    response_handle:logInfo("Last hop ACK processed: original hops=" .. hops_str .. " → reversed hops=" .. reversed_hops_str ..
+                           ", reset index=0, new next hop=" .. new_next_hop)
+end
+EOF
+
+# --------------------------
+# 8. 设置文件权限
+# --------------------------
+chown matth:matth "${ENVOY_CONFIG}"
+chmod 644 "${ENVOY_CONFIG}"
+chown matth:matth "${LUA_SCRIPT_PATH}"
+chmod 644 "${LUA_SCRIPT_PATH}"
+
+# --------------------------
+# 9. 完成提示
+# --------------------------
+echo -e "\n✅ Envoy 安装配置全部完成！"
+echo -e "📌 关键文件路径："
+echo -e "  - Envoy 二进制：${ENVOY_BIN}"
+echo -e "  - 配置文件：${ENVOY_CONFIG}"
+echo -e "  - Lua 脚本：${LUA_SCRIPT_PATH}"
+echo -e "  - Admin 日志：$(dirname ${ENVOY_CONFIG})/admin_access.log"
+echo -e "  - 性能分析目录：${PROFILE_DIR}"
+echo -e "⚠️  请通过 Go 程序启动 Envoy（启动命令参考：${ENVOY_BIN} -c ${ENVOY_CONFIG}）"

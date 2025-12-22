@@ -46,9 +46,9 @@ func (o *EnvoyOperator) InitEnvoyGlobalConfig(adminPort int) error {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 
-	//8090-8099 默认端口
+	//8090-8094 默认端口
 	ports := make([]EnvoyPortConfig, 0)
-	for i := 8090; i <= 8099; i++ {
+	for i := 8090; i <= 8094; i++ {
 		ports = append(ports, EnvoyPortConfig{8090, true})
 	}
 
