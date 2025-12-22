@@ -1,6 +1,7 @@
 package data_plane
 
 import (
+	"data-plane/pkg/envoy_manager"
 	model "data-plane/pkg/local_info_report"
 	"data-plane/pkg/local_info_report/reporter"
 	"github.com/gin-gonic/gin"
@@ -10,6 +11,18 @@ import (
 	"path/filepath"
 	"time"
 )
+
+func InitEnvoy(logger *slog.Logger) {
+	// 创建启动器
+	starter := envoy_manager.NewEnvoyStarter()
+
+	// 启动Envoy
+	pid, err := starter.StartEnvoy(logger)
+	if err != nil {
+		logger.Error("Envoy启动失败: %v", err)
+	}
+	logger.Info("Envoy启动成功，PID: %d", pid)
+}
 
 func main() {
 	// 创建 log 目录（与 pkg 同级）
@@ -41,6 +54,8 @@ func main() {
 
 	// 3. 初始化上报器
 	go reporter.ReportCycle(logger)
+	
+	InitEnvoy(logger)
 
 	// 4. 启动API服务
 	logger.Info("API端口启动", "addr", ":8082")
