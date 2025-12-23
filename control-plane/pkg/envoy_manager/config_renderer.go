@@ -14,6 +14,8 @@ admin:
     socket_address:
       address: 0.0.0.0
       port_value: {{.AdminPort}}
+  access_log_path: "${ENVOY_HOME}/admin_access.log"
+  profile_path: "${ENVOY_HOME}/profile"
 static_resources:
   listeners:
 {{range .Ports}}{{if .Enabled}}
