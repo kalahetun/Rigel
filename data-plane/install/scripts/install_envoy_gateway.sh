@@ -296,7 +296,7 @@ function envoy_on_request(request_handle)
     if current_index < hops_len then
         target_hop = hops_arr[current_index]
         new_index = current_index + 1
-        new_next_hop = new_index < hops_len and hops_arr[new_index] or BUSINESS_RULE.EMPTY_VALUE
+        new_next_hop = new_index <= hops_len and hops_arr[new_index] or BUSINESS_RULE.EMPTY_VALUE
         request_handle:logInfo(string.format(
             "Normal forward: proxy_type=%s, index=%d → target=%s, new_index=%d",
             proxy_type, current_index, target_hop, new_index
@@ -325,7 +325,7 @@ function envoy_on_request(request_handle)
     request_handle:headers():set(HEADER_CONST.NEXT_HOP, new_next_hop)
 
     -- 7. 标记是否为最后一跳（上下文传递）
-    local is_last_hop = (new_index >= hops_len)
+    local is_last_hop = (new_index > hops_len)
     request_handle:streamInfo():setMetadata("hop_router", "is_last_hop", tostring(is_last_hop))
     request_handle:logInfo(string.format(
         "Request processed: proxy_type=%s, is_last_hop=%s",
