@@ -343,7 +343,9 @@ function envoy_on_response(response_handle)
     local is_last_hop_str = response_handle:streamInfo():metadata():get("hop_router", "is_last_hop") or "false"
     local is_last_hop = (is_last_hop_str == "true")
     local proxy_type = response_handle:headers():get(HEADER_CONST.PROXY_TYPE) or BUSINESS_RULE.EMPTY_VALUE
-    local status_code = response_handle:headers():get(HEADER_CONST.STATUS) or BUSINESS_RULE.EMPTY_VALUE
+
+    local status_code_num = response_handle:responseCode()
+    local status_code = status_code_num and tostring(status_code_num) or BUSINESS_RULE.EMPTY_VALUE
 
     local hops_str = response_handle:headers():get(HEADER_CONST.HOPS) or BUSINESS_RULE.EMPTY_VALUE
     local client_str = response_handle:headers():get(HEADER_CONST.CLIENT) or BUSINESS_RULE.EMPTY_VALUE
