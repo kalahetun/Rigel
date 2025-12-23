@@ -90,7 +90,8 @@ func (s *EnvoyStarter) StartEnvoy(logger *slog.Logger) (int, error) {
 
 // IsEnvoyRunning 检查Envoy是否正在运行（仅检查matth用户的envoy进程）
 func (s *EnvoyStarter) IsEnvoyRunning() bool {
-	cmd := exec.Command("pgrep", "-u", "matth", "envoy")
+	//cmd := exec.Command("pgrep", "-u", "matth", "envoy")
+	cmd := exec.Command("pgrep", "envoy")
 	output, err := cmd.Output()
 	if err != nil {
 		return false

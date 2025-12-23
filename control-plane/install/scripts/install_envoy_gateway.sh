@@ -4,10 +4,10 @@ set -euo pipefail
 # --------------------------
 # 0. 前置检查
 # --------------------------
-if [ "$USER" != "matth" ]; then
-    echo "❌ 必须以 matth 用户运行"
-    exit 1
-fi
+#if [ "$USER" != "matth" ]; then
+#    echo "❌ 必须以 matth 用户运行"
+#    exit 1
+#fi
 
 # --------------------------
 # 1. 常量定义
@@ -47,7 +47,7 @@ fi
 
 curl -L "${DOWNLOAD_URL}" -o "${ENVOY_BIN}"
 chmod +x "${ENVOY_BIN}"
-chown matth:matth "${ENVOY_BIN}"
+chown 640 "${ENVOY_BIN}"
 
 "${ENVOY_BIN}" --version
 
@@ -66,7 +66,7 @@ static_resources:
   clusters: []
 EOF
 
-chown matth:matth "${ENVOY_CONFIG}"
+chown 644 "${ENVOY_CONFIG}"
 
 echo "✅ Envoy 安装完成！配置文件：${ENVOY_CONFIG}，二进制：${ENVOY_BIN}"
 echo "⚠️ 请通过 Go 程序启动 Envoy"

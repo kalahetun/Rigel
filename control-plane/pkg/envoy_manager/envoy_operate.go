@@ -304,7 +304,8 @@ func (o *EnvoyOperator) HotReloadEnvoyConfig(logger *slog.Logger) error {
 
 // IsEnvoyRunning 检查Envoy是否正在运行
 func (o *EnvoyOperator) IsEnvoyRunning() bool {
-	cmd := exec.Command("pgrep", "-u", "matth", "envoy")
+	//cmd := exec.Command("pgrep", "-u", "matth", "envoy")
+	cmd := exec.Command("pgrep", "envoy")
 	output, err := cmd.Output()
 	if err != nil {
 		return false
@@ -315,10 +316,10 @@ func (o *EnvoyOperator) IsEnvoyRunning() bool {
 // -------------------------- 私有辅助函数 --------------------------
 // checkCurrentUserIsMatth 检查当前运行用户是否为matth
 func checkCurrentUserIsMatth() {
-	currentUser := os.Getenv("USER")
-	if currentUser != "matth" {
-		log.Fatalf("❌ 必须以matth用户运行此程序（当前用户：%s）", currentUser)
-	}
+	//currentUser := os.Getenv("USER")
+	//if currentUser != "matth" {
+	//	log.Fatalf("❌ 必须以matth用户运行此程序（当前用户：%s）", currentUser)
+	//}
 }
 
 // isProcessAlive 检查进程是否存活

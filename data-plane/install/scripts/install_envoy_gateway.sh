@@ -4,10 +4,10 @@ set -euo pipefail
 # --------------------------
 # 0. 前置检查
 # --------------------------
-if [ "$USER" != "matth" ]; then
-    echo "❌ 必须以 matth 用户运行"
-    exit 1
-fi
+#if [ "$USER" != "matth" ]; then
+#    echo "❌ 必须以 matth 用户运行"
+#    exit 1
+#fi
 
 # --------------------------
 # 1. 常量定义
@@ -51,7 +51,7 @@ fi
 echo "📥 下载 Envoy ${ENVOY_VERSION} (${ARCH})..."
 curl -L "${DOWNLOAD_URL}" -o "${ENVOY_BIN}"
 chmod +x "${ENVOY_BIN}"
-chown matth:matth "${ENVOY_BIN}"
+chown 640 "${ENVOY_BIN}"
 
 echo "✅ Envoy 版本验证："
 "${ENVOY_BIN}" --version
@@ -60,7 +60,6 @@ echo "✅ Envoy 版本验证："
 # 5. 创建 profile 目录（避免Admin报错）
 # --------------------------
 mkdir -p "${PROFILE_DIR}"
-chown matth:matth "${PROFILE_DIR}"
 chmod 755 "${PROFILE_DIR}"
 
 # --------------------------
@@ -416,9 +415,7 @@ EOF
 # --------------------------
 # 8. 设置文件权限
 # --------------------------
-chown matth:matth "${ENVOY_CONFIG}"
 chmod 644 "${ENVOY_CONFIG}"
-chown matth:matth "${LUA_SCRIPT_PATH}"
 chmod 644 "${LUA_SCRIPT_PATH}"
 
 # --------------------------
