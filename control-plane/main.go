@@ -1,4 +1,4 @@
-package control_plane
+package main
 
 import (
 	"control-plane/pkg/api"

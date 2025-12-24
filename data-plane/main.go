@@ -1,4 +1,4 @@
-package data_plane
+package main
 
 import (
 	"data-plane/pkg/envoy_manager"
