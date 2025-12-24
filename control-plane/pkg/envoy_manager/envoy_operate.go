@@ -55,7 +55,7 @@ func (o *EnvoyOperator) InitEnvoyGlobalConfig(adminPort int) error {
 	//数据面转发端口8083
 	targetAddrs := make([]EnvoyTargetAddr, 0)
 	//todo 临时手动填充
-	targetAddrs = append(targetAddrs, EnvoyTargetAddr{IP: "34.69.185.247", Port: 8095})
+	targetAddrs = append(targetAddrs, EnvoyTargetAddr{IP: "35.238.46.215", Port: 8095})
 
 	o.GlobalCfg = &EnvoyGlobalConfig{
 		AdminPort:   adminPort,
