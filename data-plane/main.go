@@ -4,6 +4,7 @@ import (
 	"data-plane/pkg/envoy_manager"
 	model "data-plane/pkg/local_info_report"
 	"data-plane/pkg/local_info_report/reporter"
+	"data-plane/util"
 	"github.com/gin-gonic/gin"
 	"log/slog"
 	"net/http"
@@ -25,6 +26,7 @@ func InitEnvoy(logger *slog.Logger) {
 }
 
 func main() {
+
 	// 创建 log 目录（与 pkg 同级）
 	logDir := filepath.Join(".", "log")
 	if err := os.MkdirAll(logDir, os.ModePerm); err != nil {
@@ -41,6 +43,8 @@ func main() {
 		Level: slog.LevelInfo,
 	}))
 
+	util.Config_, _ = util.ReadYamlConfig(logger)
+
 	// 2. 初始化Gin路由
 	router := gin.Default()
 
@@ -54,7 +58,7 @@ func main() {
 
 	// 3. 初始化上报器
 	go reporter.ReportCycle(logger)
-	
+
 	InitEnvoy(logger)
 
 	// 4. 启动API服务

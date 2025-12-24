@@ -1,6 +1,7 @@
 package envoy_manager
 
 import (
+	"data-plane/util"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -55,6 +56,8 @@ func (s *EnvoyStarter) StartEnvoy(logger *slog.Logger) (int, error) {
 		"--base-id", strconv.Itoa(s.baseID), // 基础ID
 		"--log-level", "info", // 日志级别
 	)
+
+	logger.Info("Test config load", util.Config_.EnvoyPath)
 
 	// 4. 日志重定向（输出到控制台）
 	cmd.Stdout = os.Stdout
