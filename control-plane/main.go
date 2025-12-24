@@ -2,11 +2,11 @@ package control_plane
 
 import (
 	"control-plane/pkg/api"
+	"control-plane/util"
+	"github.com/gin-gonic/gin"
 	"log/slog"
 	"os"
 	"path/filepath"
-
-	"github.com/gin-gonic/gin"
 )
 
 func main() {
@@ -25,6 +25,9 @@ func main() {
 	logger := slog.New(slog.NewTextHandler(logFile, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
 	}))
+
+	util.Config_, _ = util.ReadYamlConfig(logger)
+	logger.Info("读取配置文件成功", "config", util.Config_)
 
 	// 2. 初始化Gin路由
 	router := gin.Default()
