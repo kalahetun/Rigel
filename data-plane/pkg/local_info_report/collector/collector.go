@@ -2,6 +2,7 @@ package collector
 
 import (
 	model "data-plane/pkg/local_info_report"
+	"log/slog"
 	"os"
 	"time"
 )
@@ -15,7 +16,7 @@ func NewVMCollector() *VMCollector {
 }
 
 // Collect 采集所有VM信息并组装为VMReport
-func (c *VMCollector) Collect() (*model.VMReport, error) {
+func (c *VMCollector) Collect(logger *slog.Logger) (*model.VMReport, error) {
 	// 1. 采集各维度信息
 	cpuInfo, err := collectCPU()
 	if err != nil {
@@ -48,13 +49,9 @@ func (c *VMCollector) Collect() (*model.VMReport, error) {
 	}
 
 	hostname, _ := os.Hostname()
-	
+
 	// 一站式获取缓冲统计
-	envoyMemInfo, err := GetEnvoyFullBufferStats("127.0.0.1:9901")
-	if err != nil {
-		//fmt.Printf("获取Envoy缓冲统计失败: %v\n", err)
-		return nil, err
-	}
+	envoyMemInfo := GetEnvoyFullBufferStats(logger)
 
 	// 指针解引用 + 逐字段拷贝到model层结构体
 	envoyMemInfo_ := model.EnvoyBufferStats{

@@ -67,25 +67,15 @@ chmod 755 "${PROFILE_DIR}"
 # --------------------------
 echo "📝 生成 Envoy 配置文件 ${ENVOY_CONFIG}..."
 cat > "${ENVOY_CONFIG}" << EOF
-# Envoy configuration: 8M file forwarding + dynamic hops routing + port 8095
+# Envoy 1.28.0 最小启动配置：强制保留Lua脚本加载（必选）
 admin:
   address:
     socket_address:
       address: 127.0.0.1
       port_value: 9901
-  access_log_path: "$(dirname ${ENVOY_CONFIG})/admin_access.log"
-  profile_path: "${PROFILE_DIR}"
-
-logging:
-  log_level: info
-  format: "[%Y-%m-%d %T.%e][%t][%l][envoy] %v"
-  sink:
-    file:
-      path: "${ENVOY_HOME}/envoy_system.log"
 
 static_resources:
   listeners:
-    # Business listener port: 8095
     - name: listener_8095
       address:
         socket_address:
@@ -93,18 +83,11 @@ static_resources:
           port_value: 8095
       filter_chains:
         - filters:
-            # HTTP connection manager (HTTP/1.1 core config)
             - name: envoy.filters.network.http_connection_manager
               typed_config:
                 "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
-                codec_type: HTTP1.1
+                codec_type: HTTP1
                 stat_prefix: ingress_http_8095
-                common_http_protocol_options:
-                  idle_timeout: 300s
-                stream_idle_timeout: 300s
-                # 核心新增：限制最大并发连接数（实现全局缓冲≈1GB）
-                max_connections: 8192  # 128KB/连接 × 8192连接 = 1GB 全局缓冲上限
-                # Route config (bind to dummy cluster for syntax validity)
                 route_config:
                   name: local_route
                   virtual_hosts:
@@ -115,48 +98,24 @@ static_resources:
                             prefix: "/"
                           route:
                             cluster: dummy_cluster
-                # Buffer config (adapt to 8M file transfer) - 修正注释+逻辑
-                # buffer_pool_limit_bytes: 1073741824        # 1GB per connection buffer (deprecated, for compatibility)
-                per_connection_buffer_limit_bytes: 131072  # 128KB per connection buffer (core limit)
-                per_stream_buffer_limit_bytes: 65536       # 64KB per stream buffer (per request limit)
-                # HTTP filter chain (Lua + Router)
                 http_filters:
-                  # Lua filter: handle hops routing & ACK reverse
+                  # 强制加载外部Lua脚本（必选，不可删除）
                   - name: envoy.filters.http.lua
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
-                      script_path: "${LUA_SCRIPT_PATH}"  # Lua script in ENVOY_HOME
-                      log_level: info
-                  # Router filter: final forward
+                      source_codes:
+                        route_hops.lua:
+                          filename: "/home/matth/hop_router.lua"  # 固定脚本路径，必须存在
+                  # 路由转发（依赖Lua后执行）
                   - name: envoy.filters.http.router
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
-  # Dummy cluster: config reuse, endpoint overwritten by Lua
+  # 核心集群配置
   clusters:
     - name: dummy_cluster
       connect_timeout: 0.25s
       type: STRICT_DNS
       lb_policy: ROUND_ROBIN
-      # HTTP/1.1 protocol config (core effective for large file)
-      http_protocol_options:
-        "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
-        explicit_http_config:
-          http1_protocol_options:
-            keep_alive:
-              keep_alive_timeout: 300s
-              keep_alive_interval: 10s
-            max_request_header_kb: 16
-      # Connection pool circuit breakers (support high concurrency)
-      circuit_breakers:
-        thresholds:
-          - priority: DEFAULT
-            max_connections: 2000
-            max_pending_requests: 1000
-            max_requests: 4000
-      # Upstream idle connection management
-      common_http_protocol_options:
-        idle_timeout: 300s
-      # Dummy endpoint (placeholder, overwritten by Lua Host header)
       load_assignment:
         cluster_name: dummy_cluster
         endpoints:

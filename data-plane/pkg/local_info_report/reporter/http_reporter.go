@@ -5,7 +5,6 @@ import (
 	"data-plane/pkg/local_info_report/collector"
 	"encoding/json"
 	"fmt"
-	"log"
 	"log/slog"
 	"net/http"
 	"time"
@@ -104,9 +103,9 @@ func ReportCycle(logger *slog.Logger) {
 func reportOnce(collector *collector.VMCollector, reporter *HTTPReporter, logger *slog.Logger) {
 	// 1. 采集信息
 	logger.Info("开始采集VM信息...")
-	vmReport, err := collector.Collect()
+	vmReport, err := collector.Collect(logger)
 	if err != nil {
-		log.Printf("采集失败：%v", err)
+		logger.Error("采集失败：%v", err)
 		return
 	}
 

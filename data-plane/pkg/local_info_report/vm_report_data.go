@@ -93,11 +93,10 @@ type ApiResponse struct {
 }
 
 // EnvoyBufferStats Envoy缓冲内存统计结果
+// EnvoyBufferStats Envoy缓冲统计结构体（添加JSON标签，仅保留字节维度）
 type EnvoyBufferStats struct {
-	MaxConnections            int64   `json:"max_connections"`               // 最大并发连接数（8192）
-	PerConnBufferLimitBytes   int64   `json:"per_conn_buffer_limit_bytes"`   // 单连接缓冲上限（128KB=131072字节）
-	GlobalBufferUsedBytes     int64   `json:"global_buffer_used_bytes"`      // 全局已用缓冲字节数
-	GlobalBufferLimitBytes    int64   `json:"global_buffer_limit_bytes"`     // 全局缓冲上限（MaxConnections * PerConnBufferLimitBytes）
-	GlobalBufferUsedPercent   float64 `json:"global_buffer_used_percent"`    // 全局缓冲使用率（已用/上限，百分比）
-	PerStreamBufferLimitBytes int64   `json:"per_stream_buffer_limit_bytes"` // 单流缓冲上限（64KB=65536字节）
+	TotalBuffer   int64  `json:"total_buffer"`    // 全局缓冲总和（字节）
+	ActiveConnRaw string `json:"active_conn_raw"` // 活跃连接数原始值
+	ActiveConn    int64  `json:"active_conn"`     // 活跃连接数（强制转数字后）
+	PerConnBuffer int64  `json:"per_conn_buffer"` // 单连接缓冲均值（字节）
 }
