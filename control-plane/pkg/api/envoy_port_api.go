@@ -144,7 +144,7 @@ func (o *EnvoyPortAPIHandler) GetPortBandwidthConfigHandler(c *gin.Context) {
 		return
 	}
 	for _, port := range cfgCopy.Ports {
-		config[port.Port] = port.BandwidthLimit
+		config[port.Port] = port.RateLimit.Bandwidth
 	}
 	c.JSON(http.StatusOK, config)
 }
@@ -177,6 +177,6 @@ func InitEnvoyAPIRouter(router *gin.Engine, logger *slog.Logger) {
 	}
 	envoyGroup2 := router.Group("/config")
 	{
-		envoyGroup2.GET("/port_bandwidth", handler.GetPortBandwidthConfig)
+		envoyGroup2.GET("/port_bandwidth", handler.GetPortBandwidthConfigHandler)
 	}
 }

@@ -35,8 +35,6 @@ func main() {
 	//
 	api.InitVmReportAPIRouter(router, logger)
 
-	api.InitPortBandwidthAPIRouter(router, logger)
-
 	// 3. 注册Envoy端口API（已适配matth目录）
 	api.InitEnvoyAPIRouter(router, logger)
 
