@@ -136,6 +136,19 @@ func (o *EnvoyPortAPIHandler) UpdateGlobalTargetAddrsHandler(c *gin.Context) {
 	})
 }
 
+func (o *EnvoyPortAPIHandler) GetPortBandwidthConfigHandler(c *gin.Context) {
+	cfgCopy, err := o.operator.GetCurrentConfig()
+	config := make(map[int]int64)
+	if err != nil {
+		c.JSON(http.StatusOK, config)
+		return
+	}
+	for _, port := range cfgCopy.Ports {
+		config[port.Port] = port.BandwidthLimit
+	}
+	c.JSON(http.StatusOK, config)
+}
+
 // InitEnvoyAPIRouter 初始化Envoy端口API路由（已固化matth目录路径）
 func InitEnvoyAPIRouter(router *gin.Engine, logger *slog.Logger) {
 	// 1. 固定配置文件路径（matth目录）
@@ -161,5 +174,9 @@ func InitEnvoyAPIRouter(router *gin.Engine, logger *slog.Logger) {
 	{
 		envoyGroup1.GET("/setTargetIps", handler.HandleEnvoyCfgQuery)
 		envoyGroup1.GET("/query", handler.HandleEnvoyCfgQuery)
+	}
+	envoyGroup2 := router.Group("/config")
+	{
+		envoyGroup2.GET("/port_bandwidth", handler.GetPortBandwidthConfig)
 	}
 }

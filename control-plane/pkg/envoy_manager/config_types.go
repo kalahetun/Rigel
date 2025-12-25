@@ -24,9 +24,9 @@ type EnvoyTargetAddr struct {
 
 // EnvoyPortConfig Envoy port config (only listen port + enable status)
 type EnvoyPortConfig struct {
-	Port    int  `json:"port" binding:"required,min=1,max=65535"`
-	Enabled bool `json:"enabled"`
-	//RateLimit  PortRateLimitConfig `json:"rate_limit"`  // 限流配置
+	Port      int                 `json:"port" binding:"required,min=1,max=65535"`
+	Enabled   bool                `json:"enabled"`
+	RateLimit PortRateLimitConfig `json:"rate_limit"` // 限流配置
 }
 
 // EnvoyGlobalConfig Envoy global config (global target addrs + listen ports)

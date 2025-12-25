@@ -16,6 +16,15 @@ admin:
       port_value: {{.AdminPort}}
   access_log_path: "${ENVOY_HOME}/admin_access.log"
   profile_path: "${ENVOY_HOME}/profile"
+# 启用Lua扩展支持（必需）
+layered_runtime:
+  layers:
+    - name: static_layer_0
+      static_layer:
+        envoy:
+          lua:
+            allow_dynamic_loading: true
+            enable_resty: true
 static_resources:
   listeners:
 {{range .Ports}}{{if .Enabled}}
@@ -39,14 +48,22 @@ static_resources:
               - match:
                   prefix: "/"
                 route:
-                  cluster: target_cluster # Fixed cluster name
+                  cluster: target_cluster
           http_filters:
+          # 核心修改：引用独立Lua文件（替代内联）
+          - name: envoy.filters.http.lua
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
+              source_codes:
+                port_bandwidth_limit.lua:  # 脚本名称（自定义）
+                  filename: "/home/matth/access_router.lua"  # 独立Lua文件路径
+          # 保留原有router过滤器
           - name: envoy.filters.http.router
             typed_config:
               "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
 {{end}}{{end}}
   clusters:
-  - name: target_cluster # Single cluster for all ports
+  - name: target_cluster
     connect_timeout: 0.25s
     type: STATIC
     lb_policy: ROUND_ROBIN
@@ -60,7 +77,6 @@ static_resources:
               socket_address:
                 address: {{.IP}}
                 port_value: {{.Port}}
-            # Per-endpoint health check (independent for each target)
             health_check_config:
               timeout: 1s
               interval: 5s
@@ -68,8 +84,8 @@ static_resources:
               healthy_threshold: 2
               http_health_check:
                 path: /health
-                port_value: 8082  # Fixed health check port
-                host: {{.IP}}      # Host = current target IP (independent)
+                port_value: 8082
+                host: {{.IP}}
         {{end}}
 `
 
