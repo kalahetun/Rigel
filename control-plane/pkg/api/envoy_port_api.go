@@ -14,6 +14,7 @@ const envoyConfigPath = "/home/matth/envoy-mini.yaml"
 type EnvoyPortAPIHandler struct {
 	operator *envoymanager2.EnvoyOperator
 	logger   *slog.Logger
+	logger1  *slog.Logger
 }
 
 // NewEnvoyPortAPIHandler 创建API处理器实例
@@ -37,7 +38,7 @@ func (h *EnvoyPortAPIHandler) HandleEnvoyPortCreate(c *gin.Context) {
 	}
 
 	// 创建/更新端口（配置文件写入/home/matth/envoy.yaml）
-	portCfg, err := h.operator.CreateOrUpdateEnvoyPort(req, h.logger)
+	portCfg, err := h.operator.CreateOrUpdateEnvoyPort(req, h.logger, h.logger1)
 	if err != nil {
 		h.logger.Error("创建Envoy端口失败", "port", req.Port, "error", err)
 		c.JSON(http.StatusInternalServerError, envoymanager2.APICommonResp{
@@ -150,7 +151,7 @@ func (o *EnvoyPortAPIHandler) GetPortBandwidthConfigHandler(c *gin.Context) {
 }
 
 // InitEnvoyAPIRouter 初始化Envoy端口API路由（已固化matth目录路径）
-func InitEnvoyAPIRouter(router *gin.Engine, logger *slog.Logger) {
+func InitEnvoyAPIRouter(router *gin.Engine, logger, logger1 *slog.Logger) {
 	// 1. 固定配置文件路径（matth目录）
 	configPath := envoyConfigPath
 
@@ -159,7 +160,7 @@ func InitEnvoyAPIRouter(router *gin.Engine, logger *slog.Logger) {
 	// 初始化全局配置（管理端口9901）
 	operator.InitEnvoyGlobalConfig(9901)
 
-	err := operator.StartFirstEnvoy(logger)
+	err := operator.StartFirstEnvoy(logger, logger1)
 	if err != nil {
 		logger.Error("启动第一个Envoy失败", "error", err)
 	}

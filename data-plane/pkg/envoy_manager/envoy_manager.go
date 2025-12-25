@@ -1,9 +1,11 @@
 package envoy_manager
 
 import (
+	"bufio"
 	"data-plane/util"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -36,8 +38,43 @@ func NewEnvoyStarter() *EnvoyStarter {
 	}
 }
 
+// slogWriter 适配slog的Writer，将输出转发到logger1
+type slogWriter struct {
+	logger *slog.Logger // 你指定的logger1
+	stream string       // 区分stdout/stderr
+}
+
+// Write 实现io.Writer接口，转发输出到logger1
+func (s *slogWriter) Write(p []byte) (n int, err error) {
+	content := string(p)
+	if content == "" {
+		return len(p), nil
+	}
+	// 根据流类型输出到logger1（stdout=INFO，stderr=ERROR）
+	if s.stream == "stderr" {
+		s.logger.Error(content, "stream", s.stream)
+	} else {
+		s.logger.Info(content, "stream", s.stream)
+	}
+	return len(p), nil
+}
+
+// teeWriter 实现"控制台+logger1"双输出
+type teeWriter struct {
+	console io.Writer // 原有控制台输出（os.Stdout/os.Stderr）
+	slog    io.Writer // 转发到logger1的Writer
+}
+
+func (t *teeWriter) Write(p []byte) (n int, err error) {
+	// 1. 先输出到控制台（保留原有逻辑）
+	n1, err1 := t.console.Write(p)
+	// 2. 再转发到logger1（额外输出）
+	_, _ = t.slog.Write(p) // 忽略logger1写入错误，优先保证控制台输出
+	return n1, err1
+}
+
 // StartEnvoy 启动Envoy（首次启动，epoch=0）
-func (s *EnvoyStarter) StartEnvoy(logger *slog.Logger) (int, error) {
+func (s *EnvoyStarter) StartEnvoy(logger, logger1 *slog.Logger) (int, error) {
 	// 1. 检查配置文件是否存在
 	if _, err := os.Stat(s.configPath); os.IsNotExist(err) {
 		return 0, fmt.Errorf("配置文件不存在: %s", s.configPath)
@@ -59,9 +96,25 @@ func (s *EnvoyStarter) StartEnvoy(logger *slog.Logger) (int, error) {
 
 	logger.Info("Test config load", util.Config_.EnvoyPath)
 
-	// 4. 日志重定向（输出到控制台）
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	// 日志输出
+	//cmd.Stdout = os.Stdout
+	//cmd.Stderr = os.Stderr
+	// --------------------------
+	// 核心修改：保留控制台输出 + 转发到logger1
+	// --------------------------
+	// 1. 创建stdout/stderr对应的slogWriter（关联logger1）
+	stdoutSlogWriter := &slogWriter{logger: logger1, stream: "stdout"}
+	stderrSlogWriter := &slogWriter{logger: logger1, stream: "stderr"}
+
+	// 2. 带缓冲避免阻塞，包装成teeWriter实现双输出
+	cmd.Stdout = &teeWriter{
+		console: os.Stdout,
+		slog:    bufio.NewWriter(stdoutSlogWriter),
+	}
+	cmd.Stderr = &teeWriter{
+		console: os.Stderr,
+		slog:    bufio.NewWriter(stderrSlogWriter),
+	}
 
 	// 5. 启动进程
 	logger.Info("开始启动Envoy，配置文件：%s", s.configPath)

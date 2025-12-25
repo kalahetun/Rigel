@@ -1,8 +1,10 @@
 package envoy_manager
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"log/slog"
 	"os"
@@ -24,6 +26,41 @@ type EnvoyOperator struct {
 	GlobalCfg  *EnvoyGlobalConfig
 	flag       bool         //flag == flase 系统不能服务 8083没有ip
 	mu         sync.RWMutex // 读写锁：读多写少场景更高效
+}
+
+// slogWriter 适配slog的Writer，将输出转发到logger1
+type slogWriter struct {
+	logger *slog.Logger // 你指定的logger1
+	stream string       // 区分stdout/stderr
+}
+
+// Write 实现io.Writer接口，转发输出到logger1
+func (s *slogWriter) Write(p []byte) (n int, err error) {
+	content := string(p)
+	if content == "" {
+		return len(p), nil
+	}
+	// 根据流类型输出到logger1（stdout=INFO，stderr=ERROR）
+	if s.stream == "stderr" {
+		s.logger.Error(content, "stream", s.stream)
+	} else {
+		s.logger.Info(content, "stream", s.stream)
+	}
+	return len(p), nil
+}
+
+// teeWriter 实现"控制台+logger1"双输出
+type teeWriter struct {
+	console io.Writer // 原有控制台输出（os.Stdout/os.Stderr）
+	slog    io.Writer // 转发到logger1的Writer
+}
+
+func (t *teeWriter) Write(p []byte) (n int, err error) {
+	// 1. 先输出到控制台（保留原有逻辑）
+	n1, err1 := t.console.Write(p)
+	// 2. 再转发到logger1（额外输出）
+	_, _ = t.slog.Write(p) // 忽略logger1写入错误，优先保证控制台输出
+	return n1, err1
 }
 
 // NewEnvoyOperator 创建Envoy操作器实例
@@ -66,7 +103,7 @@ func (o *EnvoyOperator) InitEnvoyGlobalConfig(adminPort int) error {
 }
 
 // CreateOrUpdateEnvoyPort 新增/更新Envoy端口配置
-func (o *EnvoyOperator) CreateOrUpdateEnvoyPort(req EnvoyPortCreateReq, logger *slog.Logger) (EnvoyPortConfig, error) {
+func (o *EnvoyOperator) CreateOrUpdateEnvoyPort(req EnvoyPortCreateReq, logger, logger1 *slog.Logger) (EnvoyPortConfig, error) {
 
 	o.mu.Lock()
 	defer o.mu.Unlock()
@@ -102,11 +139,11 @@ func (o *EnvoyOperator) CreateOrUpdateEnvoyPort(req EnvoyPortCreateReq, logger *
 
 	// 5. 先检查是否有运行的Envoy，没有则首次启动，有则热重启
 	if !o.IsEnvoyRunning() {
-		if err := o.StartFirstEnvoy(logger); err != nil {
+		if err := o.StartFirstEnvoy(logger, logger1); err != nil {
 			return EnvoyPortConfig{}, fmt.Errorf("首次启动Envoy失败: %w", err)
 		}
 	} else {
-		if err := o.HotReloadEnvoyConfig(logger); err != nil {
+		if err := o.HotReloadEnvoyConfig(logger, logger1); err != nil {
 			return EnvoyPortConfig{}, fmt.Errorf("热加载配置失败: %w", err)
 		}
 	}
@@ -115,7 +152,7 @@ func (o *EnvoyOperator) CreateOrUpdateEnvoyPort(req EnvoyPortCreateReq, logger *
 }
 
 // DisableEnvoyPort 禁用Envoy端口
-func (o *EnvoyOperator) DisableEnvoyPort(port int, logger *slog.Logger) error {
+func (o *EnvoyOperator) DisableEnvoyPort(port int, logger, logger1 *slog.Logger) error {
 
 	o.mu.Lock()
 	defer o.mu.Unlock()
@@ -141,7 +178,7 @@ func (o *EnvoyOperator) DisableEnvoyPort(port int, logger *slog.Logger) error {
 	}
 
 	// 3. 热加载配置
-	return o.HotReloadEnvoyConfig(logger)
+	return o.HotReloadEnvoyConfig(logger, logger1)
 }
 
 // UpdateGlobalTargetAddrs 更新后端地址（写锁）
@@ -194,7 +231,7 @@ func (o *EnvoyOperator) GetCurrentConfig() (*EnvoyGlobalConfig, error) {
 }
 
 // StartFirstEnvoy 首次启动Envoy（epoch=0）
-func (o *EnvoyOperator) StartFirstEnvoy(logger *slog.Logger) error {
+func (o *EnvoyOperator) StartFirstEnvoy(logger, logger1 *slog.Logger) error {
 
 	// 4. 渲染配置文件到matth目录
 	if err := RenderEnvoyYamlConfig(o.GlobalCfg, o.ConfigPath); err != nil {
@@ -216,8 +253,24 @@ func (o *EnvoyOperator) StartFirstEnvoy(logger *slog.Logger) error {
 	)
 
 	// 日志输出
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	//cmd.Stdout = os.Stdout
+	//cmd.Stderr = os.Stderr
+	// --------------------------
+	// 核心修改：保留控制台输出 + 转发到logger1
+	// --------------------------
+	// 1. 创建stdout/stderr对应的slogWriter（关联logger1）
+	stdoutSlogWriter := &slogWriter{logger: logger1, stream: "stdout"}
+	stderrSlogWriter := &slogWriter{logger: logger1, stream: "stderr"}
+
+	// 2. 带缓冲避免阻塞，包装成teeWriter实现双输出
+	cmd.Stdout = &teeWriter{
+		console: os.Stdout,
+		slog:    bufio.NewWriter(stdoutSlogWriter),
+	}
+	cmd.Stderr = &teeWriter{
+		console: os.Stderr,
+		slog:    bufio.NewWriter(stderrSlogWriter),
+	}
 
 	// 启动进程
 	logger.Info("🚀 首次启动Envoy（epoch=0）")
@@ -248,7 +301,7 @@ func (o *EnvoyOperator) StartFirstEnvoy(logger *slog.Logger) error {
 }
 
 // HotReloadEnvoyConfig 修复后的热重启函数
-func (o *EnvoyOperator) HotReloadEnvoyConfig(logger *slog.Logger) error {
+func (o *EnvoyOperator) HotReloadEnvoyConfig(logger, logger1 *slog.Logger) error {
 	// 前置检查：确保Envoy正在运行
 	if !o.IsEnvoyRunning() {
 		return errors.New("Envoy未运行，无法热重启")
@@ -274,8 +327,24 @@ func (o *EnvoyOperator) HotReloadEnvoyConfig(logger *slog.Logger) error {
 	)
 
 	// 日志输出
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	//cmd.Stdout = os.Stdout
+	//cmd.Stderr = os.Stderr
+	// --------------------------
+	// 核心修改：保留控制台输出 + 转发到logger1
+	// --------------------------
+	// 1. 创建stdout/stderr对应的slogWriter（关联logger1）
+	stdoutSlogWriter := &slogWriter{logger: logger1, stream: "stdout"}
+	stderrSlogWriter := &slogWriter{logger: logger1, stream: "stderr"}
+
+	// 2. 带缓冲避免阻塞，包装成teeWriter实现双输出
+	cmd.Stdout = &teeWriter{
+		console: os.Stdout,
+		slog:    bufio.NewWriter(stdoutSlogWriter),
+	}
+	cmd.Stderr = &teeWriter{
+		console: os.Stderr,
+		slog:    bufio.NewWriter(stderrSlogWriter),
+	}
 
 	// 启动新进程
 	if err := cmd.Start(); err != nil {
