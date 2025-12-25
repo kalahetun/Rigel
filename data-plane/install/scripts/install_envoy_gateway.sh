@@ -104,7 +104,7 @@ static_resources:
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
                       source_codes:
-                        route_hops.lua:
+                        hop_router.lua:
                           filename: "/home/matth/hop_router.lua"  # 固定脚本路径，必须存在
                   # 路由转发（依赖Lua后执行）
                   - name: envoy.filters.http.router

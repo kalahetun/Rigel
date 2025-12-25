@@ -159,7 +159,10 @@ func InitEnvoyAPIRouter(router *gin.Engine, logger *slog.Logger) {
 	// 初始化全局配置（管理端口9901）
 	operator.InitEnvoyGlobalConfig(9901)
 
-	operator.StartFirstEnvoy(logger)
+	err := operator.StartFirstEnvoy(logger)
+	if err != nil {
+		logger.Error("启动第一个Envoy失败", "error", err)
+	}
 
 	// 3. 创建API处理器
 	handler := NewEnvoyPortAPIHandler(operator, logger)

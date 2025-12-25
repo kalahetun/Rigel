@@ -55,7 +55,7 @@ static_resources:
             typed_config:
               "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
               source_codes:
-                port_bandwidth_limit.lua:  # 脚本名称（自定义）
+                access_router.lua:  # 脚本名称（自定义）
                   filename: "/home/matth/access_router.lua"  # 独立Lua文件路径
           # 保留原有router过滤器
           - name: envoy.filters.http.router
