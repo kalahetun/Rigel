@@ -19,6 +19,7 @@ ENVOY_CONFIG="${ENVOY_HOME}/envoy-mini.yaml"
 DOWNLOAD_URL=""
 LUA_SCRIPT_PATH="${ENVOY_HOME}/hop_router.lua"  # Lua script in same directory as config
 PROFILE_DIR="$(dirname ${ENVOY_CONFIG})/profile"
+OWNER="matth:matth"
 
 # --------------------------
 # 2. 架构检测
@@ -374,6 +375,8 @@ EOF
 # --------------------------
 # 8. 设置文件权限
 # --------------------------
+chown "${OWNER}" "${ENVOY_CONFIG}"
+chown "${OWNER}" "${LUA_SCRIPT_PATH}"
 chmod 644 "${ENVOY_CONFIG}"
 chmod 644 "${LUA_SCRIPT_PATH}"
 

@@ -18,6 +18,7 @@ ENVOY_BIN="${ENVOY_HOME}/envoy"
 ENVOY_CONFIG="${ENVOY_HOME}/envoy-mini.yaml"
 DOWNLOAD_URL=""
 LUA_SCRIPT_PATH="${ENVOY_HOME}/access_router.lua"
+OWNER="matth:matth"
 
 # --------------------------
 # 2. 架构检测
@@ -348,6 +349,8 @@ if not ok then
 end
 EOF
 
+chown "${OWNER}" "${ENVOY_CONFIG}"
+chown "${OWNER}" "${LUA_SCRIPT_PATH}"
 chown 644 "${ENVOY_CONFIG}"
 chmod 644 "${LUA_SCRIPT_PATH}"
 
