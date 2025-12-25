@@ -195,6 +195,12 @@ func (o *EnvoyOperator) GetCurrentConfig() (*EnvoyGlobalConfig, error) {
 
 // StartFirstEnvoy 首次启动Envoy（epoch=0）
 func (o *EnvoyOperator) StartFirstEnvoy(logger *slog.Logger) error {
+
+	// 4. 渲染配置文件到matth目录
+	if err := RenderEnvoyYamlConfig(o.GlobalCfg, o.ConfigPath); err != nil {
+		return fmt.Errorf("渲染配置失败: %w", err)
+	}
+
 	// 检查配置文件是否存在
 	if _, err := os.Stat(o.ConfigPath); os.IsNotExist(err) {
 		return fmt.Errorf("配置文件不存在: %s", o.ConfigPath)

@@ -3,7 +3,6 @@ package collector
 import (
 	model "data-plane/pkg/local_info_report"
 	"log/slog"
-	"os"
 	"time"
 )
 
@@ -48,14 +47,14 @@ func (c *VMCollector) Collect(logger *slog.Logger) (*model.VMReport, error) {
 		return nil, err
 	}
 
-	hostname, _ := os.Hostname()
+	//hostname, _ := os.Hostname()
 
 	// 一站式获取缓冲统计
 	envoyMemInfo := GetEnvoyFullBufferStats(logger)
 
 	// 2. 组装VMReport（ReportID由上报器生成，此处留空）
 	return &model.VMReport{
-		VMID:        "vm-" + hostname + "-001", // 固定VMID（可根据实际场景替换）
+		VMID:        "vm-" + networkInfo.PublicIP + "-001", // 固定VMID（可根据实际场景替换）
 		CollectTime: time.Now().UTC(),
 		ReportID:    "", // 上报时由服务端/上报器填充
 		CPU:         cpuInfo,
