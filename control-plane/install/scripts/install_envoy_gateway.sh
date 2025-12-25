@@ -76,9 +76,8 @@ cat > "${LUA_SCRIPT_PATH}" << EOF
 -- ${ENVOY_HOME}/lua/port_bandwidth_limit.lua
 -- 核心配置（调整为合理周期）
 local CHECK_INTERVAL = 5                     -- 带宽统计周期：5秒（兼顾精度和性能）
-local CONFIG_FETCH_INTERVAL = 10             -- 动态配置拉取周期：60秒（低频更新，降低开销）
-local ADMIN_PORT = 8081
-local ADMIN_CONFIG_URL = string.format("http://127.0.0.1:%d/config/port_bandwidth", ADMIN_PORT)
+local CONFIG_FETCH_INTERVAL = 10             -- 动态配置拉取周期：10秒（低频更新，降低开销）
+local CONFIG_SERVER_URL = "http://127.0.0.1:8081/config/port_bandwidth"
 local DEBUG_MODE = true                      -- 调试完成后建议关闭
 local DEFAULT_BW_LIMIT = 10 * 1024 * 1024    -- 全局默认限流值：10MB/s（字节/秒）
 
@@ -86,55 +85,76 @@ local DEFAULT_BW_LIMIT = 10 * 1024 * 1024    -- 全局默认限流值：10MB/s�
 local PORT_BANDWIDTH_LIMITS = {}  -- 存储从接口拉取的动态限流值
 local port_in_stats = {}          -- 端口带宽统计
 
--- 核心1：从Admin接口拉取动态配置
+-- 核心1：使用 Envoy 原生 httpClient 拉取动态配置（替代 resty.http）
 local function fetch_dynamic_config()
-    local ok, http = pcall(require, "resty.http")
-    if not ok then
-        local err_msg = "依赖缺失：resty.http库未找到（Envoy编译时未包含）"
-        print("[Lua-ERROR] " .. err_msg)
-        return nil, err_msg
-    end
-
-    local ok, cjson = pcall(require, "cjson")
-    if not ok then
-        local err_msg = "依赖缺失：cjson库未找到（Envoy编译时未包含）"
-        print("[Lua-ERROR] " .. err_msg)
-        return nil, err_msg
-    end
+    -- Envoy 原生 HTTP 客户端（同步请求）
+    local http_client = envoy.httpClient()
+    local headers = {}
+    headers[":method"] = "GET"
+    headers[":path"] = "/config/port_bandwidth"
+    headers[":authority"] = "127.0.0.1:8081"
+    headers["Content-Type"] = "application/json"
 
     if DEBUG_MODE then
-        print("[Lua-DEBUG] 尝试拉取动态限流配置：" .. ADMIN_CONFIG_URL)
+        print("[Lua-DEBUG] 尝试拉取动态限流配置：" .. CONFIG_SERVER_URL)
     end
-    local http_client = http.new()
-    local res, req_err = http_client:request_uri(ADMIN_CONFIG_URL, {
-        method = "GET",
-        timeout = 3000,
-        headers = { ["Content-Type"] = "application/json" }
+
+    -- 发起同步 HTTP 请求（Envoy 原生 API）
+    local response, err = http_client:send({
+        url = CONFIG_SERVER_URL,
+        headers = headers,
+        timeout = 3000  -- 3秒超时（毫秒）
     })
 
-    if not res then
-        local err_msg = "动态配置接口访问失败：" .. (req_err or "连接拒绝")
+    -- 校验请求结果
+    if err then
+        local err_msg = "配置接口访问失败：" .. err
         print("[Lua-ERROR] " .. err_msg)
         return nil, err_msg
     end
-    if res.status ~= 200 then
-        local err_msg = string.format("动态配置接口返回异常：状态码=%d，响应=%s", res.status, res.body or "空")
+    if not response then
+        local err_msg = "配置接口无响应"
+        print("[Lua-ERROR] " .. err_msg)
+        return nil, err_msg
+    end
+    if response.headers[":status"] ~= "200" then
+        local err_msg = string.format("配置接口返回异常：状态码=%s", response.headers[":status"])
         print("[Lua-ERROR] " .. err_msg)
         return nil, err_msg
     end
 
-    local config, decode_err = cjson.decode(res.body)
+    -- 读取响应体（Envoy 响应体是 table，需拼接）
+    local response_body = ""
+    for _, chunk in ipairs(response.body) do
+        response_body = response_body .. chunk
+    end
+    if response_body == "" then
+        local err_msg = "配置接口返回空响应体"
+        print("[Lua-ERROR] " .. err_msg)
+        return nil, err_msg
+    end
+
+    -- 解析 JSON（Envoy 内置 cjson）
+    local ok, cjson = pcall(require, "cjson")
+    if not ok then
+        local err_msg = "依赖缺失：cjson库未找到（Envoy 需编译启用 cjson）"
+        print("[Lua-ERROR] " .. err_msg)
+        return nil, err_msg
+    end
+
+    local config, decode_err = cjson.decode(response_body)
     if not config then
-        local err_msg = string.format("动态配置JSON解析失败：%s，原始内容=%s", decode_err, res.body)
+        local err_msg = string.format("配置JSON解析失败：%s，原始内容=%s", decode_err, response_body)
         print("[Lua-ERROR] " .. err_msg)
         return nil, err_msg
     end
     if type(config) ~= "table" then
-        local err_msg = string.format("动态配置格式错误：非JSON对象，原始内容=%s", res.body)
+        local err_msg = string.format("配置格式错误：非JSON对象，原始内容=%s", response_body)
         print("[Lua-ERROR] " .. err_msg)
         return nil, err_msg
     end
 
+    -- 格式化配置（数字端口:数字阈值）
     local formatted_config = {}
     for port_key, limit_val in pairs(config) do
         local port = tonumber(port_key)
@@ -150,10 +170,17 @@ local function fetch_dynamic_config()
         end
     end
 
+    -- 校验是否拉取到有效配置
+    if next(formatted_config) == nil then
+        local err_msg = string.format("配置接口返回无有效限流规则：%s", response_body)
+        print("[Lua-ERROR] " .. err_msg)
+        return nil, err_msg
+    end
+
     return formatted_config, nil
 end
 
--- 核心2：定时更新配置（完全保留你指定的err优先校验逻辑）
+-- 核心2：定时更新配置（保留你指定的 err 优先校验逻辑）
 local function update_config_periodically()
     while true do
         local new_config, err = fetch_dynamic_config()
@@ -177,7 +204,8 @@ local function update_config_periodically()
             print("[Lua-WARN] 限流配置拉取成功，但无有效端口规则，全局限流规则已清空")
         end
 
-        ngx.sleep(CONFIG_FETCH_INTERVAL)
+        -- Envoy Lua 中使用 envoy.sleep 替代 ngx.sleep
+        envoy.sleep(CONFIG_FETCH_INTERVAL)
     end
 end
 
@@ -238,11 +266,9 @@ local function calculate_port_in_bandwidth(request_handle, port)
     local now = os.time()
     local time_diff = now - stats.last_check_time
     local bandwidth = 0
-    -- 仅当时间差≥5秒时，才重新计算带宽并更新统计
     if time_diff >= CHECK_INTERVAL and time_diff > 0 then
         local byte_diff = current_bytes - stats.last_bytes
         bandwidth = byte_diff / time_diff  -- 字节/秒
-        -- 更新统计（仅在计算新带宽时更新，减少写操作）
         stats.last_bytes = current_bytes
         stats.last_check_time = now
         stats.last_bw = bandwidth
@@ -251,7 +277,6 @@ local function calculate_port_in_bandwidth(request_handle, port)
             port, time_diff, byte_diff, bandwidth/1024/1024))
         end
     else
-        -- 未到统计周期，使用上一次计算的带宽值
         bandwidth = stats.last_bw or 0
         if DEBUG_MODE then
             print(string.format("[Lua-DEBUG] 端口%d未到统计周期（当前差%d秒），使用上次带宽值：%.2fMB/s",
@@ -312,9 +337,10 @@ end
 function envoy_on_response(response_handle)
 end
 
--- 启动定时配置更新
+-- 启动定时配置更新（Envoy Lua 中启动定时器）
 local ok, err = pcall(function()
-    ngx.timer.at(0, update_config_periodically)
+    -- Envoy Lua 中使用 envoy.timer 替代 ngx.timer.at
+    envoy.timer.at(0, update_config_periodically)
 end)
 if not ok then
     print("[Lua-ERROR] 定时更新任务启动失败：" .. err)
