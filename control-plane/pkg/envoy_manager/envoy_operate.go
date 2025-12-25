@@ -49,7 +49,7 @@ func (o *EnvoyOperator) InitEnvoyGlobalConfig(adminPort int) error {
 	//8090-8094 默认端口
 	ports := make([]EnvoyPortConfig, 0)
 	for i := 8090; i <= 8094; i++ {
-		ports = append(ports, EnvoyPortConfig{8090, true})
+		ports = append(ports, EnvoyPortConfig{Port: 8090, Enabled: true, RateLimit: PortRateLimitConfig{Bandwidth: 0}})
 	}
 
 	//数据面转发端口8083
