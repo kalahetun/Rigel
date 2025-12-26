@@ -29,23 +29,58 @@ type EnvoyOperator struct {
 	mu         sync.RWMutex // 读写锁：读多写少场景更高效
 }
 
-// slogWriter 适配slog的Writer，将输出转发到logger1
+// slogWriter 自定义Writer，解析Envoy日志真实级别后写入slog
 type slogWriter struct {
 	logger *slog.Logger
-	stream string // 标记是stdout还是stderr
+	stream string // 标记是stdout还是stderr（仅备用）
 }
 
-// Write 实现io.Writer接口，核心：保留换行符，直接写入日志
+// Write 实现io.Writer接口：解析真实级别，保留原始换行符
 func (w *slogWriter) Write(p []byte) (n int, err error) {
-	// 关键点1：保留原始字节流（包含\n），不做任何截断/替换
+	// 1. 保留原始内容（包含换行符）
 	content := string(p)
-	// 按stream区分日志级别，同时保留换行符
-	if w.stream == "stderr" {
-		w.logger.ErrorContext(context.Background(), "cmd_stderr", "content", content)
-	} else {
-		w.logger.InfoContext(context.Background(), "cmd_stdout", "content", content)
+	if strings.TrimSpace(content) == "" { // 过滤空行
+		return len(p), nil
 	}
+
+	// 2. 核心：解析Envoy日志的真实级别
+	level, msg := parseEnvoyLogLevel(content)
+
+	// 3. 按真实级别写入slog，保留原始content
+	switch level {
+	case slog.LevelDebug:
+		w.logger.DebugContext(context.Background(), "envoy_log", "stream", w.stream, "content", msg)
+	case slog.LevelInfo:
+		w.logger.InfoContext(context.Background(), "envoy_log", "stream", w.stream, "content", msg)
+	case slog.LevelWarn:
+		w.logger.WarnContext(context.Background(), "envoy_log", "stream", w.stream, "content", msg)
+	case slog.LevelError:
+		w.logger.ErrorContext(context.Background(), "envoy_log", "stream", w.stream, "content", msg)
+	default:
+		// 无法识别的级别，按info输出
+		w.logger.InfoContext(context.Background(), "envoy_log", "stream", w.stream, "content", msg)
+	}
+
 	return len(p), nil
+}
+
+// parseEnvoyLogLevel 解析Envoy日志的真实级别
+// Envoy日志格式：[2025-12-26 16:33:41.715][267487][info][main] xxxx
+func parseEnvoyLogLevel(content string) (slog.Level, string) {
+	switch {
+	case strings.Contains(content, "[debug]"):
+		return slog.LevelDebug, content
+	case strings.Contains(content, "[info]"):
+		return slog.LevelInfo, content
+	case strings.Contains(content, "[warn]"):
+		return slog.LevelWarn, content
+	case strings.Contains(content, "[error]"):
+		return slog.LevelError, content
+	case strings.Contains(content, "[critical]"):
+		return slog.LevelError, content // critical归为error级别
+	default:
+		return slog.LevelInfo, content // 未知级别默认info
+	}
 }
 
 // teeWriter 实现双输出：控制台 + slog（带缓冲但及时刷新）
@@ -68,12 +103,28 @@ func (t *teeWriter) Write(p []byte) (n int, err error) {
 		return n, err
 	}
 
-	// 关键点2：如果包含换行符，立即刷新缓冲（避免\n被吞）
+	// 关键点：如果包含换行符，立即刷新缓冲（避免\n被吞）
 	if len(p) > 0 && p[len(p)-1] == '\n' {
 		err = t.slog.Flush()
 	}
 
 	return n, err
+}
+
+// 辅助函数：创建带双输出的Writer
+func NewEnvoyLogWriter(logger *slog.Logger, stream string, console io.Writer) io.Writer {
+	// 创建slogWriter
+	slogW := &slogWriter{
+		logger: logger,
+		stream: stream,
+	}
+	// 包装为缓冲Writer（避免频繁写入）
+	bufSlogW := bufio.NewWriter(slogW)
+	// 双输出：控制台 + slog
+	return &teeWriter{
+		console: console,
+		slog:    bufSlogW,
+	}
 }
 
 // NewEnvoyOperator 创建Envoy操作器实例
@@ -272,8 +323,11 @@ func (o *EnvoyOperator) StartFirstEnvoy(logger, logger1 *slog.Logger) error {
 	// 核心修改：保留控制台输出 + 转发到logger1
 	// --------------------------
 	// 1. 创建stdout/stderr对应的slogWriter（关联logger1）
-	stdoutSlogWriter := &slogWriter{logger: logger1, stream: "stdout"}
-	stderrSlogWriter := &slogWriter{logger: logger1, stream: "stderr"}
+	//stdoutSlogWriter := &slogWriter{logger: logger1, stream: "stdout"}
+	//stderrSlogWriter := &slogWriter{logger: logger1, stream: "stderr"}
+
+	stdoutSlogWriter := NewEnvoyLogWriter(logger1, "stdout", os.Stdout)
+	stderrSlogWriter := NewEnvoyLogWriter(logger1, "stderr", os.Stderr)
 
 	// 2. 带缓冲避免阻塞，包装成teeWriter实现双输出
 	cmd.Stdout = &teeWriter{
@@ -346,8 +400,11 @@ func (o *EnvoyOperator) HotReloadEnvoyConfig(logger, logger1 *slog.Logger) error
 	// 核心修改：保留控制台输出 + 转发到logger1
 	// --------------------------
 	// 1. 创建stdout/stderr对应的slogWriter（关联logger1）
-	stdoutSlogWriter := &slogWriter{logger: logger1, stream: "stdout"}
-	stderrSlogWriter := &slogWriter{logger: logger1, stream: "stderr"}
+	//stdoutSlogWriter := &slogWriter{logger: logger1, stream: "stdout"}
+	//stderrSlogWriter := &slogWriter{logger: logger1, stream: "stderr"}
+
+	stdoutSlogWriter := NewEnvoyLogWriter(logger1, "stdout", os.Stdout)
+	stderrSlogWriter := NewEnvoyLogWriter(logger1, "stderr", os.Stderr)
 
 	// 2. 带缓冲避免阻塞，包装成teeWriter实现双输出
 	cmd.Stdout = &teeWriter{
