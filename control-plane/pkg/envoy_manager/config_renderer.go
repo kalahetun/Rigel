@@ -86,7 +86,7 @@ static_resources:
               socket_address:
                 address: {{.IP}}
                 port_value: {{.Port}}
-			health_check_config:
+            health_check_config:
               port_value: 8082
         {{end}}
 `
