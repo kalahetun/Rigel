@@ -16,24 +16,6 @@ admin:
       port_value: {{.AdminPort}}
   access_log_path: "/home/matth/admin_access.log"
   profile_path: "/home/matth/profile"
-# 核心：全局日志级别配置（关键！）
-logging:
-  # 设置日志级别为 debug（能捕获 Lua 的 debug/info/warn/error 日志）
-  level:
-    default: debug
-    # 单独提升 Lua 模块的日志级别（确保不被全局级别覆盖）
-    lua: debug
-  # 配置日志输出目标（控制台 + 文件，可选）
-  sinks:
-    - name: console_sink
-      stream: stdout
-      format:
-        text_format: "[%Y-%m-%d %T.%e][%l][%n] %v\n"
-    - name: file_sink
-      file:
-        path: "/home/matth/envoy_lua.log"  # Lua 日志会输出到这个文件
-      format:
-        text_format: "[%Y-%m-%d %T.%e][%l][%n] %v\n"
 # 启用Lua扩展支持（必需）
 layered_runtime:
   layers:
