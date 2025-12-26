@@ -76,7 +76,7 @@ static_resources:
         http_health_check:
           path: /health
           port_value: 8082
-          host: "{{index .TargetAddrs 0 .IP}}"  # 取第一个目标IP作为健康检查主机
+          # 关键：删除 host 字段 → Envoy 自动用每个 endpoint 的 IP 做检查
     # ========== 关键修改2：endpoint 下仅保留地址配置，删除非法的 health_check_config ==========
     load_assignment:
       cluster_name: target_cluster
