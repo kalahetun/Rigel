@@ -68,7 +68,7 @@ func (h *EnvoyPortAPIHandler) HandleEnvoyPortDisable(c *gin.Context) {
 	}
 
 	// 禁用端口
-	if err := h.operator.DisableEnvoyPort(req.Port, h.logger); err != nil {
+	if err := h.operator.DisableEnvoyPort(req.Port, h.logger, h.logger1); err != nil {
 		h.logger.Error("禁用Envoy端口失败", "port", req.Port, "error", err)
 		c.JSON(http.StatusInternalServerError, envoymanager2.APICommonResp{
 			Code:    500,
