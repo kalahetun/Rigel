@@ -75,7 +75,7 @@ static_resources:
         healthy_threshold: 2
         http_health_check:
           path: /health
-          port_value: 8082
+          port: 8082
           # 关键：删除 host 字段 → Envoy 自动用每个 endpoint 的 IP 做检查
     # ========== 关键修改2：endpoint 下仅保留地址配置，删除非法的 health_check_config ==========
     load_assignment:
