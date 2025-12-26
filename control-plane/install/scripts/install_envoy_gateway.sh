@@ -49,7 +49,8 @@ fi
 
 curl -L "${DOWNLOAD_URL}" -o "${ENVOY_BIN}"
 chmod +x "${ENVOY_BIN}"
-chown 640 "${ENVOY_BIN}"
+#chown 640 "${ENVOY_BIN}"
+sudo chown "${OWNER}" "${ENVOY_BIN}"
 
 "${ENVOY_BIN}" --version
 

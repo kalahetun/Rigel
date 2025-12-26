@@ -52,7 +52,8 @@ fi
 echo "📥 下载 Envoy ${ENVOY_VERSION} (${ARCH})..."
 curl -L "${DOWNLOAD_URL}" -o "${ENVOY_BIN}"
 chmod +x "${ENVOY_BIN}"
-chown 640 "${ENVOY_BIN}"
+#chown 640 "${ENVOY_BIN}"
+sudo chown "${OWNER}" "${ENVOY_BIN}"
 
 echo "✅ Envoy 版本验证："
 "${ENVOY_BIN}" --version
@@ -61,6 +62,7 @@ echo "✅ Envoy 版本验证："
 # 5. 创建 profile 目录（避免Admin报错）
 # --------------------------
 mkdir -p "${PROFILE_DIR}"
+sudo chown "${OWNER}" "${PROFILE_DIR}"
 chmod 755 "${PROFILE_DIR}"
 
 # --------------------------
