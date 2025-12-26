@@ -67,6 +67,17 @@ static_resources:
     connect_timeout: 0.25s
     type: STATIC
     lb_policy: ROUND_ROBIN
+    # ========== 关键修改1：健康检查配置移到集群的 health_checks 节点 ==========
+    health_checks:
+      - timeout: 1s
+        interval: 5s
+        unhealthy_threshold: 2
+        healthy_threshold: 2
+        http_health_check:
+          path: /health
+          port_value: 8082
+          host: "{{index .TargetAddrs 0 .IP}}"  # 取第一个目标IP作为健康检查主机
+    # ========== 关键修改2：endpoint 下仅保留地址配置，删除非法的 health_check_config ==========
     load_assignment:
       cluster_name: target_cluster
       endpoints:
@@ -77,15 +88,6 @@ static_resources:
               socket_address:
                 address: {{.IP}}
                 port_value: {{.Port}}
-            health_check_config:
-              timeout: 1s
-              interval: 5s
-              unhealthy_threshold: 2
-              healthy_threshold: 2
-              http_health_check:
-                path: /health
-                port_value: 8082
-                host: {{.IP}}
         {{end}}
 `
 
