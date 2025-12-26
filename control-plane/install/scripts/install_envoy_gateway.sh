@@ -351,7 +351,7 @@ EOF
 
 chown "${OWNER}" "${ENVOY_CONFIG}"
 chown "${OWNER}" "${LUA_SCRIPT_PATH}"
-chown 644 "${ENVOY_CONFIG}"
+chmod 644 "${ENVOY_CONFIG}"
 chmod 644 "${LUA_SCRIPT_PATH}"
 
 echo "✅ Envoy 安装完成！配置文件：${ENVOY_CONFIG}，二进制：${ENVOY_BIN}"
