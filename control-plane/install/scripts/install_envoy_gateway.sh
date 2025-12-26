@@ -313,10 +313,10 @@ function envoy_on_request(request_handle)
         request_handle:respond(
             {
                 [":status"] = "503",
-                "X-Limit-Type" = "Port In Bandwidth",
-                "X-Current-Port" = tostring(current_port),
-                "X-Current-BW" = string.format("%.2fMB/s", current_bw_mb),
-                "X-Max-BW" = string.format("%.2fMB/s", port_limit_mb)
+                X_Limit_Type = "Port In Bandwidth",  -- 去掉引号，下划线替代横杠
+                X_Current_Port = tostring(current_port),  -- 去掉引号
+                X_Current_BW = string.format("%.2fMB/s", current_bw_mb),  -- 去掉引号
+                X_Max_BW = string.format("%.2fMB/s", port_limit_mb)       -- 去掉引号（最后一行无需逗号）
             },
             string.format("Port %d Bandwidth Limit Exceeded (Max: %.2fMB/s)", current_port, port_limit_mb)
         )

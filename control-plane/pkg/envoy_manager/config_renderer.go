@@ -14,8 +14,8 @@ admin:
     socket_address:
       address: 0.0.0.0
       port_value: {{.AdminPort}}
-  access_log_path: "${ENVOY_HOME}/admin_access.log"
-  profile_path: "${ENVOY_HOME}/profile"
+  access_log_path: "/home/matth/admin_access.log"
+  profile_path: "/home/matth/profile"
 # 启用Lua扩展支持（必需）
 layered_runtime:
   layers:
@@ -75,8 +75,6 @@ static_resources:
         healthy_threshold: 2
         http_health_check:
           path: /health
-          port: 8082
-          # 关键：删除 host 字段 → Envoy 自动用每个 endpoint 的 IP 做检查
     # ========== 关键修改2：endpoint 下仅保留地址配置，删除非法的 health_check_config ==========
     load_assignment:
       cluster_name: target_cluster
