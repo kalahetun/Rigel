@@ -2,6 +2,7 @@ package envoy_manager
 
 import (
 	"bufio"
+	"context"
 	"data-plane/util"
 	"errors"
 	"fmt"
@@ -38,39 +39,51 @@ func NewEnvoyStarter() *EnvoyStarter {
 	}
 }
 
-// slogWriter 适配slog的Writer，将输出转发到logger1
+// slogWriter 自定义Writer，将输出写入slog日志
 type slogWriter struct {
-	logger *slog.Logger // 你指定的logger1
-	stream string       // 区分stdout/stderr
+	logger *slog.Logger
+	stream string // 标记是stdout还是stderr
 }
 
-// Write 实现io.Writer接口，转发输出到logger1
-func (s *slogWriter) Write(p []byte) (n int, err error) {
+// Write 实现io.Writer接口，核心：保留换行符，直接写入日志
+func (w *slogWriter) Write(p []byte) (n int, err error) {
+	// 关键点1：保留原始字节流（包含\n），不做任何截断/替换
 	content := string(p)
-	if content == "" {
-		return len(p), nil
-	}
-	// 根据流类型输出到logger1（stdout=INFO，stderr=ERROR）
-	if s.stream == "stderr" {
-		s.logger.Error(content, "stream", s.stream)
+	// 按stream区分日志级别，同时保留换行符
+	if w.stream == "stderr" {
+		w.logger.ErrorContext(context.Background(), "cmd_stderr", "content", content)
 	} else {
-		s.logger.Info(content, "stream", s.stream)
+		w.logger.InfoContext(context.Background(), "cmd_stdout", "content", content)
 	}
 	return len(p), nil
 }
 
-// teeWriter 实现"控制台+logger1"双输出
+// teeWriter 实现双输出：控制台 + slog（带缓冲但及时刷新）
 type teeWriter struct {
-	console io.Writer // 原有控制台输出（os.Stdout/os.Stderr）
-	slog    io.Writer // 转发到logger1的Writer
+	console io.Writer     // 控制台输出（os.Stdout/os.Stderr）
+	slog    *bufio.Writer // slog缓冲Writer
 }
 
+// Write 实现io.Writer接口，核心：透传所有字节（含\n）+ 刷新缓冲
 func (t *teeWriter) Write(p []byte) (n int, err error) {
-	// 1. 先输出到控制台（保留原有逻辑）
-	n1, err1 := t.console.Write(p)
-	// 2. 再转发到logger1（额外输出）
-	_, _ = t.slog.Write(p) // 忽略logger1写入错误，优先保证控制台输出
-	return n1, err1
+	// 第一步：写入控制台（保留原始换行符）
+	n, err = t.console.Write(p)
+	if err != nil {
+		return n, err
+	}
+
+	// 第二步：写入slog缓冲（包含\n）
+	_, err = t.slog.Write(p)
+	if err != nil {
+		return n, err
+	}
+
+	// 关键点2：如果包含换行符，立即刷新缓冲（避免\n被吞）
+	if len(p) > 0 && p[len(p)-1] == '\n' {
+		err = t.slog.Flush()
+	}
+
+	return n, err
 }
 
 // StartEnvoy 启动Envoy（首次启动，epoch=0）
