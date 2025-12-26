@@ -132,8 +132,7 @@ EOF
 #Client 发起请求时携带的 Headers：
 # 核心 Headers（替换为实际地址）
 #x-hops: 192.168.1.100:8080,s3.example.com:80    # 最终目标：S3 的 IP/域名+Port
-#x-index: 1                   # 固定值 2
-#x-proxy-type: single         # 单代理标记
+#x-index: 1                   # 固定值 1
 #
 ## 关键：Host 指向 B 节点的实际地址（TCP 自动转发）
 #Host: 192.168.1.100:8080
@@ -147,7 +146,6 @@ EOF
 ## 核心 Headers（代理链+S3 均为 IP:Port）
 #x-hops: 192.168.1.90:8080,192.168.1.100:8080,s3.example.com:80
 #x-index: 1                   # 固定值 2（指向 B 节点）
-#x-proxy-type: multi          # 多代理标记
 #
 ## 关键：Host 指向 A 节点的实际地址
 #Host: 192.168.1.90:8080
@@ -163,29 +161,30 @@ EOF
 # --------------------------
 echo "📝 生成 Lua 脚本 ${LUA_SCRIPT_PATH}..."
 cat > "${LUA_SCRIPT_PATH}" << EOF
--- Envoy Lua Filter: hops dynamic routing + S3 ACK reverse (HTTP/1.1)
+-- Envoy Lua Filter: 极简hops动态路由（仅请求转发+响应透传）
+-- 核心：存入current_index到Metadata，精准追溯本次转发的索引
 -- ==============================================
--- 通用常量定义（单/多代理统一，支持N跳）
+-- 通用常量定义（仅保留必需字段）
 -- ==============================================
 local HEADER_CONST = {
-    HOPS = "x-hops",          -- 转发链：N跳=A1,A2,...An,S3；单代理=S3
-    INDEX = "x-index",        -- 游标索引（初始=2）
+    HOPS = "x-hops",          -- 转发链：A1,A2,...An,S3
+    INDEX = "x-index",        -- 游标索引（初始=1）
     HOST = "Host",            -- 转发核心Header
     STATUS = ":status",       -- 响应状态码
-    PROXY_TYPE = "x-proxy-type" -- 代理类型：multi/single
+    CLIENT = "x-client"       -- 客户端标识（仅日志用）
 }
 
 local BUSINESS_RULE = {
-    S3_ACK_SUCCESS_STATUS = "200",  -- S3合法ACK状态码
     EMPTY_VALUE = "",               -- 空值兜底
     SEPARATOR = ",",                -- hops分隔符
-    INIT_INDEX = "1",               -- 去程/返程统一初始index=1
-    MULTI_PROXY_FLAG = "multi",     -- 多代理标记（支持N跳）
-    SINGLE_PROXY_FLAG = "single"    -- 单代理标记
+    INIT_INDEX = "1"                -- 初始index=1
 }
 
+-- Metadata 命名空间（仅持久化请求阶段关键信息）
+local METADATA_NS = "hop_router"
+
 -- ==============================================
--- 通用工具函数（核心修复：支持N跳翻转）
+-- 通用工具函数（仅保留必需的字符串拆分）
 -- ==============================================
 -- 拆分字符串为数组（解析hops）
 local function split_str(str, sep)
@@ -199,48 +198,16 @@ local function split_str(str, sep)
     return arr
 end
 
--- 翻转hops（适配任意多跳代理）
--- 核心逻辑：剔除最后一个节点（S3），翻转剩余代理链
--- 示例1：A,B,S3 → B,A；示例2：A,B,C,S3 → C,B,A；示例3：A, S3 → A
-local function reverse_hops(hops_arr, proxy_type)
-    local reversed = {}
-    local arr_len = #hops_arr
-
-    -- 多代理场景（N跳）：剔除S3，翻转剩余代理链
-    if proxy_type == BUSINESS_RULE.MULTI_PROXY_FLAG and arr_len >= 2 then
-        -- 遍历范围：1 ~ arr_len-1（剔除最后一个元素S3）
-        for i = arr_len - 1, 1, -1 do
-            table.insert(reversed, hops_arr[i])
-        end
-    -- 单代理场景：保留唯一节点A
-    elseif proxy_type == BUSINESS_RULE.SINGLE_PROXY_FLAG then
-        if arr_len > 0 then
-            table.insert(reversed, hops_arr[1])
-        end
-    end
-
-    return reversed
-end
-
--- 数组合并为字符串
-local function join_arr(arr, sep)
-    if #arr == 0 then
-        return BUSINESS_RULE.EMPTY_VALUE
-    end
-    return table.concat(arr, sep)
-end
-
 -- ==============================================
--- 请求阶段（去程转发，支持N跳代理）
+-- 请求阶段（核心：解析x-hops转发请求，存入current_index到Metadata）
 -- ==============================================
 function envoy_on_request(request_handle)
-    -- 1. 读取Header
+    -- 1. 读取请求Header
     local hops_str = request_handle:headers():get(HEADER_CONST.HOPS) or BUSINESS_RULE.EMPTY_VALUE
     local index_str = request_handle:headers():get(HEADER_CONST.INDEX) or BUSINESS_RULE.INIT_INDEX
-    local proxy_type = request_handle:headers():get(HEADER_CONST.PROXY_TYPE) or BUSINESS_RULE.EMPTY_VALUE
-    local client_str = response_handle:headers():get(HEADER_CONST.CLIENT) or BUSINESS_RULE.EMPTY_VALUE
+    local client_str = request_handle:headers():get(HEADER_CONST.CLIENT) or BUSINESS_RULE.EMPTY_VALUE
 
-    -- 2. 格式转换
+    -- 2. 格式转换（current_index是本次转发的核心标识）
     local hops_arr = split_str(hops_str, BUSINESS_RULE.SEPARATOR)
     local current_index = tonumber(index_str) or tonumber(BUSINESS_RULE.INIT_INDEX)
     local hops_len = #hops_arr
@@ -248,24 +215,23 @@ function envoy_on_request(request_handle)
     -- 3. 空hops拒绝转发
     if hops_len == 0 then
        request_handle:logErr(string.format(
-           "Missing x-hops header, reject forwarding, hops=%s, client=%s",
-           hops_str,  -- 第一个%s的占位值
-           client_str -- 第二个%s的占位值
+           "Missing x-hops header, reject forwarding | client=%s",
+           client_str
        ))
         request_handle:respond({[HEADER_CONST.STATUS] = "400"}, "Missing x-hops header")
         return
     end
 
-    -- 4. 计算转发目标（支持N跳，index=2 兼容）
+    -- 4. 计算转发目标（基于current_index）
     local target_hop = BUSINESS_RULE.EMPTY_VALUE
     local new_index = current_index + 1
 
-    -- 正常转发：index < hops长度 → 取hops[index]
+    -- 正常转发：index < hops长度 → 取对应节点
     if new_index <= hops_len then
         target_hop = hops_arr[new_index]
         request_handle:logInfo(string.format(
-            "Normal forward: proxy_type=%s, index=%d → target=%s, new_index=%d",
-            proxy_type, new_index, target_hop, new_index
+            "Normal forward | current_index=%d → target=%s | client=%s | hops=%s",
+            current_index, target_hop, client_str, hops_str
         ))
     end
 
@@ -274,101 +240,58 @@ function envoy_on_request(request_handle)
         request_handle:headers():set(HEADER_CONST.HOST, target_hop)
     else
         request_handle:logErr(string.format(
-            "No valid target hop, reject forwarding, hops=%s, client=%s",
-            hops_str,  -- 第一个%s的占位值
-            client_str -- 第二个%s的占位值
+            "No valid target hop | client=%s | hops=%s | current_index=%d",
+            client_str, hops_str, current_index
         ))
         request_handle:respond({[HEADER_CONST.STATUS] = "400"}, "No valid target hop")
         return
     end
 
-    -- 6. 更新Header（传给下一跳）
+    -- 6. 更新Index Header（传给下一跳）
     request_handle:headers():set(HEADER_CONST.INDEX, tostring(new_index))
 
-    -- 7. 标记是否为最后一跳（上下文传递）
-    local is_last_hop = (new_index + 1 >= hops_len)
-    request_handle:streamInfo():setMetadata("hop_router", "is_last_hop", tostring(is_last_hop))
+    -- 7. 持久化关键信息到Metadata（核心：存入current_index，而非new_index）
+    request_handle:streamInfo():setMetadata(METADATA_NS, "hops", hops_str)
+    request_handle:streamInfo():setMetadata(METADATA_NS, "client", client_str)
+    request_handle:streamInfo():setMetadata(METADATA_NS, "current_index", tostring(current_index)) -- 精准记录本次索引
     request_handle:logInfo(string.format(
-        "Request processed: proxy_type=%s, is_last_hop=%s, hops=%s, client=%s",
-        proxy_type, tostring(is_last_hop), hops_str, client_str
+        "Request processed | client=%s | hops=%s | current_index=%d | new_index=%d",
+        client_str, hops_str, current_index, new_index
     ))
 end
 
 -- ==============================================
--- 响应阶段（返程处理，支持N跳代理）
+-- 响应阶段（核心：纯透传，日志带上current_index追溯链路）
 -- ==============================================
 function envoy_on_response(response_handle)
-    -- 1. 读取上下文和Header
-    local is_last_hop_str = response_handle:streamInfo():metadata():get("hop_router", "is_last_hop") or "false"
-    local is_last_hop = (is_last_hop_str == "true")
-    local proxy_type = response_handle:headers():get(HEADER_CONST.PROXY_TYPE) or BUSINESS_RULE.EMPTY_VALUE
+    -- 1. 从Metadata读取请求阶段的关键信息（含current_index）
+    local hops_str = response_handle:streamInfo():metadata():get(METADATA_NS, "hops") or BUSINESS_RULE.EMPTY_VALUE
+    local client_str = response_handle:streamInfo():metadata():get(METADATA_NS, "client") or BUSINESS_RULE.EMPTY_VALUE
+    local current_index = response_handle:streamInfo():metadata():get(METADATA_NS, "current_index") or BUSINESS_RULE.INIT_INDEX -- 新增
 
-    local status_code_num = response_handle:responseCode()
-    local status_code = status_code_num and tostring(status_code_num) or BUSINESS_RULE.EMPTY_VALUE
+    -- 2. 读取响应状态码和S3排查字段（仅日志用）
+    local status_code = tostring(response_handle:responseCode() or "")
+    local s3_request_id = response_handle:headers():get("x-amz-request-id") or "unknown"
+    local s3_host = response_handle:headers():get("Host") or "unknown"
 
-    local hops_str = response_handle:headers():get(HEADER_CONST.HOPS) or BUSINESS_RULE.EMPTY_VALUE
-    local client_str = response_handle:headers():get(HEADER_CONST.CLIENT) or BUSINESS_RULE.EMPTY_VALUE
+    -- 3. 分级日志记录（补充current_index，精准追溯）
+    local log_msg = string.format(
+        "Response pass-through | status=%s | s3_request_id=%s | s3_host=%s | client=%s | hops=%s | current_index=%s",
+        status_code, s3_request_id, s3_host, client_str, hops_str, current_index
+    )
 
-    -- 非最后一跳/非200 ACK → 直接透传
-    -- 场景1：非最后一跳 → 普通INFO日志，直接透传（独立if）
-    if not is_last_hop then
-        response_handle:logInfo(string.format(
-            "Skip reverse: non-last-hop, is_last_hop=%s, status=%s, proxy_type=%s, hops=%s, client=%s",
-            tostring(is_last_hop), status_code, proxy_type, hops_str, client_str
-        ))
-        return
+    -- 按状态码分级日志（便于告警，不影响透传）
+    if status_code == "" then
+        response_handle:logWarn(log_msg .. " (unknown status code)")
+    elseif string.sub(status_code, 1, 1) == "4" then
+        response_handle:logWarn(log_msg)
+    elseif string.sub(status_code, 1, 1) == "5" then
+        response_handle:logErr(log_msg)
+    else
+        response_handle:logInfo(log_msg)
     end
 
-    -- 场景2：【最后一跳 + 非200】→ ERROR/WARN级日志，直接透传（独立if，必须加is_last_hop条件）
-    if is_last_hop and status_code ~= BUSINESS_RULE.S3_ACK_SUCCESS_STATUS then
-        -- 补充S3核心排查字段
-        local s3_request_id = response_handle:headers():get("x-amz-request-id") or "unknown"
-        local s3_host = response_handle:headers():get("Host") or "unknown"
-        local hops_str = response_handle:headers():get(HEADER_CONST.HOPS) or BUSINESS_RULE.EMPTY_VALUE
-        local client_str = response_handle:headers():get(HEADER_CONST.CLIENT) or BUSINESS_RULE.EMPTY_VALUE
-        local log_msg = string.format(
-            "S3 response error (last hop): is_last_hop=%s, s3_status=%s, s3_request_id=%s, s3_host=%s, proxy_type=%s, hops=%s, client=%s",
-            tostring(is_last_hop), status_code, s3_request_id, s3_host, proxy_type, hops_str, client_str
-        )
-
-        -- 细分级别：4xx客户端错误打WARN，5xx服务端错误打ERROR
-        if string.sub(status_code, 1, 1) == "4" then
-            response_handle:logWarn(log_msg)
-        else
-            response_handle:logErr(log_msg)
-        end
-        return
-    end
-
-    -- 能走到这里的条件：是最后一跳 + status_code == 200 → 执行返程逻辑
-    response_handle:logInfo(string.format(
-        "Start reverse routing: last hop confirmed, S3 ACK 200, proxy_type=%s, hops=%s, client=%s",
-        proxy_type, hops_str, client_str
-    ))
-    -- 后续写返程逻辑（翻转hops、重置index、修改Host等）
-
-    -- 2. 解析并翻转hops（支持N跳）
-    local hops_str = response_handle:headers():get(HEADER_CONST.HOPS) or BUSINESS_RULE.EMPTY_VALUE
-    local hops_arr = split_str(hops_str, BUSINESS_RULE.SEPARATOR)
-    local reversed_hops_arr = reverse_hops(hops_arr, proxy_type)
-    local reversed_hops_str = join_arr(reversed_hops_arr, BUSINESS_RULE.SEPARATOR)
-
-    response_handle:logInfo(string.format(
-        "reversed_hops_str, reversed_hops=%s, hops=%s, client=%s",
-        reversed_hops_str, hops_str, client_str
-    ))
-
-    response_handle:headers():set(HEADER_CONST.HOPS, reversed_hops_str)
-    local target_hop = BUSINESS_RULE.EMPTY_VALUE
-    local new_index =  0
-    response_handle:headers():set(HEADER_CONST.HOST, client_str)
-    response_handle:headers():set(HEADER_CONST.INDEX, new_index)
-
-    -- 5. 日志记录
-    response_handle:logInfo(string.format(
-        "Reverse success: proxy_type=%s, original_hops=%s → reversed_hops=%s, index=%s, new_index=%s, target_hop=%s",
-        proxy_type, hops_str, reversed_hops_str, BUSINESS_RULE.INIT_INDEX, new_index, target_hop
-    ))
+    -- 核心：无任何修改逻辑，响应原封不动透传
 end
 EOF
 
