@@ -26,6 +26,8 @@ type VMReport struct {
 
 	// 进程信息（可选）
 	Process ProcessInfo `json:"process,omitempty"`
+
+	EnvoyMem EnvoyBufferStats `json:"envoy_mem"`
 }
 
 // CPUInfo CPU维度信息
@@ -75,6 +77,13 @@ type ProcessInfo struct {
 	ActiveCount int             `json:"active_count"` // 活跃进程数（无则填0）
 	TopCPU      []ProcessDetail `json:"top_cpu"`      // CPU占用TOP3进程（不足3条补空）
 	TopMem      []ProcessDetail `json:"top_mem"`      // 内存占用TOP3进程（不足3条补空）
+}
+
+type EnvoyBufferStats struct {
+	TotalBuffer   int64  `json:"total_buffer"`    // 全局缓冲总和（字节）
+	ActiveConnRaw string `json:"active_conn_raw"` // 活跃连接数原始值
+	ActiveConn    int64  `json:"active_conn"`     // 活跃连接数（强制转数字后）
+	PerConnBuffer int64  `json:"per_conn_buffer"` // 单连接缓冲均值（字节）
 }
 
 // ProcessDetail 进程详情
