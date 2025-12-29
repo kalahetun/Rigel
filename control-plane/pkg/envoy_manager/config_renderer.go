@@ -14,9 +14,11 @@ admin:
     socket_address:
       address: 0.0.0.0
       port_value: {{.AdminPort}}
+  # ⚠ 可选：deprecated，但目前还能用
   access_log_path: "/home/matth/admin_access.log"
   profile_path: "/home/matth/profile"
-# 启用Lua扩展支持（必需）
+
+# ================= Lua runtime =================
 layered_runtime:
   layers:
     - name: static_layer_0
@@ -25,79 +27,89 @@ layered_runtime:
           lua:
             allow_dynamic_loading: true
             enable_resty: true
-            log_level: info  # 新增：开启Lua日志输出（logInfo/logErr能打印）
+            log_level: info
+
 static_resources:
   listeners:
-{{range .Ports}}{{if .Enabled}}
-  - name: listener_{{.Port}}
-    address:
-      socket_address:
-        address: 0.0.0.0
-        port_value: {{.Port}}
-    filter_chains:
-    - filters:
-      - name: envoy.filters.network.http_connection_manager
-        typed_config:
-          "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
-          stat_prefix: ingress_http_{{.Port}}
-          access_logs:
-            - name: envoy.access_logs.file
+{{- range .Ports }}
+{{- if .Enabled }}
+    - name: listener_{{.Port}}
+      address:
+        socket_address:
+          address: 0.0.0.0
+          port_value: {{.Port}}
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
               typed_config:
-                "@type": type.googleapis.com/envoy.extensions.access_loggers.file.v3.FileAccessLog
-                path: "/home/matth/all_listeners_business.log"  # 统一日志文件
-                # 直接使用 Envoy 默认全量格式，自动输出所有核心信息
-                log_format:
-                  text_format: "%DEFAULT_FORMAT% [LISTENER] listener_{{.Port}} [PORT] {{.Port}}\n"
-          route_config:
-            name: local_route_{{.Port}}
-            virtual_hosts:
-            - name: local_service_{{.Port}}
-              domains: ["*"]
-              routes:
-              - match:
-                  prefix: "/"
-                route:
-                  cluster: target_cluster
-          http_filters:
-          # 核心修改：引用独立Lua文件（替代内联）
-          - name: envoy.filters.http.lua
-            typed_config:
-              "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
-              source_codes:
-                access_router.lua:  # 脚本名称（自定义）
-                  filename: "/home/matth/access_router.lua"  # 独立Lua文件路径
-          # 保留原有router过滤器
-          - name: envoy.filters.http.router
-            typed_config:
-              "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
-{{end}}{{end}}
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+
+                stat_prefix: ingress_http_{{.Port}}
+
+                # ✅ 正确字段名：access_log（不是 access_logs）
+                access_log:
+                  - name: envoy.access_logs.file
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.access_loggers.file.v3.FileAccessLog
+                      path: "/home/matth/all_listeners_business.log"
+                      log_format:
+                        text_format: >
+                          %DEFAULT_FORMAT%
+                          [LISTENER] listener_{{.Port}}
+                          [PORT] {{.Port}}
+                          \n
+
+                route_config:
+                  name: local_route_{{.Port}}
+                  virtual_hosts:
+                    - name: local_service_{{.Port}}
+                      domains: ["*"]
+                      routes:
+                        - match:
+                            prefix: "/"
+                          route:
+                            cluster: target_cluster
+
+                http_filters:
+                  - name: envoy.filters.http.lua
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
+                      source_codes:
+                        access_router.lua:
+                          filename: "/home/matth/access_router.lua"
+
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+{{- end }}
+{{- end }}
+
   clusters:
-  - name: target_cluster
-    connect_timeout: 0.25s
-    type: STATIC
-    lb_policy: ROUND_ROBIN
-    # ========== 关键修改1：健康检查配置移到集群的 health_checks 节点 ==========
-    health_checks:
-      - timeout: 1s
-        interval: 5s
-        unhealthy_threshold: 2
-        healthy_threshold: 2
-        http_health_check:
-          path: /health
-    # ========== 关键修改2：endpoint 下仅保留地址配置，删除非法的 health_check_config ==========
-    load_assignment:
-      cluster_name: target_cluster
-      endpoints:
-      - lb_endpoints:
-        {{range .TargetAddrs}}
-        - endpoint:
-            address:
-              socket_address:
-                address: {{.IP}}
-                port_value: {{.Port}}
-            health_check_config:
-              port_value: 8082
-        {{end}}
+    - name: target_cluster
+      connect_timeout: 0.25s
+      type: STATIC
+      lb_policy: ROUND_ROBIN
+
+      # ✅ 健康检查只允许在 cluster.health_checks
+      health_checks:
+        - timeout: 1s
+          interval: 5s
+          unhealthy_threshold: 2
+          healthy_threshold: 2
+          http_health_check:
+            path: "/health"
+
+      load_assignment:
+        cluster_name: target_cluster
+        endpoints:
+          - lb_endpoints:
+{{- range .TargetAddrs }}
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: {{.IP}}
+                      port_value: {{.Port}}
+{{- end }}
 `
 
 // RenderEnvoyYamlConfig 渲染Envoy YAML配置文件到matth目录

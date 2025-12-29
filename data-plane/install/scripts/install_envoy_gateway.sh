@@ -79,7 +79,6 @@ admin:
   access_log_path: "/home/matth/admin_access.log"
   profile_path: "/home/matth/profile"
 
-# 开启Lua日志输出（保留原有配置）
 layered_runtime:
   layers:
     - name: static_layer_0
@@ -99,25 +98,31 @@ static_resources:
           port_value: 8095
       filter_chains:
         - filters:
-            # ========== 新增：启用original_dst网络过滤器（关键，支持动态修改转发目标） ==========
-            - name: envoy.filters.network.original_dst
+            # ===== HTTP original_dst（必须）=====
+            - name: envoy.filters.http.original_dst
               typed_config:
-                "@type": type.googleapis.com/envoy.extensions.filters.network.original_dst.v3.OriginalDst
-                allow_modification: true # 允许Lua修改原始转发目标
-            # ========== 原有http_connection_manager保留，仅修改路由指向新集群 ==========
+                "@type": type.googleapis.com/envoy.extensions.filters.http.original_dst.v3.OriginalDst
+
             - name: envoy.filters.network.http_connection_manager
               typed_config:
                 "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
                 codec_type: HTTP1
                 stat_prefix: ingress_http_8095
-                # 保留业务访问日志（不改动）
-                access_logs:
+
+                # ✅ 正确字段名
+                access_log:
                   - name: envoy.access_logs.file
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.access_loggers.file.v3.FileAccessLog
                       path: "/home/matth/listener_8095_business.log"
                       log_format:
-                        text_format: "%DEFAULT_FORMAT% [LISTENER] listener_8095 [PORT] 8095\n"
+                        text_format: >
+                          %DEFAULT_FORMAT%
+                          [LISTENER] listener_8095
+                          [PORT] 8095
+                          [UPSTREAM] %UPSTREAM_HOST%
+                          \n
+
                 route_config:
                   name: local_route
                   virtual_hosts:
@@ -127,8 +132,8 @@ static_resources:
                         - match:
                             prefix: "/"
                           route:
-                            # ========== 修改：路由指向动态原始目标集群（不再指向dummy_cluster） ==========
                             cluster: dynamic_original_dst_cluster
+
                 http_filters:
                   - name: envoy.filters.http.lua
                     typed_config:
@@ -136,17 +141,15 @@ static_resources:
                       source_codes:
                         hop_router.lua:
                           filename: "/home/matth/hop_router.lua"
+
                   - name: envoy.filters.http.router
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
 
-  # ========== 新增：动态原始目标集群（替代dummy_cluster，支持动态转发） ==========
   clusters:
     - name: dynamic_original_dst_cluster
       connect_timeout: 0.25s
-      type: ORIGINAL_DST # 核心：集群类型为原始目标，支持动态指定上游
-      lb_policy: ROUND_ROBIN
-      # 无需配置固定endpoint，转发目标由Lua动态设置
+      type: ORIGINAL_DST
 EOF
 
 #场景 1：单跳代理（仅 B → S3）
@@ -263,8 +266,15 @@ function envoy_on_request(request_handle)
         local target_ip, target_port = string.match(target_hop, "([^:]+):(%d+)")
         if target_ip and target_port then
             -- 关键API：设置Envoy动态转发IP和端口，真正控制转发目标
-            request_handle:streamInfo():setDownstreamOriginalDstIp(target_ip)
-            request_handle:streamInfo():setDownstreamOriginalDstPort(tonumber(target_port))
+            -- request_handle:streamInfo():setDownstreamOriginalDstIp(target_ip)
+            -- request_handle:streamInfo():setDownstreamOriginalDstPort(tonumber(target_port))
+
+            request_handle:streamInfo():setDynamicMetadata(
+                "envoy.filters.http.original_dst",
+                "address",
+                target_ip .. ":" .. target_port
+            )
+
             request_handle:logInfo(string.format(
                 "Set dynamic forward target | IP=%s | Port=%s | target_hop=%s",
                 target_ip, target_port, target_hop
