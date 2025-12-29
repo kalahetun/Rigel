@@ -98,18 +98,11 @@ static_resources:
           port_value: 8095
       filter_chains:
         - filters:
-            # ===== HTTP original_dst（必须）=====
-            - name: envoy.filters.http.original_dst
-              typed_config:
-                "@type": type.googleapis.com/envoy.extensions.filters.http.original_dst.v3.OriginalDst
-
             - name: envoy.filters.network.http_connection_manager
               typed_config:
                 "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
                 codec_type: HTTP1
                 stat_prefix: ingress_http_8095
-
-                # ✅ 正确字段名
                 access_log:
                   - name: envoy.access_logs.file
                     typed_config:
@@ -117,12 +110,10 @@ static_resources:
                       path: "/home/matth/listener_8095_business.log"
                       log_format:
                         text_format: >
-                          %DEFAULT_FORMAT%
-                          [LISTENER] listener_8095
-                          [PORT] 8095
-                          [UPSTREAM] %UPSTREAM_HOST%
+                          [%START_TIME%] "%REQ(:METHOD)% %REQ(:PATH)% %PROTOCOL%"
+                          %RESPONSE_CODE% %BYTES_RECEIVED% %BYTES_SENT%
+                          [LISTENER] listener_8095 [PORT] 8095 [UPSTREAM] %UPSTREAM_HOST%
                           \n
-
                 route_config:
                   name: local_route
                   virtual_hosts:
@@ -132,24 +123,40 @@ static_resources:
                         - match:
                             prefix: "/"
                           route:
-                            cluster: dynamic_original_dst_cluster
-
+                            cluster: dynamic_target_cluster
                 http_filters:
                   - name: envoy.filters.http.lua
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
-                      source_codes:
-                        hop_router.lua:
-                          filename: "/home/matth/hop_router.lua"
-
+                      inline_code: |
+                        function envoy_on_request(request_handle)
+                          -- 从请求头获取动态 target
+                          local target_ip = request_handle:headers():get("x-target-ip")
+                          local target_port = request_handle:headers():get("x-target-port")
+                          if target_ip ~= nil and target_port ~= nil then
+                            request_handle:logInfo("Redirecting to "..target_ip..":"..target_port)
+                            -- 修改 :authority header，使路由到指定 host
+                            request_handle:headers():replace(":authority", target_ip..":"..target_port)
+                          end
+                        end
                   - name: envoy.filters.http.router
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
 
   clusters:
-    - name: dynamic_original_dst_cluster
+    - name: dynamic_target_cluster
+      type: STRICT_DNS
       connect_timeout: 0.25s
-      type: ORIGINAL_DST
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: dynamic_target_cluster
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: 127.0.0.1  # 默认占位
+                      port_value: 8080    # 默认占位
 EOF
 
 #场景 1：单跳代理（仅 B → S3）
@@ -266,14 +273,10 @@ function envoy_on_request(request_handle)
         local target_ip, target_port = string.match(target_hop, "([^:]+):(%d+)")
         if target_ip and target_port then
             -- 关键API：设置Envoy动态转发IP和端口，真正控制转发目标
-            -- request_handle:streamInfo():setDownstreamOriginalDstIp(target_ip)
-            -- request_handle:streamInfo():setDownstreamOriginalDstPort(tonumber(target_port))
-
-            request_handle:streamInfo():setDynamicMetadata(
-                "envoy.filters.http.original_dst",
-                "address",
-                target_ip .. ":" .. target_port
-            )
+            -- 设置 :authority header，让 Envoy 动态转发到指定 host:port
+            request_handle:headers():replace(":authority", target_ip..":"..target_port)
+            -- 可选：设置 Host header 保留给上游识别
+            request_handle:headers():set("x-host", target_hop)
 
             request_handle:logInfo(string.format(
                 "Set dynamic forward target | IP=%s | Port=%s | target_hop=%s",
