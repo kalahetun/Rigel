@@ -54,10 +54,10 @@ static_resources:
                       path: "/home/matth/all_listeners_business.log"
                       log_format:
                         text_format: >
-                          %DEFAULT_FORMAT%
-                          [LISTENER] listener_{{.Port}}
-                          [PORT] {{.Port}}
-                          \n
+                          [%START_TIME%] "%REQ(:METHOD)% %REQ(:PATH)% %PROTOCOL%"
+                          %RESPONSE_CODE% %BYTES_RECEIVED% %BYTES_SENT%
+                          [LISTENER] listener_8090 [PORT] 8090
+
 
                 route_config:
                   name: local_route_{{.Port}}
@@ -109,6 +109,8 @@ static_resources:
                     socket_address:
                       address: {{.IP}}
                       port_value: {{.Port}}
+                  health_check_config:
+                    port_value: 8082
 {{- end }}
 `
 
