@@ -25,6 +25,7 @@ layered_runtime:
           lua:
             allow_dynamic_loading: true
             enable_resty: true
+            log_level: info  # 新增：开启Lua日志输出（logInfo/logErr能打印）
 static_resources:
   listeners:
 {{range .Ports}}{{if .Enabled}}
@@ -39,6 +40,14 @@ static_resources:
         typed_config:
           "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
           stat_prefix: ingress_http_{{.Port}}
+          access_logs:
+            - name: envoy.access_logs.file
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.access_loggers.file.v3.FileAccessLog
+                path: "/home/matth/all_listeners_business.log"  # 统一日志文件
+                # 直接使用 Envoy 默认全量格式，自动输出所有核心信息
+                log_format:
+                  text_format: "%DEFAULT_FORMAT% [LISTENER] listener_{{.Port}} [PORT] {{.Port}}\n"
           route_config:
             name: local_route_{{.Port}}
             virtual_hosts:

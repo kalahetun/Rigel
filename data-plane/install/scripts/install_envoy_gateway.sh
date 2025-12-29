@@ -76,6 +76,19 @@ admin:
     socket_address:
       address: 127.0.0.1
       port_value: 9901
+  access_log_path: "/home/matth/admin_access.log"
+  profile_path: "/home/matth/profile"
+
+# 开启Lua日志输出（保留原有配置）
+layered_runtime:
+  layers:
+    - name: static_layer_0
+      static_layer:
+        envoy:
+          lua:
+            log_level: info
+            allow_dynamic_loading: true
+            enable_resty: true
 
 static_resources:
   listeners:
@@ -86,11 +99,25 @@ static_resources:
           port_value: 8095
       filter_chains:
         - filters:
+            # ========== 新增：启用original_dst网络过滤器（关键，支持动态修改转发目标） ==========
+            - name: envoy.filters.network.original_dst
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.original_dst.v3.OriginalDst
+                allow_modification: true # 允许Lua修改原始转发目标
+            # ========== 原有http_connection_manager保留，仅修改路由指向新集群 ==========
             - name: envoy.filters.network.http_connection_manager
               typed_config:
                 "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
                 codec_type: HTTP1
                 stat_prefix: ingress_http_8095
+                # 保留业务访问日志（不改动）
+                access_logs:
+                  - name: envoy.access_logs.file
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.access_loggers.file.v3.FileAccessLog
+                      path: "/home/matth/listener_8095_business.log"
+                      log_format:
+                        text_format: "%DEFAULT_FORMAT% [LISTENER] listener_8095 [PORT] 8095\n"
                 route_config:
                   name: local_route
                   virtual_hosts:
@@ -100,34 +127,26 @@ static_resources:
                         - match:
                             prefix: "/"
                           route:
-                            cluster: dummy_cluster
+                            # ========== 修改：路由指向动态原始目标集群（不再指向dummy_cluster） ==========
+                            cluster: dynamic_original_dst_cluster
                 http_filters:
-                  # 强制加载外部Lua脚本（必选，不可删除）
                   - name: envoy.filters.http.lua
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
                       source_codes:
                         hop_router.lua:
-                          filename: "/home/matth/hop_router.lua"  # 固定脚本路径，必须存在
-                  # 路由转发（依赖Lua后执行）
+                          filename: "/home/matth/hop_router.lua"
                   - name: envoy.filters.http.router
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
-  # 核心集群配置
+
+  # ========== 新增：动态原始目标集群（替代dummy_cluster，支持动态转发） ==========
   clusters:
-    - name: dummy_cluster
+    - name: dynamic_original_dst_cluster
       connect_timeout: 0.25s
-      type: STRICT_DNS
+      type: ORIGINAL_DST # 核心：集群类型为原始目标，支持动态指定上游
       lb_policy: ROUND_ROBIN
-      load_assignment:
-        cluster_name: dummy_cluster
-        endpoints:
-          - lb_endpoints:
-              - endpoint:
-                  address:
-                    socket_address:
-                      address: 127.0.0.1
-                      port_value: 8080
+      # 无需配置固定endpoint，转发目标由Lua动态设置
 EOF
 
 #场景 1：单跳代理（仅 B → S3）
@@ -165,6 +184,7 @@ echo "📝 生成 Lua 脚本 ${LUA_SCRIPT_PATH}..."
 cat > "${LUA_SCRIPT_PATH}" << EOF
 -- Envoy Lua Filter: 极简hops动态路由（仅请求转发+响应透传）
 -- 核心：存入current_index到Metadata，精准追溯本次转发的索引
+-- 新增：动态设置Envoy转发目标，摆脱静态集群依赖
 -- ==============================================
 -- 通用常量定义（仅保留必需字段）
 -- ==============================================
@@ -201,7 +221,7 @@ local function split_str(str, sep)
 end
 
 -- ==============================================
--- 请求阶段（核心：解析x-hops转发请求，存入current_index到Metadata）
+-- 请求阶段（核心：解析x-hops转发请求，存入current_index到Metadata + 动态设置Envoy转发目标）
 -- ==============================================
 function envoy_on_request(request_handle)
     -- 1. 读取请求Header
@@ -237,8 +257,29 @@ function envoy_on_request(request_handle)
         ))
     end
 
-    -- 5. 执行转发（修改Host头）
+    -- 5. 执行转发（先校验目标有效性，再设置动态转发目标+修改Host头）
     if target_hop ~= BUSINESS_RULE.EMPTY_VALUE then
+        -- ========== 核心新增：拆分target_hop并设置Envoy原始转发目标（关键） ==========
+        local target_ip, target_port = string.match(target_hop, "([^:]+):(%d+)")
+        if target_ip and target_port then
+            -- 关键API：设置Envoy动态转发IP和端口，真正控制转发目标
+            request_handle:streamInfo():setDownstreamOriginalDstIp(target_ip)
+            request_handle:streamInfo():setDownstreamOriginalDstPort(tonumber(target_port))
+            request_handle:logInfo(string.format(
+                "Set dynamic forward target | IP=%s | Port=%s | target_hop=%s",
+                target_ip, target_port, target_hop
+            ))
+        else
+            -- 目标格式错误（非IP:Port），拒绝转发
+            request_handle:logErr(string.format(
+                "Invalid target hop format | target_hop=%s | client=%s",
+                target_hop, client_str
+            ))
+            request_handle:respond({[HEADER_CONST.STATUS] = "400"}, "Invalid target hop format (required: IP:Port)")
+            return
+        end
+
+        -- 原有逻辑：修改Host头（保留，用于上游服务识别）
         request_handle:headers():set(HEADER_CONST.HOST, target_hop)
     else
         request_handle:logErr(string.format(
