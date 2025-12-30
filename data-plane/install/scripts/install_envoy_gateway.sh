@@ -110,9 +110,9 @@ static_resources:
                       path: "/home/matth/listener_8095_business.log"
                       log_format:
                         text_format: >
-                          [%START_TIME%] "%REQ(:METHOD)% %REQ(:PATH)% %PROTOCOL%"
-                          %RESPONSE_CODE% %BYTES_RECEIVED% %BYTES_SENT%
-                          [LISTENER] listener_8095 [PORT] 8095 [UPSTREAM] %UPSTREAM_HOST%
+                          [%START_TIME%] "%REQ(:METHOD)% %REQ(:PATH)% %PROTOCOL%" %RESPONSE_CODE% %BYTES_RECEIVED% %BYTES_SENT%
+                          [LISTENER] listener_8095 [PORT] 8095
+                          [UPSTREAM] %UPSTREAM_HOST%
                           \n
                 route_config:
                   name: local_route
@@ -128,35 +128,32 @@ static_resources:
                   - name: envoy.filters.http.lua
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
-                      inline_code: |
-                        function envoy_on_request(request_handle)
-                          -- 从请求头获取动态 target
-                          local target_ip = request_handle:headers():get("x-target-ip")
-                          local target_port = request_handle:headers():get("x-target-port")
-                          if target_ip ~= nil and target_port ~= nil then
-                            request_handle:logInfo("Redirecting to "..target_ip..":"..target_port)
-                            -- 修改 :authority header，使路由到指定 host
-                            request_handle:headers():replace(":authority", target_ip..":"..target_port)
-                          end
-                        end
+                      source_codes:
+                        hop_router.lua:
+                          filename: "/home/matth/hop_router.lua"
+                  - name: envoy.filters.http.dynamic_forward_proxy
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.dynamic_forward_proxy.v3.FilterConfig
+                      dns_cache_config:
+                        name: dynamic_dns_cache
+                        dns_lookup_family: V4_ONLY
                   - name: envoy.filters.http.router
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
 
-  clusters:
-    - name: dynamic_target_cluster
-      type: STRICT_DNS
-      connect_timeout: 0.25s
-      lb_policy: ROUND_ROBIN
-      load_assignment:
-        cluster_name: dynamic_target_cluster
-        endpoints:
-          - lb_endpoints:
-              - endpoint:
-                  address:
-                    socket_address:
-                      address: 127.0.0.1  # 默认占位
-                      port_value: 8080    # 默认占位
+clusters:
+    - name: dynamic_forward_proxy_cluster
+      connect_timeout: 5s
+
+      lb_policy: CLUSTER_PROVIDED
+
+      cluster_type:
+        name: envoy.clusters.dynamic_forward_proxy
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.clusters.dynamic_forward_proxy.v3.ClusterConfig
+          dns_cache_config:
+            name: dynamic_dns_cache
+            dns_lookup_family: V4_ONLY
 EOF
 
 #场景 1：单跳代理（仅 B → S3）
@@ -215,6 +212,14 @@ local BUSINESS_RULE = {
 -- Metadata 命名空间（仅持久化请求阶段关键信息）
 local METADATA_NS = "hop_router"
 
+local DEBUG_MODE = true                      -- 调试完成后建议关闭
+
+local function print1(msg)
+    if DEBUG_MODE then
+      print(msg)
+    end
+end
+
 -- ==============================================
 -- 通用工具函数（仅保留必需的字符串拆分）
 -- ==============================================
@@ -246,9 +251,8 @@ function envoy_on_request(request_handle)
 
     -- 3. 空hops拒绝转发
     if hops_len == 0 then
-        local err_msg = string.format("Missing x-hops header, reject forwarding | client=%s", client_str)
-        request_handle:streamInfo():setDynamicMetadata("lua_error","msg",err_msg)
-        request_handle:logErr(err_msg)
+        local err_msg = string.format("[Lua-ERROR] Missing x-hops header, reject forwarding | client=%s", client_str)
+        print1(err_msg)
         request_handle:respond({[HEADER_CONST.STATUS] = "400"}, "Missing x-hops header")
         return
     end
@@ -260,10 +264,9 @@ function envoy_on_request(request_handle)
     -- 正常转发：index < hops长度 → 取对应节点
     if new_index <= hops_len then
         target_hop = hops_arr[new_index]
-        local info_msg = string.format("Normal forward | current_index=%d → target=%s | client=%s | hops=%s",
+        local info_msg = string.format("[Lua-INFO] Normal forward | current_index=%d → target=%s | client=%s | hops=%s",
             current_index, target_hop, client_str, hops_str)
-        request_handle:streamInfo():setDynamicMetadata("lua_info","msg",info_msg)
-        request_handle:logInfo(info_msg)
+        print1(info_msg)
     end
 
     -- 5. 执行转发（先校验目标有效性，再设置动态转发目标+修改Host头）
@@ -274,25 +277,22 @@ function envoy_on_request(request_handle)
             request_handle:headers():replace(":authority", target_ip..":"..target_port)
             request_handle:headers():set("x-host", target_hop)
 
-            local info_msg = string.format("Set dynamic forward target | IP=%s | Port=%s | target_hop=%s",
+            local info_msg = string.format("[Lua-INFO] Set dynamic forward target | IP=%s | Port=%s | target_hop=%s",
                 target_ip, target_port, target_hop)
-            request_handle:streamInfo():setDynamicMetadata("lua_info","msg",info_msg)
-            request_handle:logInfo(info_msg)
+            print1(info_msg)
         else
-            local err_msg = string.format("Invalid target hop format | target_hop=%s | client=%s",
+            local err_msg = string.format("[Lua-ERROR] Invalid target hop format | target_hop=%s | client=%s",
                 target_hop, client_str)
-            request_handle:streamInfo():setDynamicMetadata("lua_error","msg",err_msg)
-            request_handle:logErr(err_msg)
+            print1(err_msg)
             request_handle:respond({[HEADER_CONST.STATUS] = "400"}, "Invalid target hop format (required: IP:Port)")
             return
         end
 
         request_handle:headers():set(HEADER_CONST.HOST, target_hop)
     else
-        local err_msg = string.format("No valid target hop | client=%s | hops=%s | current_index=%d",
+        local err_msg = string.format("[Lua-ERROR] No valid target hop | client=%s | hops=%s | current_index=%d",
             client_str, hops_str, current_index)
-        request_handle:streamInfo():setDynamicMetadata("lua_error","msg",err_msg)
-        request_handle:logErr(err_msg)
+        print1(err_msg)
         request_handle:respond({[HEADER_CONST.STATUS] = "400"}, "No valid target hop")
         return
     end
@@ -305,10 +305,9 @@ function envoy_on_request(request_handle)
     request_handle:streamInfo():setMetadata(METADATA_NS, "client", client_str)
     request_handle:streamInfo():setMetadata(METADATA_NS, "current_index", tostring(current_index))
 
-    local info_msg = string.format("Request processed | client=%s | hops=%s | current_index=%d | new_index=%d",
+    local info_msg = string.format("[Lua-INFO] Request processed | client=%s | hops=%s | current_index=%d | new_index=%d",
         client_str, hops_str, current_index, new_index)
-    request_handle:streamInfo():setDynamicMetadata("lua_info","msg",info_msg)
-    request_handle:logInfo(info_msg)
+    print1(info_msg)
 end
 
 -- ==============================================
@@ -333,22 +332,11 @@ function envoy_on_response(response_handle)
 
     -- 4. 写入 dynamic metadata
     if status_code == "" or string.sub(status_code, 1, 1) == "4" then
-        response_handle:streamInfo():setDynamicMetadata("lua_warn","msg",log_msg)
+        print1("[lua_warn]" .. log_msg)
     elseif string.sub(status_code, 1, 1) == "5" then
-        response_handle:streamInfo():setDynamicMetadata("lua_error","msg",log_msg)
+        print1("[lua_error]" .. log_msg)
     else
-        response_handle:streamInfo():setDynamicMetadata("lua_info","msg",log_msg)
-    end
-
-    -- 5. 按状态码分级打印日志（admin log / stderr）
-    if status_code == "" then
-        response_handle:logWarn(log_msg .. " (unknown status code)")
-    elseif string.sub(status_code, 1, 1) == "4" then
-        response_handle:logWarn(log_msg)
-    elseif string.sub(status_code, 1, 1) == "5" then
-        response_handle:logErr(log_msg)
-    else
-        response_handle:logInfo(log_msg)
+        print1("[lua_info]" .. log_msg)
     end
 
     -- 核心：无任何修改逻辑，响应原封不动透传
