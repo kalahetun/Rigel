@@ -56,6 +56,9 @@ static_resources:
                         text_format: >
                           [%START_TIME%] "%REQ(:METHOD)% %REQ(:PATH)% %PROTOCOL%" %RESPONSE_CODE% %BYTES_RECEIVED% %BYTES_SENT%
                           [LISTENER] listener_8090 [PORT] 8090
+                          [LUA-INFO] %DYNAMIC_METADATA(lua_info:msg)%
+                          [LUA-WARN] %DYNAMIC_METADATA(lua_warn:msg)%
+                          [LUA-ERROR] %DYNAMIC_METADATA(lua_error:msg)%
                           \n
 
                 route_config:

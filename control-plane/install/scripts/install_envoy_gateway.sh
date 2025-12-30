@@ -87,12 +87,6 @@ local DEFAULT_BW_LIMIT = 10 * 1024 * 1024    -- 全局默认限流值：10MB/s�
 local PORT_BANDWIDTH_LIMITS = {}  -- 存储从接口拉取的动态限流值
 local port_in_stats = {}          -- 端口带宽统计
 
-local function print1(msg)
-    if DEBUG_MODE then
-      print(msg)
-    end
-end
-
 -- 核心1：使用 Envoy 原生 httpClient 拉取动态配置（替代 resty.http）
 local function fetch_dynamic_config()
     -- Envoy 原生 HTTP 客户端（同步请求）
@@ -104,7 +98,7 @@ local function fetch_dynamic_config()
     headers["Content-Type"] = "application/json"
 
 
-    print1("[Lua-DEBUG] 尝试拉取动态限流配置：" .. CONFIG_SERVER_URL)
+    print("[Lua-DEBUG] 尝试拉取动态限流配置：" .. CONFIG_SERVER_URL)
 
     -- 发起同步 HTTP 请求（Envoy 原生 API）
     local response, err = http_client:send({
@@ -116,17 +110,17 @@ local function fetch_dynamic_config()
     -- 校验请求结果
     if err then
         local err_msg = "配置接口访问失败：" .. err
-        print1("[Lua-ERROR] " .. err_msg)
+        print("[Lua-ERROR] " .. err_msg)
         return nil, err_msg
     end
     if not response then
         local err_msg = "配置接口无响应"
-        print1("[Lua-ERROR] " .. err_msg)
+        print("[Lua-ERROR] " .. err_msg)
         return nil, err_msg
     end
     if response.headers[":status"] ~= "200" then
         local err_msg = string.format("配置接口返回异常：状态码=%s", response.headers[":status"])
-        print1("[Lua-ERROR] " .. err_msg)
+        print("[Lua-ERROR] " .. err_msg)
         return nil, err_msg
     end
 
@@ -137,7 +131,7 @@ local function fetch_dynamic_config()
     end
     if response_body == "" then
         local err_msg = "配置接口返回空响应体"
-        print1("[Lua-ERROR] " .. err_msg)
+        print("[Lua-ERROR] " .. err_msg)
         return nil, err_msg
     end
 
@@ -145,19 +139,19 @@ local function fetch_dynamic_config()
     local ok, cjson = pcall(require, "cjson")
     if not ok then
         local err_msg = "依赖缺失：cjson库未找到（Envoy 需编译启用 cjson）"
-        print1("[Lua-ERROR] " .. err_msg)
+        print("[Lua-ERROR] " .. err_msg)
         return nil, err_msg
     end
 
     local config, decode_err = cjson.decode(response_body)
     if not config then
         local err_msg = string.format("配置JSON解析失败：%s，原始内容=%s", decode_err, response_body)
-        print1("[Lua-ERROR] " .. err_msg)
+        print("[Lua-ERROR] " .. err_msg)
         return nil, err_msg
     end
     if type(config) ~= "table" then
         local err_msg = string.format("配置格式错误：非JSON对象，原始内容=%s", response_body)
-        print1("[Lua-ERROR] " .. err_msg)
+        print("[Lua-ERROR] " .. err_msg)
         return nil, err_msg
     end
 
@@ -168,17 +162,17 @@ local function fetch_dynamic_config()
         local limit = tonumber(limit_val)
         if port and limit and limit > 0 then
             formatted_config[port] = limit
-            print1(string.format("[Lua-DEBUG] 加载端口%d自定义限流值：%d字节/秒（%.2fMB/s）",
+            print(string.format("[Lua-DEBUG] 加载端口%d自定义限流值：%d字节/秒（%.2fMB/s）",
               port, limit, limit/1024/1024))
         else
-            print1(string.format("[Lua-WARN] 动态配置项无效：端口=%s，阈值=%s（需均为数字且阈值>0）", port_key, limit_val))
+            print(string.format("[Lua-WARN] 动态配置项无效：端口=%s，阈值=%s（需均为数字且阈值>0）", port_key, limit_val))
         end
     end
 
     -- 校验是否拉取到有效配置
     if next(formatted_config) == nil then
         local err_msg = string.format("配置接口返回无有效限流规则：%s", response_body)
-        print1("[Lua-ERROR] " .. err_msg)
+        print("[Lua-ERROR] " .. err_msg)
         return nil, err_msg
     end
 
@@ -193,7 +187,7 @@ local function update_config_periodically()
         -- 第一步：优先校验err（只要err非空，直接判定为失败）
         if err then
             PORT_BANDWIDTH_LIMITS = {}  -- 清空旧配置
-            print1(string.format("[Lua-WARN] 限流配置拉取失败，全局限流规则已清空，具体原因：%s", err))
+            print(string.format("[Lua-WARN] 限流配置拉取失败，全局限流规则已清空，具体原因：%s", err))
         -- 第二步：err为空时，再校验new_config是否有效
         elseif new_config and next(new_config) ~= nil then
             PORT_BANDWIDTH_LIMITS = new_config
@@ -203,12 +197,12 @@ local function update_config_periodically()
                 config_count = config_count + 1
             end
             local info_msg = string.format("[Lua-INFO] 限流配置更新成功，共加载%d个端口规则", config_count)
-            print1(info_msg)
+            print(info_msg)
         -- 第三步：err为空但new_config无效（空表）
         else
             PORT_BANDWIDTH_LIMITS = {}
             local warn_msg = string.format("[Lua-WARN] 限流配置拉取成功，但无有效端口规则，全局限流规则已清空")
-            print1(warn_msg)
+            print(warn_msg)
         end
 
         -- Envoy Lua 中使用 envoy.sleep 替代 ngx.sleep
@@ -217,12 +211,15 @@ local function update_config_periodically()
 end
 
 -- 核心3：获取端口的最终限流值（优先动态配置，无则默认10MB/s）
-local function get_port_bw_limit(port)
+local function get_port_bw_limit(request_handle, port)
     local dynamic_limit = PORT_BANDWIDTH_LIMITS[port]
     if dynamic_limit and dynamic_limit > 0 then
         return dynamic_limit
     end
-    print1(string.format("[Lua-DEBUG] 端口%d无动态限流配置，使用默认值：10MB/s", port))
+    local info_msg = string.format("[Lua-INFO] 端口%d无动态限流配置，使用默认值：10MB/s", port)
+    request_handle:streamInfo():setDynamicMetadata("lua_info","msg",info_msg)
+    request_handle:logInfo(info_msg)
+
     return DEFAULT_BW_LIMIT
 end
 
@@ -241,7 +238,9 @@ local function get_current_port(request_handle)
         end
     end
 
-    print1(string.format("[Lua-DEBUG] 当前请求的端口：%s", current_port or "获取失败"))
+    local info_msg = string.format("[Lua-INFO] 当前请求的端口：%s", current_port or "获取失败")
+    request_handle:streamInfo():setDynamicMetadata("lua_info","msg",info_msg)
+    request_handle:logInfo(info_msg)
     return current_port
 end
 
@@ -262,7 +261,8 @@ local function calculate_port_in_bandwidth(request_handle, port)
         current_bytes = counter:value()
     else
         local warn_msg = string.format("[Lua-WARN] 无法获取端口%d的带宽指标：%s", port, counter or "指标不存在")
-        print1(warn_msg)
+        request_handle:streamInfo():setDynamicMetadata("lua_warn","msg",warn_msg)
+        request_handle:logInfo(warn_msg)
         return 0
     end
 
@@ -276,12 +276,16 @@ local function calculate_port_in_bandwidth(request_handle, port)
         stats.last_bytes = current_bytes
         stats.last_check_time = now
         stats.last_bw = bandwidth
-        print1(string.format("[Lua-DEBUG] 端口%d更新带宽统计：时间差=%d秒，累计字节差=%d，实时带宽=%.2fMB/s",
-          port, time_diff, byte_diff, bandwidth/1024/1024))
+        local info_msg = string.format("[Lua-INFO] 端口%d更新带宽统计：时间差=%d秒，累计字节差=%d，实时带宽=%.2fMB/s",
+          port, time_diff, byte_diff, bandwidth/1024/1024)
+        request_handle:streamInfo():setDynamicMetadata("lua_info","msg",info_msg)
+        request_handle:logInfo(info_msg)
     else
         bandwidth = stats.last_bw or 0
-        print1(string.format("[Lua-DEBUG] 端口%d未到统计周期（当前差%d秒），使用上次带宽值：%.2fMB/s",
-          port, time_diff, bandwidth/1024/1024))
+        local info_msg = string.format("[Lua-INFO] 端口%d未到统计周期（当前差%d秒），使用上次带宽值：%.2fMB/s",
+          port, time_diff, bandwidth/1024/1024)
+        request_handle:streamInfo():setDynamicMetadata("lua_info","msg",info_msg)
+        request_handle:logInfo(info_msg)
     end
 
     return bandwidth
@@ -291,16 +295,20 @@ end
 function envoy_on_request(request_handle)
     local current_port = get_current_port(request_handle)
     if not current_port then
-        request_handle:logError("[Lua-ERROR] 限流失败：无法识别当前请求的端口")
+        local err_msg = "[Lua-ERROR] 限流失败：无法识别当前请求的端口"
+        request_handle:streamInfo():setDynamicMetadata("lua_error","msg",err_msg)
+        request_handle:logError(err_msg)
         return
     end
 
-    local port_limit = get_port_bw_limit(current_port)
+    local port_limit = get_port_bw_limit(request_handle, current_port)
     local port_limit_mb = port_limit / 1024 / 1024
 
     local current_bw = calculate_port_in_bandwidth(request_handle, current_port)
     if current_bw <= 0 then
-        print1(string.format("[Lua-DEBUG] 端口%d带宽计算异常：%d字节/秒", current_port, current_bw))
+        local info_msg = string.format("[Lua-INFO] 端口%d带宽计算异常：%d字节/秒", current_port, current_bw)
+        request_handle:streamInfo():setDynamicMetadata("lua_info","msg",info_msg)
+        request_handle:logInfo(info_msg)
         return
     end
     local current_bw_mb = current_bw / 1024 / 1024
@@ -316,15 +324,18 @@ function envoy_on_request(request_handle)
             },
             string.format("Port %d Bandwidth Limit Exceeded (Max: %.2fMB/s)", current_port, port_limit_mb)
         )
-        request_handle:logError(string.format("[Lua] 端口%d限流触发：%.2fMB/s > %.2fMB/s",
-        current_port, current_bw_mb, port_limit_mb))
-        print1(string.format("[Lua-DEBUG] 端口%d触发限流：%.2fMB/s > %.2fMB/s",
-          current_port, current_bw_mb, port_limit_mb))
+        local info_msg = string.format("[Lua-INFO] 端口%d触发限流：%.2fMB/s > %.2fMB/s",
+          current_port, current_bw_mb, port_limit_mb)
+        request_handle:streamInfo():setDynamicMetadata("lua_info","msg",info_msg)
+        request_handle:logInfo(info_msg)
+
         return
     end
 
-    print1(string.format("[Lua] 端口%d带宽正常：%.2fMB/s（上限：%.2fMB/s）",
-      current_port, current_bw_mb, port_limit_mb))
+    local info_msg = string.format("[Lua] 端口%d带宽正常：%.2fMB/s（上限：%.2fMB/s）",
+      current_port, current_bw_mb, port_limit_mb)
+    request_handle:streamInfo():setDynamicMetadata("lua_info","msg",info_msg)
+    request_handle:logInfo(info_msg)
 end
 
 -- 响应阶段空实现
@@ -337,8 +348,8 @@ local ok, err = pcall(function()
     envoy.timer.at(0, update_config_periodically)
 end)
 if not ok then
-    print1("[Lua-ERROR] 定时更新任务启动失败：" .. err)
-    print1("[Lua-INFO] 定时任务启动失败，所有端口将使用默认值10MB/s限流")
+    print("[Lua-ERROR] 定时更新任务启动失败：" .. err)
+    print("[Lua-INFO] 定时任务启动失败，所有端口将使用默认值10MB/s限流")
 end
 EOF
 
