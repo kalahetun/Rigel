@@ -229,6 +229,9 @@ end
 -- 请求阶段（核心：解析x-hops转发请求，存入current_index到Metadata + 动态设置Envoy转发目标）
 -- ==============================================
 function envoy_on_request(request_handle)
+
+    request_handle:stream_info():dynamic_metadata():set("lua_info","msg","request")
+
     -- 1. 读取请求Header
     local hops_str = request_handle:headers():get(HEADER_CONST.HOPS) or BUSINESS_RULE.EMPTY_VALUE
     local index_str = request_handle:headers():get(HEADER_CONST.INDEX) or BUSINESS_RULE.INIT_INDEX
@@ -243,7 +246,7 @@ function envoy_on_request(request_handle)
     if hops_len == 0 then
         local err_msg = string.format("[Lua-ERROR] Missing x-hops header, reject forwarding | client=%s", client_str)
         local err_msg = string.format("Missing x-hops header, reject forwarding | client=%s", client_str)
-        request_handle:streamInfo():setDynamicMetadata("lua_error","msg",err_msg)
+        request_handle:stream_info():dynamic_metadata():set("lua_error", "msg", err_msg)
         request_handle:logErr(err_msg)
         request_handle:respond({[HEADER_CONST.STATUS] = "400"}, "Missing x-hops header")
         return
@@ -258,7 +261,7 @@ function envoy_on_request(request_handle)
         target_hop = hops_arr[new_index]
         local info_msg = string.format("[Lua-INFO] Normal forward | current_index=%d → target=%s | client=%s | hops=%s",
             current_index, target_hop, client_str, hops_str)
-        request_handle:streamInfo():setDynamicMetadata("lua_info","msg",info_msg)
+        request_handle:stream_info():dynamic_metadata():set("lua_info","msg",info_msg)
         request_handle:logInfo(info_msg)
     end
 
@@ -272,12 +275,12 @@ function envoy_on_request(request_handle)
 
             local info_msg = string.format("[Lua-INFO] Set dynamic forward target | IP=%s | Port=%s | target_hop=%s",
                 target_ip, target_port, target_hop)
-            request_handle:streamInfo():setDynamicMetadata("lua_info","msg",info_msg)
+            request_handle:stream_info():dynamic_metadata():set("lua_info","msg",info_msg)
             request_handle:logInfo(info_msg)
         else
             local err_msg = string.format("[Lua-ERROR] Invalid target hop format | target_hop=%s | client=%s",
                 target_hop, client_str)
-            request_handle:streamInfo():setDynamicMetadata("lua_error","msg",err_msg)
+            request_handle:stream_info():dynamic_metadata():set("lua_error","msg",err_msg)
             request_handle:logErr(err_msg)
             request_handle:respond({[HEADER_CONST.STATUS] = "400"}, "Invalid target hop format (required: IP:Port)")
             return
@@ -287,7 +290,7 @@ function envoy_on_request(request_handle)
     else
         local err_msg = string.format("[Lua-ERROR] No valid target hop | client=%s | hops=%s | current_index=%d",
             client_str, hops_str, current_index)
-        request_handle:streamInfo():setDynamicMetadata("lua_error","msg",err_msg)
+        request_handle:stream_info():dynamic_metadata():set("lua_error","msg",err_msg)
         request_handle:logErr(err_msg)
         request_handle:respond({[HEADER_CONST.STATUS] = "400"}, "No valid target hop")
         return
@@ -303,7 +306,7 @@ function envoy_on_request(request_handle)
 
     local info_msg = string.format("[Lua-INFO] Request processed | client=%s | hops=%s | current_index=%d | new_index=%d",
         client_str, hops_str, current_index, new_index)
-    request_handle:streamInfo():setDynamicMetadata("lua_info","msg",info_msg)
+    request_handle:stream_info():dynamic_metadata():set("lua_info","msg",info_msg)
     request_handle:logInfo(info_msg)
 end
 
@@ -329,11 +332,11 @@ function envoy_on_response(response_handle)
 
     -- 4. 写入 dynamic metadata
     if status_code == "" or string.sub(status_code, 1, 1) == "4" then
-        response_handle:streamInfo():setDynamicMetadata("lua_warn","msg",log_msg)
+        request_handle:stream_info():dynamic_metadata():set("lua_warn","msg",log_msg)
     elseif string.sub(status_code, 1, 1) == "5" then
-        response_handle:streamInfo():setDynamicMetadata("lua_error","msg",log_msg)
+        request_handle:stream_info():dynamic_metadata():set("lua_error","msg",log_msg)
     else
-        response_handle:streamInfo():setDynamicMetadata("lua_info","msg",log_msg)
+        request_handle:stream_info():dynamic_metadata():set("lua_info","msg",log_msg)
     end
 
     -- 5. 按状态码分级打印日志（admin log / stderr）

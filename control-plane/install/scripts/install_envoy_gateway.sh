@@ -217,7 +217,7 @@ local function get_port_bw_limit(request_handle, port)
         return dynamic_limit
     end
     local info_msg = string.format("[Lua-INFO] 端口%d无动态限流配置，使用默认值：10MB/s", port)
-    request_handle:streamInfo():setDynamicMetadata("lua_info","msg",info_msg)
+    request_handle:stream_info():dynamic_metadata():set("lua_info","msg",info_msg)
     request_handle:logInfo(info_msg)
 
     return DEFAULT_BW_LIMIT
@@ -239,7 +239,7 @@ local function get_current_port(request_handle)
     end
 
     local info_msg = string.format("[Lua-INFO] 当前请求的端口：%s", current_port or "获取失败")
-    request_handle:streamInfo():setDynamicMetadata("lua_info","msg",info_msg)
+    request_handle:stream_info():dynamic_metadata():set("lua_info","msg",info_msg)
     request_handle:logInfo(info_msg)
     return current_port
 end
@@ -261,7 +261,7 @@ local function calculate_port_in_bandwidth(request_handle, port)
         current_bytes = counter:value()
     else
         local warn_msg = string.format("[Lua-WARN] 无法获取端口%d的带宽指标：%s", port, counter or "指标不存在")
-        request_handle:streamInfo():setDynamicMetadata("lua_warn","msg",warn_msg)
+        request_handle:stream_info():dynamic_metadata():set("lua_warn","msg",warn_msg)
         request_handle:logInfo(warn_msg)
         return 0
     end
@@ -278,13 +278,13 @@ local function calculate_port_in_bandwidth(request_handle, port)
         stats.last_bw = bandwidth
         local info_msg = string.format("[Lua-INFO] 端口%d更新带宽统计：时间差=%d秒，累计字节差=%d，实时带宽=%.2fMB/s",
           port, time_diff, byte_diff, bandwidth/1024/1024)
-        request_handle:streamInfo():setDynamicMetadata("lua_info","msg",info_msg)
+        request_handle:stream_info():dynamic_metadata():set("lua_info","msg",info_msg)
         request_handle:logInfo(info_msg)
     else
         bandwidth = stats.last_bw or 0
         local info_msg = string.format("[Lua-INFO] 端口%d未到统计周期（当前差%d秒），使用上次带宽值：%.2fMB/s",
           port, time_diff, bandwidth/1024/1024)
-        request_handle:streamInfo():setDynamicMetadata("lua_info","msg",info_msg)
+        request_handle:stream_info():dynamic_metadata():set("lua_info","msg",info_msg)
         request_handle:logInfo(info_msg)
     end
 
@@ -293,10 +293,13 @@ end
 
 -- 核心6：请求限流逻辑
 function envoy_on_request(request_handle)
+
+    request_handle:stream_info():dynamic_metadata():set("lua_info","msg","request")
+
     local current_port = get_current_port(request_handle)
     if not current_port then
         local err_msg = "[Lua-ERROR] 限流失败：无法识别当前请求的端口"
-        request_handle:streamInfo():setDynamicMetadata("lua_error","msg",err_msg)
+        request_handle:stream_info():dynamic_metadata():set("lua_error","msg",err_msg)
         request_handle:logError(err_msg)
         return
     end
@@ -307,7 +310,7 @@ function envoy_on_request(request_handle)
     local current_bw = calculate_port_in_bandwidth(request_handle, current_port)
     if current_bw <= 0 then
         local info_msg = string.format("[Lua-INFO] 端口%d带宽计算异常：%d字节/秒", current_port, current_bw)
-        request_handle:streamInfo():setDynamicMetadata("lua_info","msg",info_msg)
+        request_handle:stream_info():dynamic_metadata():set("lua_info","msg",info_msg)
         request_handle:logInfo(info_msg)
         return
     end
@@ -326,7 +329,7 @@ function envoy_on_request(request_handle)
         )
         local info_msg = string.format("[Lua-INFO] 端口%d触发限流：%.2fMB/s > %.2fMB/s",
           current_port, current_bw_mb, port_limit_mb)
-        request_handle:streamInfo():setDynamicMetadata("lua_info","msg",info_msg)
+        request_handle:stream_info():dynamic_metadata():set("lua_info","msg",info_msg)
         request_handle:logInfo(info_msg)
 
         return
@@ -334,7 +337,7 @@ function envoy_on_request(request_handle)
 
     local info_msg = string.format("[Lua] 端口%d带宽正常：%.2fMB/s（上限：%.2fMB/s）",
       current_port, current_bw_mb, port_limit_mb)
-    request_handle:streamInfo():setDynamicMetadata("lua_info","msg",info_msg)
+    request_handle:stream_info():dynamic_metadata():set("lua_info","msg",info_msg)
     request_handle:logInfo(info_msg)
 end
 
