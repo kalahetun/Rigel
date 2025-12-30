@@ -131,29 +131,24 @@ static_resources:
                       source_codes:
                         hop_router.lua:
                           filename: "/home/matth/hop_router.lua"
-                  - name: envoy.filters.http.dynamic_forward_proxy
-                    typed_config:
-                      "@type": type.googleapis.com/envoy.extensions.filters.http.dynamic_forward_proxy.v3.FilterConfig
-                      dns_cache_config:
-                        name: dynamic_dns_cache
-                        dns_lookup_family: V4_ONLY
                   - name: envoy.filters.http.router
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
 
-clusters:
-    - name: dynamic_forward_proxy_cluster
-      connect_timeout: 5s
-
-      lb_policy: CLUSTER_PROVIDED
-
-      cluster_type:
-        name: envoy.clusters.dynamic_forward_proxy
-        typed_config:
-          "@type": type.googleapis.com/envoy.extensions.clusters.dynamic_forward_proxy.v3.ClusterConfig
-          dns_cache_config:
-            name: dynamic_dns_cache
-            dns_lookup_family: V4_ONLY
+  clusters:
+    - name: dynamic_target_cluster
+      type: STRICT_DNS
+      connect_timeout: 0.25s
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: dynamic_target_cluster
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: 127.0.0.1  # 默认占位
+                      port_value: 8080    # 默认占位
 EOF
 
 #场景 1：单跳代理（仅 B → S3）
