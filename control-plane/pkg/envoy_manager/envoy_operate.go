@@ -314,6 +314,7 @@ func (o *EnvoyOperator) StartFirstEnvoy(logger, logger1 *slog.Logger) error {
 		"--restart-epoch", "0",
 		"--base-id", "1000",
 		"--log-level", "info",
+		"--log-path", "/home/matth/envoy.log",
 	)
 
 	// 日志输出
@@ -391,6 +392,7 @@ func (o *EnvoyOperator) HotReloadEnvoyConfig(logger, logger1 *slog.Logger) error
 		"--restart-epoch", strconv.Itoa(newEpoch),
 		"--base-id", "1000",
 		"--log-level", "info",
+		"--log-path", "/home/matth/envoy.log",
 	)
 
 	// 日志输出

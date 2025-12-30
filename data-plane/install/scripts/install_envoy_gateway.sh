@@ -114,8 +114,6 @@ static_resources:
                           [LISTENER] listener_8095 [PORT] 8095
                           [UPSTREAM] %UPSTREAM_HOST%
                           [LUA-INFO] %DYNAMIC_METADATA(lua_info:msg)%
-                          [LUA-WARN] %DYNAMIC_METADATA(lua_warn:msg)%
-                          [LUA-ERROR] %DYNAMIC_METADATA(lua_error:msg)%
                           \n
                 route_config:
                   name: local_route
@@ -188,32 +186,29 @@ EOF
 echo "📝 生成 Lua 脚本 ${LUA_SCRIPT_PATH}..."
 cat > "${LUA_SCRIPT_PATH}" << EOF
 -- Envoy Lua Filter: 极简hops动态路由（仅请求转发+响应透传）
--- 核心：存入current_index到Metadata，精准追溯本次转发的索引
--- 新增：动态设置Envoy转发目标，摆脱静态集群依赖
+-- 核心：动态设置Envoy转发目标，摆脱静态集群依赖
+-- 优化：1. new_index > hops_len 时返回5xx错误 2. 仅最后一次写入dynamic_metadata 3. 移除所有无用冗余 4. 响应极致透传
 -- ==============================================
--- 通用常量定义（仅保留必需字段）
+-- 通用常量定义（仅保留核心必需项）
 -- ==============================================
 local HEADER_CONST = {
-    HOPS = "x-hops",          -- 转发链：A1,A2,...An,S3
-    INDEX = "x-index",        -- 游标索引（初始=1）
-    HOST = "Host",            -- 转发核心Header
-    STATUS = ":status",       -- 响应状态码
-    CLIENT = "x-client"       -- 客户端标识（仅日志用）
+    HOPS = "x-hops",          -- 转发链：A1,A2,...An,S3（核心必需）
+    INDEX = "x-index",        -- 游标索引（初始=1，核心必需）
+    HOST = "Host",            -- 转发核心Header（核心必需）
+    STATUS = ":status"        -- 响应状态码（仅用于本地错误响应）
 }
 
 local BUSINESS_RULE = {
     EMPTY_VALUE = "",               -- 空值兜底
     SEPARATOR = ",",                -- hops分隔符
-    INIT_INDEX = "1"                -- 初始index=1
+    INIT_INDEX = "1",               -- 初始index=1
+    SERVER_ERROR_CODE = "503"       -- new_index超出长度时返回503（服务不可用，适合转发异常场景）
 }
-
--- Metadata 命名空间（仅持久化请求阶段关键信息）
-local METADATA_NS = "hop_router"
 
 -- ==============================================
 -- 通用工具函数（仅保留必需的字符串拆分）
 -- ==============================================
--- 拆分字符串为数组（解析hops）
+-- 拆分字符串为数组（解析hops，核心必需）
 local function split_str(str, sep)
     local arr = {}
     if str == nil or str == BUSINESS_RULE.EMPTY_VALUE then
@@ -226,130 +221,116 @@ local function split_str(str, sep)
 end
 
 -- ==============================================
--- 请求阶段（核心：解析x-hops转发请求，存入current_index到Metadata + 动态设置Envoy转发目标）
+-- 请求阶段（核心：解析x-hops转发请求，动态设置Envoy转发目标）
+-- 新增：new_index > hops_len 时返回5xx错误，终止转发
 -- ==============================================
 function envoy_on_request(request_handle)
+    -- 初始化log_map，统一缓存所有日志（信息/警告/错误）
+    local log_map = {}
 
-    request_handle:stream_info():dynamic_metadata():set("lua_info","msg","request")
+    -- 初始日志
+    local init_msg = "[Lua-INFO-1] Start processing hop router request"
+    table.insert(log_map, init_msg)
+    request_handle:logErr(init_msg)
 
-    -- 1. 读取请求Header
+    -- 1. 读取请求Header（仅保留核心必需的hops_str和index_str）
     local hops_str = request_handle:headers():get(HEADER_CONST.HOPS) or BUSINESS_RULE.EMPTY_VALUE
     local index_str = request_handle:headers():get(HEADER_CONST.INDEX) or BUSINESS_RULE.INIT_INDEX
-    local client_str = request_handle:headers():get(HEADER_CONST.CLIENT) or BUSINESS_RULE.EMPTY_VALUE
+    local read_header_msg = string.format("[Lua-INFO-2] Read request headers | x-hops=%s | x-index=%s",
+        hops_str, index_str)
+    table.insert(log_map, read_header_msg)
+    request_handle:logErr(read_header_msg)
 
-    -- 2. 格式转换（current_index是本次转发的核心标识）
+    -- 2. 格式转换（核心必需：计算转发节点的基础）
     local hops_arr = split_str(hops_str, BUSINESS_RULE.SEPARATOR)
     local current_index = tonumber(index_str) or tonumber(BUSINESS_RULE.INIT_INDEX)
     local hops_len = #hops_arr
+    local format_msg = string.format("[Lua-INFO-3] Format convert success | hops length=%d | current_index=%d",
+        hops_len, current_index)
+    table.insert(log_map, format_msg)
+    request_handle:logErr(format_msg)
 
-    -- 3. 空hops拒绝转发
+    -- 3. 空hops拒绝转发（核心错误处理：无转发链则无法继续）
     if hops_len == 0 then
-        local err_msg = string.format("[Lua-ERROR] Missing x-hops header, reject forwarding | client=%s", client_str)
-        local err_msg = string.format("Missing x-hops header, reject forwarding | client=%s", client_str)
-        request_handle:stream_info():dynamic_metadata():set("lua_error", "msg", err_msg)
+        local err_msg = "[Lua-ERROR-4] Missing x-hops header, reject forwarding"
+        table.insert(log_map, err_msg)
         request_handle:logErr(err_msg)
+        -- 一次性写入错误元数据
+        request_handle:stream_info():dynamic_metadata():set("lua_error", "msg", table.concat(log_map, "; "))
+        -- 返回400响应
         request_handle:respond({[HEADER_CONST.STATUS] = "400"}, "Missing x-hops header")
         return
     end
 
-    -- 4. 计算转发目标（基于current_index）
+    -- 4. 计算转发目标（核心业务逻辑：基于index定位转发节点）
     local target_hop = BUSINESS_RULE.EMPTY_VALUE
     local new_index = current_index + 1
-
-    -- 正常转发：index < hops长度 → 取对应节点
-    if new_index <= hops_len then
-        target_hop = hops_arr[new_index]
-        local info_msg = string.format("[Lua-INFO] Normal forward | current_index=%d → target=%s | client=%s | hops=%s",
-            current_index, target_hop, client_str, hops_str)
-        request_handle:stream_info():dynamic_metadata():set("lua_info","msg",info_msg)
-        request_handle:logInfo(info_msg)
-    end
-
-    -- 5. 执行转发（先校验目标有效性，再设置动态转发目标+修改Host头）
-    if target_hop ~= BUSINESS_RULE.EMPTY_VALUE then
-        local target_ip, target_port = string.match(target_hop, "([^:]+):(%d+)")
-        if target_ip and target_port then
-            -- 设置 :authority header 动态转发
-            request_handle:headers():replace(":authority", target_ip..":"..target_port)
-            request_handle:headers():replace("x-host", target_hop)
-
-            local info_msg = string.format("[Lua-INFO] Set dynamic forward target | IP=%s | Port=%s | target_hop=%s",
-                target_ip, target_port, target_hop)
-            request_handle:stream_info():dynamic_metadata():set("lua_info","msg",info_msg)
-            request_handle:logInfo(info_msg)
-        else
-            local err_msg = string.format("[Lua-ERROR] Invalid target hop format | target_hop=%s | client=%s",
-                target_hop, client_str)
-            request_handle:stream_info():dynamic_metadata():set("lua_error","msg",err_msg)
-            request_handle:logErr(err_msg)
-            request_handle:respond({[HEADER_CONST.STATUS] = "400"}, "Invalid target hop format (required: IP:Port)")
-            return
-        end
-
-        request_handle:headers():replace(HEADER_CONST.HOST, target_hop)
-    else
-        local err_msg = string.format("[Lua-ERROR] No valid target hop | client=%s | hops=%s | current_index=%d",
-            client_str, hops_str, current_index)
-        request_handle:stream_info():dynamic_metadata():set("lua_error","msg",err_msg)
+    -- 新增：先判断new_index是否超出hops长度，超出则返回5xx
+    if new_index > hops_len then
+        local err_msg = string.format("[Lua-ERROR-5] Forward index out of range | new_index=%d | hops length=%d | current_index=%d",
+            new_index, hops_len, current_index)
+        table.insert(log_map, err_msg)
         request_handle:logErr(err_msg)
-        request_handle:respond({[HEADER_CONST.STATUS] = "400"}, "No valid target hop")
+        -- 一次性写入错误元数据
+        request_handle:stream_info():dynamic_metadata():set("lua_error","msg", table.concat(log_map, "; "))
+        -- 返回5xx状态码（此处用503，可根据需求改为500等其他5xx码）
+        request_handle:respond({[HEADER_CONST.STATUS] = BUSINESS_RULE.SERVER_ERROR_CODE},
+            "Forward index out of range (no valid target hop)")
         return
     end
 
-    -- 6. 更新Index Header（传给下一跳）
+    -- 正常转发：new_index <= hops_len → 取对应节点
+    target_hop = hops_arr[new_index]
+    local forward_msg = string.format("[Lua-INFO-6] Normal forward | current_index=%d → target=%s | hops=%s",
+        current_index, target_hop, hops_str)
+    table.insert(log_map, forward_msg)
+    request_handle:logErr(forward_msg)
+
+    -- 5. 执行转发（核心业务逻辑：设置动态转发目标，修改Header）
+    local target_ip, target_port = string.match(target_hop, "([^:]+):(%d+)")
+    if target_ip and target_port then
+        -- Header操作：设置动态转发目标（核心必需）
+        request_handle:headers():replace(":authority", target_ip..":"..target_port)
+        request_handle:headers():replace("x-host", target_hop)
+        request_handle:headers():replace(HEADER_CONST.HOST, target_hop)
+
+        local set_target_msg = string.format("[Lua-INFO-7] Set dynamic forward target | IP=%s | Port=%s | target_hop=%s",
+            target_ip, target_port, target_hop)
+        table.insert(log_map, set_target_msg)
+        request_handle:logErr(set_target_msg)
+    else
+        local err_msg = string.format("[Lua-ERROR-8] Invalid target hop format | target_hop=%s", target_hop)
+        table.insert(log_map, err_msg)
+        request_handle:logErr(err_msg)
+        -- 一次性写入错误元数据
+        request_handle:stream_info():dynamic_metadata():set("lua_error","msg", table.concat(log_map, "; "))
+        -- 返回400响应
+        request_handle:respond({[HEADER_CONST.STATUS] = "400"}, "Invalid target hop format (required: IP:Port)")
+        return
+    end
+
+    -- 6. 更新Index Header（核心必需：传给下一跳，推进转发链路）
     request_handle:headers():replace(HEADER_CONST.INDEX, tostring(new_index))
+    local update_index_msg = string.format("[Lua-INFO-9] Update x-index header | old_index=%d → new_index=%d",
+        current_index, new_index)
+    table.insert(log_map, update_index_msg)
+    request_handle:logErr(update_index_msg)
 
-    -- 7. 持久化关键信息到Metadata（核心：存入current_index，而非new_index）
-    request_handle:streamInfo():setMetadata(METADATA_NS, "hops", hops_str)
-    request_handle:streamInfo():setMetadata(METADATA_NS, "client", client_str)
-    request_handle:streamInfo():setMetadata(METADATA_NS, "current_index", tostring(current_index))
+    -- 最终日志
+    local final_msg = string.format("[Lua-INFO-10] Request processed | hops=%s | current_index=%d | new_index=%d",
+        hops_str, current_index, new_index)
+    table.insert(log_map, final_msg)
+    request_handle:logErr(final_msg)
 
-    local info_msg = string.format("[Lua-INFO] Request processed | client=%s | hops=%s | current_index=%d | new_index=%d",
-        client_str, hops_str, current_index, new_index)
-    request_handle:stream_info():dynamic_metadata():set("lua_info","msg",info_msg)
-    request_handle:logInfo(info_msg)
+    -- 核心优化：仅此处一次性写入lua_info元数据（全程唯一一次）
+    request_handle:stream_info():dynamic_metadata():set("lua_info","msg", table.concat(log_map, "; "))
 end
 
 -- ==============================================
--- 响应阶段（核心：纯透传，日志带上current_index追溯链路）
+-- 响应阶段（极致精简：无任何无用操作，纯透传）
 -- ==============================================
 function envoy_on_response(response_handle)
-    -- 1. 从Metadata读取请求阶段的关键信息（含current_index）
-    local hops_str = response_handle:streamInfo():metadata():get(METADATA_NS, "hops") or BUSINESS_RULE.EMPTY_VALUE
-    local client_str = response_handle:streamInfo():metadata():get(METADATA_NS, "client") or BUSINESS_RULE.EMPTY_VALUE
-    local current_index = response_handle:streamInfo():metadata():get(METADATA_NS, "current_index") or BUSINESS_RULE.INIT_INDEX
-
-    -- 2. 读取响应状态码和S3排查字段（仅日志用）
-    local status_code = tostring(response_handle:responseCode() or "")
-    local s3_request_id = response_handle:headers():get("x-amz-request-id") or "unknown"
-    local s3_host = response_handle:headers():get("Host") or "unknown"
-
-    -- 3. 生成日志信息
-    local log_msg = string.format(
-        "Response pass-through | status=%s | s3_request_id=%s | s3_host=%s | client=%s | hops=%s | current_index=%s",
-        status_code, s3_request_id, s3_host, client_str, hops_str, current_index
-    )
-
-    -- 4. 写入 dynamic metadata
-    if status_code == "" or string.sub(status_code, 1, 1) == "4" then
-        request_handle:stream_info():dynamic_metadata():set("lua_warn","msg",log_msg)
-    elseif string.sub(status_code, 1, 1) == "5" then
-        request_handle:stream_info():dynamic_metadata():set("lua_error","msg",log_msg)
-    else
-        request_handle:stream_info():dynamic_metadata():set("lua_info","msg",log_msg)
-    end
-
-    -- 5. 按状态码分级打印日志（admin log / stderr）
-    if status_code == "" then
-        response_handle:logWarn(log_msg .. " (unknown status code)")
-    elseif string.sub(status_code, 1, 1) == "4" then
-        response_handle:logWarn(log_msg)
-    elseif string.sub(status_code, 1, 1) == "5" then
-        response_handle:logErr(log_msg)
-    else
-        response_handle:logInfo(log_msg)
-    end
-    -- 核心：无任何修改逻辑，响应原封不动透传
+    -- 无任何响应修改操作 → Envoy自动原路返回下游所有响应（包括400/500等错误）
 end
 EOF
 

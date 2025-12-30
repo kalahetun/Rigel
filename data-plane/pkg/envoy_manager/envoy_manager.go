@@ -156,6 +156,7 @@ func (s *EnvoyStarter) StartEnvoy(logger, logger1 *slog.Logger) (int, error) {
 		"--restart-epoch", "0", // 首次启动epoch=0
 		"--base-id", strconv.Itoa(s.baseID), // 基础ID
 		"--log-level", "info", // 日志级别
+		"--log-path", "/home/matth/envoy.log",
 	)
 
 	logger.Info("Test config load", util.Config_.EnvoyPath)
