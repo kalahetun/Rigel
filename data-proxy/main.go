@@ -2,11 +2,13 @@ package main
 
 import (
 	"crypto/tls"
+	"github.com/gin-gonic/gin"
 	"io"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"log/slog"
 )
@@ -31,6 +33,16 @@ func splitHops(hopsStr string) []string {
 	return parts
 }
 
+// 全局 Transport（复用连接和缓冲），避免每次请求新建
+var globalTransport = &http.Transport{
+	MaxIdleConns:        500,
+	MaxIdleConnsPerHost: 500,
+	IdleConnTimeout:     90 * time.Second,
+	ReadBufferSize:      64 * 1024, // 64KB
+	WriteBufferSize:     64 * 1024, // 64KB
+}
+
+// handler 返回 http.HandlerFunc
 func handler(logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		hopsStr := r.Header.Get(HeaderHops)
@@ -80,23 +92,16 @@ func handler(logger *slog.Logger) http.HandlerFunc {
 		targetPort := parts[1]
 
 		scheme := "http"
-		//todo 测试先注销
-		//if newIndex == hopsLen {
-		//	scheme = "https"
-		//}
+		// 如果需要 https，可以根据实际逻辑解开
+		// if newIndex == hopsLen {
+		// 	scheme = "https"
+		// }
+
 		targetURL := scheme + "://" + targetIP + ":" + targetPort + r.URL.RequestURI()
 		logger.Info("Forwarding to target", "target_url", targetURL)
 
-		// ==============================
-		// Transport 优化：最大连接数 + 64KB 缓冲
-		// ==============================
-		transport := &http.Transport{
-			MaxIdleConns:        500, // 最大空闲连接
-			MaxIdleConnsPerHost: 500, // 每 host 最大空闲连接
-			IdleConnTimeout:     90,
-			ReadBufferSize:      64 * 1024, // 每连接读缓冲 64KB
-			WriteBufferSize:     64 * 1024, // 每连接写缓冲 64KB
-		}
+		// 仅在 https 下设置 TLS
+		transport := globalTransport
 		if scheme == "https" {
 			transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 		}
@@ -157,11 +162,24 @@ func main() {
 
 	Config_, _ = ReadYamlConfig(logger)
 
-	port := "8095" //default
+	// 使用 Gin
+	router := gin.Default()
+
+	// 健康检查路由
+	router.GET("/health", func(c *gin.Context) {
+		c.JSON(http.StatusOK, "success")
+	})
+
+	// 主代理路由（匹配所有路径）
+	router.Any("/*proxyPath", func(c *gin.Context) {
+		handler(logger)(c.Writer, c.Request)
+	})
+
+	port := "8095" // default
 	port = Config_.Port
-	http.HandleFunc("/", handler(logger))
+
 	logger.Info("Listening", "port", port)
-	if err := http.ListenAndServe(":"+port, nil); err != nil {
-		logger.Error("ListenAndServe failed", "error", err)
+	if err := router.Run(":" + port); err != nil {
+		logger.Error("Gin Run failed", "error", err)
 	}
 }
