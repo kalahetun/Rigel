@@ -35,9 +35,9 @@ func splitHops(hopsStr string) []string {
 
 // 全局 Transport（复用连接和缓冲），避免每次请求新建
 var globalTransport = &http.Transport{
-	MaxIdleConns:        500,
-	MaxIdleConnsPerHost: 500,
-	IdleConnTimeout:     90 * time.Second,
+	MaxIdleConns:        50,
+	MaxIdleConnsPerHost: 50,
+	IdleConnTimeout:     10 * time.Second,
 	ReadBufferSize:      64 * 1024, // 64KB
 	WriteBufferSize:     64 * 1024, // 64KB
 }
