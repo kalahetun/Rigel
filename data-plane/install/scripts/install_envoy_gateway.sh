@@ -129,9 +129,8 @@ static_resources:
                   - name: envoy.filters.http.lua
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
-                      source_codes:
-                        hop_router.lua:
-                          filename: "/home/matth/hop_router.lua"
+                      default_source_code:
+                        filename: "/home/matth/hop_router.lua"
                   - name: envoy.filters.http.router
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
