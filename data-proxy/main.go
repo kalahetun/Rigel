@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"log/slog"
@@ -34,13 +35,13 @@ func splitHops(hopsStr string) []string {
 }
 
 // 全局 Transport（复用连接和缓冲），避免每次请求新建
-var globalTransport = &http.Transport{
-	MaxIdleConns:        50,
-	MaxIdleConnsPerHost: 50,
-	IdleConnTimeout:     10 * time.Second,
-	ReadBufferSize:      64 * 1024, // 64KB
-	WriteBufferSize:     64 * 1024, // 64KB
-}
+//var globalTransport = &http.Transport{
+//	MaxIdleConns:        50,
+//	MaxIdleConnsPerHost: 50,
+//	IdleConnTimeout:     10 * time.Second,
+//	ReadBufferSize:      64 * 1024, // 64KB
+//	WriteBufferSize:     64 * 1024, // 64KB
+//}
 
 // handler 返回 http.HandlerFunc
 func handler(logger *slog.Logger) http.HandlerFunc {
@@ -101,12 +102,16 @@ func handler(logger *slog.Logger) http.HandlerFunc {
 		logger.Info("Forwarding to target", "target_url", targetURL)
 
 		// 仅在 https 下设置 TLS
-		transport := globalTransport
-		if scheme == "https" {
-			transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
-		}
+		//transport := globalTransport
+		//if scheme == "https" {
+		//	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+		//}
+		//
+		//client := &http.Client{Transport: transport}
 
-		client := &http.Client{Transport: transport}
+		// ==================== 改动点 3: 使用 per-server client ====================
+		target := targetIP + ":" + targetPort
+		client := getClient(target, scheme)
 
 		req, err := http.NewRequest(r.Method, targetURL, r.Body)
 		if err != nil {
@@ -182,4 +187,40 @@ func main() {
 	if err := router.Run(":" + port); err != nil {
 		logger.Error("Gin Run failed", "error", err)
 	}
+}
+
+// ==================== 改动点 1: 新增全局 clientMap 和锁 ====================
+var (
+	clientMap = make(map[string]*http.Client)
+	clientMu  = &sync.RWMutex{}
+)
+
+// ==================== 改动点 2: 获取或创建 client 函数，支持 HTTP/HTTPS ====================
+func getClient(target string, scheme string) *http.Client {
+	clientMu.RLock()
+	c, ok := clientMap[target]
+	clientMu.RUnlock()
+	if ok {
+		return c
+	}
+
+	transport := &http.Transport{
+		MaxIdleConns:        50,
+		MaxIdleConnsPerHost: 50,
+		IdleConnTimeout:     10 * time.Second,
+		ReadBufferSize:      64 * 1024,
+		WriteBufferSize:     64 * 1024,
+	}
+
+	// 支持 HTTPS TLS 配置
+	if scheme == "https" {
+		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	}
+
+	c = &http.Client{Transport: transport}
+
+	clientMu.Lock()
+	clientMap[target] = c
+	clientMu.Unlock()
+	return c
 }
