@@ -255,7 +255,7 @@ function envoy_on_request(request_handle)
         table.insert(log_map, err_msg)
         request_handle:logErr(err_msg)
         -- 一次性写入错误元数据
-        request_handle:stream_info():dynamic_metadata():set("lua_error", "msg", table.concat(log_map, "; "))
+        request_handle:streamInfo():dynamicMetadata():set("lua_error", "msg", table.concat(log_map, "; "))
         -- 返回400响应
         request_handle:respond({[HEADER_CONST.STATUS] = "400"}, "Missing x-hops header")
         return
@@ -271,7 +271,7 @@ function envoy_on_request(request_handle)
         table.insert(log_map, err_msg)
         request_handle:logErr(err_msg)
         -- 一次性写入错误元数据
-        request_handle:stream_info():dynamic_metadata():set("lua_error","msg", table.concat(log_map, "; "))
+        request_handle:streamInfo():dynamicMetadata():set("lua_error","msg", table.concat(log_map, "; "))
         -- 返回5xx状态码（此处用503，可根据需求改为500等其他5xx码）
         request_handle:respond({[HEADER_CONST.STATUS] = BUSINESS_RULE.SERVER_ERROR_CODE},
             "Forward index out of range (no valid target hop)")
@@ -322,7 +322,7 @@ function envoy_on_request(request_handle)
     request_handle:logErr(final_msg)
 
     -- 核心优化：仅此处一次性写入lua_info元数据（全程唯一一次）
-    request_handle:stream_info():dynamic_metadata():set("lua_info","msg", table.concat(log_map, "; "))
+    request_handle:streamInfo():dynamicMetadata():set("lua_info","msg", table.concat(log_map, "; "))
 end
 
 -- ==============================================

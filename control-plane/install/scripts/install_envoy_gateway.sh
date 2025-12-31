@@ -93,11 +93,11 @@ local function get_port_bw_limit(request_handle, log_map)
 
     if x_rate_mb and x_rate_mb > 0 then
         bw_limit = x_rate_mb * 1024 * 1024  -- 转换为字节/秒（与带宽统计单位一致）
-        local info_msg = string.format("[Lua-INFO] 从x-rate头获取限流值：%.2fMB/s（转换后：%d字节/秒）", x_rate_mb, bw_limit)
+        local info_msg = string.format("[Lua-INFO-1] 从x-rate头获取限流值：%.2fMB/s（转换后：%d字节/秒）", x_rate_mb, bw_limit)
         table.insert(log_map, info_msg)  -- 存入统一log_map
         request_handle:logErr(info_msg)  -- 统一用logErr输出，带级别标记
     else
-        local warn_msg = string.format("[Lua-WARN] x-rate头不存在/无效（值：%s），使用默认限流值：10MB/s", x_rate_str or "nil")
+        local warn_msg = string.format("[Lua-WARN-2] x-rate头不存在/无效（值：%s），使用默认限流值：10MB/s", x_rate_str or "nil")
         table.insert(log_map, warn_msg)  -- 存入统一log_map
         request_handle:logErr(warn_msg)  -- 统一用logErr输出，带级别标记
     end
@@ -119,7 +119,7 @@ local function get_port_from_header(request_handle, log_map)
     end
 
     -- 日志记录端口获取结果，存入统一log_map
-    local info_msg = string.format("[Lua-INFO] 从x-port头获取端口：%s（原始值：%s）", current_port or "获取失败/无效", x_port_str or "nil")
+    local info_msg = string.format("[Lua-INFO-3] 从x-port头获取端口：%s（原始值：%s）", current_port or "获取失败/无效", x_port_str or "nil")
     table.insert(log_map, info_msg)
     request_handle:logErr(info_msg)
     return current_port
@@ -139,7 +139,7 @@ local function calculate_port_in_bandwidth(request_handle, port, log_map)
     -- 第一步：先判断时间差是否满足统计周期，不满足则直接返回上次带宽值
     if time_diff < CHECK_INTERVAL or time_diff <= 0 then
         bandwidth = stats.last_bw or 0
-        local info_msg = string.format("[Lua-INFO] 端口%d未到统计周期（当前差%d秒，要求≥%d秒），使用上次带宽值：%.2fMB/s",
+        local info_msg = string.format("[Lua-INFO-4] 端口%d未到统计周期（当前差%d秒，要求≥%d秒），使用上次带宽值：%.2fMB/s",
           port, time_diff, CHECK_INTERVAL, bandwidth/1024/1024)
         table.insert(log_map, info_msg)  -- 存入统一log_map
         request_handle:logErr(info_msg)
@@ -155,7 +155,7 @@ local function calculate_port_in_bandwidth(request_handle, port, log_map)
     if ok and counter then
         current_bytes = counter:value()
     else
-        local warn_msg = string.format("[Lua-WARN] 无法获取端口%d的带宽指标：%s", port, counter or "指标不存在")
+        local warn_msg = string.format("[Lua-WARN-5] 无法获取端口%d的带宽指标：%s", port, counter or "指标不存在")
         table.insert(log_map, warn_msg)  -- 存入统一log_map
         request_handle:logErr(warn_msg)
         return 0
@@ -168,7 +168,7 @@ local function calculate_port_in_bandwidth(request_handle, port, log_map)
     stats.last_check_time = now
     stats.last_bw = bandwidth
 
-    local info_msg = string.format("[Lua-INFO] 端口%d更新带宽统计：时间差=%d秒，累计字节差=%d，实时带宽=%.2fMB/s",
+    local info_msg = string.format("[Lua-INFO-6] 端口%d更新带宽统计：时间差=%d秒，累计字节差=%d，实时带宽=%.2fMB/s",
       port, time_diff, byte_diff, bandwidth/1024/1024)
     table.insert(log_map, info_msg)  -- 存入统一log_map
     request_handle:logErr(info_msg)
@@ -182,14 +182,14 @@ function envoy_on_request(request_handle)
     local log_map = {}
 
     -- 初始日志，存入统一log_map
-    local init_msg = "[Lua-INFO] 开始执行端口带宽限流校验（端口来自x-port头）"
+    local init_msg = "[Lua-INFO-7] 开始执行端口带宽限流校验（端口来自x-port头）"
     table.insert(log_map, init_msg)
     request_handle:logErr(init_msg)
 
     -- 2. 从x-port头获取端口
     local current_port = get_port_from_header(request_handle, log_map)
     if not current_port then
-        local err_msg = "[Lua-ERROR] 限流失败：x-port头不存在/无效（请传递合法端口号1-65535）"
+        local err_msg = "[Lua-ERROR-8] 限流失败：x-port头不存在/无效（请传递合法端口号1-65535）"
         -- 仅存入log_map，移除error_log_map相关操作
         table.insert(log_map, err_msg)
         request_handle:logErr(err_msg)
@@ -218,7 +218,7 @@ function envoy_on_request(request_handle)
     -- 4. 按x-port传递的端口计算实时带宽（已优化：先判断时间差，再拿指标）
     local current_bw = calculate_port_in_bandwidth(request_handle, current_port, log_map)
     if current_bw <= 0 then
-        local info_msg = string.format("[Lua-INFO] 端口%d带宽计算异常：%d字节/秒", current_port, current_bw)
+        local info_msg = string.format("[Lua-INFO-9] 端口%d带宽计算异常：%d字节/秒", current_port, current_bw)
         table.insert(log_map, info_msg)
         request_handle:logErr(info_msg)
     end
@@ -227,7 +227,7 @@ function envoy_on_request(request_handle)
     -- 5. 带宽超限判断：触发503限流响应
     if current_bw > port_limit then
 
-        local limit_msg = string.format("[Lua-INFO] 端口%d触发限流：%.2fMB/s > %.2fMB/s（阈值来自x-rate头）",
+        local limit_msg = string.format("[Lua-INFO-10] 端口%d触发限流：%.2fMB/s > %.2fMB/s（阈值来自x-rate头）",
           current_port, current_bw_mb, port_limit_mb)
         table.insert(log_map, limit_msg)
         request_handle:logErr(limit_msg)
@@ -252,7 +252,7 @@ function envoy_on_request(request_handle)
     end
 
     -- 6. 带宽正常：记录日志
-    local normal_msg = string.format("[Lua-INFO] 端口%d带宽正常：%.2fMB/s（上限：%.2fMB/s，阈值来自x-rate头）",
+    local normal_msg = string.format("[Lua-INFO-11] 端口%d带宽正常：%.2fMB/s（上限：%.2fMB/s，阈值来自x-rate头）",
       current_port, current_bw_mb, port_limit_mb)
     table.insert(log_map, normal_msg)
     request_handle:logErr(normal_msg)
