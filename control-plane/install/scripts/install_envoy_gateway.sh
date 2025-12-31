@@ -181,10 +181,14 @@ function envoy_on_request(request_handle)
     -- 1. 初始化局部log_map，所有日志（信息/警告/错误）均存入此处，不再使用error_log_map
     local log_map = {}
 
-    -- 初始日志，存入统一log_map
-    local init_msg = "[Lua-INFO-7] 开始执行端口带宽限流校验（端口来自x-port头）"
-    table.insert(log_map, init_msg)
-    request_handle:logErr(init_msg)
+    -- 1a. 打印所有请求 Header
+    local headers = request_handle:headers()
+    local header_log = "[Lua-INFO-7] 请求 Header 列表: "
+    for key, value in pairs(headers) do
+        header_log = header_log .. string.format("%s=%s; ", key, value)
+    end
+    table.insert(log_map, header_log)
+    request_handle:logErr(header_log)
 
     -- 2. 从x-port头获取端口
     local current_port = get_port_from_header(request_handle, log_map)
