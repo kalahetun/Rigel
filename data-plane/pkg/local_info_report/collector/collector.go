@@ -50,7 +50,7 @@ func (c *VMCollector) Collect(logger *slog.Logger) (*model.VMReport, error) {
 	//hostname, _ := os.Hostname()
 
 	// 一站式获取缓冲统计
-	envoyMemInfo := GetEnvoyFullBufferStats(logger)
+	//envoyMemInfo := GetEnvoyFullBufferStats(logger)
 
 	// 2. 组装VMReport（ReportID由上报器生成，此处留空）
 	return &model.VMReport{
@@ -63,6 +63,6 @@ func (c *VMCollector) Collect(logger *slog.Logger) (*model.VMReport, error) {
 		Network:     networkInfo,
 		OS:          osInfo,
 		Process:     processInfo,
-		EnvoyMem:    envoyMemInfo,
+		//EnvoyMem:    envoyMemInfo,
 	}, nil
 }

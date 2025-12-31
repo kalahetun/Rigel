@@ -33,23 +33,23 @@ func main() {
 		panic("无法创建日志目录: " + err.Error())
 	}
 	logFilePath := filepath.Join(logDir, "app.log")
-	logFilePath1 := filepath.Join(logDir, "envoy.log")
+	//logFilePath1 := filepath.Join(logDir, "envoy.log")
 	logFile, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 	if err != nil {
 		panic("无法打开日志文件: " + err.Error())
 	}
-	logFile1, err := os.OpenFile(logFilePath1, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
-	if err != nil {
-		panic("无法打开日志文件: " + err.Error())
-	}
+	//logFile1, err := os.OpenFile(logFilePath1, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	//if err != nil {
+	//	panic("无法打开日志文件: " + err.Error())
+	//}
 
 	// 初始化日志，输出到 log/app.log
 	logger := slog.New(slog.NewTextHandler(logFile, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
 	}))
-	logger1 := slog.New(slog.NewTextHandler(logFile1, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
-	}))
+	//logger1 := slog.New(slog.NewTextHandler(logFile1, &slog.HandlerOptions{
+	//	Level: slog.LevelInfo,
+	//}))
 
 	util.Config_, _ = util.ReadYamlConfig(logger)
 
@@ -67,7 +67,7 @@ func main() {
 	// 3. 初始化上报器
 	go reporter.ReportCycle(logger)
 
-	InitEnvoy(logger, logger1)
+	//InitEnvoy(logger, logger1)
 
 	// 4. 启动API服务
 	logger.Info("API端口启动", "addr", ":8082")

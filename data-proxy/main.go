@@ -80,24 +80,28 @@ func handler(logger *slog.Logger) http.HandlerFunc {
 		targetPort := parts[1]
 
 		scheme := "http"
-		if newIndex == hopsLen {
-			scheme = "https"
-		}
+		//todo 测试先注销
+		//if newIndex == hopsLen {
+		//	scheme = "https"
+		//}
 		targetURL := scheme + "://" + targetIP + ":" + targetPort + r.URL.RequestURI()
 		logger.Info("Forwarding to target", "target_url", targetURL)
 
-		var client *http.Client
-		if scheme == "https" {
-			transport := &http.Transport{
-				TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
-				MaxIdleConns:        100,
-				MaxIdleConnsPerHost: 100,
-				IdleConnTimeout:     90,
-			}
-			client = &http.Client{Transport: transport}
-		} else {
-			client = &http.Client{}
+		// ==============================
+		// Transport 优化：最大连接数 + 64KB 缓冲
+		// ==============================
+		transport := &http.Transport{
+			MaxIdleConns:        500, // 最大空闲连接
+			MaxIdleConnsPerHost: 500, // 每 host 最大空闲连接
+			IdleConnTimeout:     90,
+			ReadBufferSize:      64 * 1024, // 每连接读缓冲 64KB
+			WriteBufferSize:     64 * 1024, // 每连接写缓冲 64KB
 		}
+		if scheme == "https" {
+			transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+		}
+
+		client := &http.Client{Transport: transport}
 
 		req, err := http.NewRequest(r.Method, targetURL, r.Body)
 		if err != nil {
@@ -153,7 +157,7 @@ func main() {
 
 	Config_, _ = ReadYamlConfig(logger)
 
-	port := "8095"
+	port := "8095" //default
 	port = Config_.Port
 	http.HandleFunc("/", handler(logger))
 	logger.Info("Listening", "port", port)

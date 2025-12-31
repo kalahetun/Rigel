@@ -27,7 +27,7 @@ type VMReport struct {
 	// 进程信息（可选）
 	Process ProcessInfo `json:"process,omitempty"`
 
-	EnvoyMem EnvoyBufferStats `json:"envoy_mem"`
+	//EnvoyMem EnvoyBufferStats `json:"envoy_mem"`
 }
 
 // CPUInfo CPU维度信息
