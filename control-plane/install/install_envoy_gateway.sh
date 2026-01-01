@@ -190,6 +190,11 @@ function envoy_on_request(request_handle)
     table.insert(log_map, header_log)
     request_handle:logErr(header_log)
 
+    local local x_enable_str = req_headers:get("x-rate-limit-enable")
+    if x_enable_str == "false" then
+        return
+    end
+
     -- 2. 从x-port头获取端口
     local current_port = get_port_from_header(request_handle, log_map)
     if not current_port then
