@@ -52,6 +52,11 @@ func (c *VMCollector) Collect(logger *slog.Logger) (*model.VMReport, error) {
 	// 一站式获取缓冲统计
 	//envoyMemInfo := GetEnvoyFullBufferStats(logger)
 
+	cong, err := GetCongestionInfo()
+	if err != nil {
+		logger.Error("获取congestion信息失败：%v\n", err)
+	}
+
 	// 2. 组装VMReport（ReportID由上报器生成，此处留空）
 	return &model.VMReport{
 		VMID:        "vm-" + networkInfo.PublicIP + "-001", // 固定VMID（可根据实际场景替换）
@@ -64,5 +69,6 @@ func (c *VMCollector) Collect(logger *slog.Logger) (*model.VMReport, error) {
 		OS:          osInfo,
 		Process:     processInfo,
 		//EnvoyMem:    envoyMemInfo,
+		Congestion: cong,
 	}, nil
 }

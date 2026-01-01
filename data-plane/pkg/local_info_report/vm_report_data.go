@@ -28,6 +28,8 @@ type VMReport struct {
 	Process ProcessInfo `json:"process,omitempty"`
 
 	//EnvoyMem EnvoyBufferStats `json:"envoy_mem"`
+
+	Congestion ProxyStatus `json:"congestion"`
 }
 
 // CPUInfo CPU维度信息
@@ -99,4 +101,11 @@ type EnvoyBufferStats struct {
 	ActiveConnRaw string `json:"active_conn_raw"` // 活跃连接数原始值
 	ActiveConn    int64  `json:"active_conn"`     // 活跃连接数（强制转数字后）
 	PerConnBuffer int64  `json:"per_conn_buffer"` // 单连接缓冲均值（字节）
+}
+
+type ProxyStatus struct {
+	ActiveConnections int64   `json:"active_connections"` // 当前活跃连接数
+	TotalMem          int64   `json:"total_mem"`          // 机器总内存（字节）
+	ProcessMem        int64   `json:"process_mem"`        // 当前进程使用内存（字节）
+	AvgCachePerConn   float64 `json:"avg_cache_per_conn"` // 平均每连接缓存大小（字节）
 }
