@@ -191,7 +191,29 @@ function envoy_on_request(request_handle)
     request_handle:logErr(header_log)
 
     local local x_enable_str = req_headers:get("x-rate-limit-enable")
+    if x_enable_str == nil then
+
+        -- 拼接log_map所有日志，写入元数据（无需单独处理错误元数据）
+        local full_log_msg = table.concat(log_map, "; ")
+        request_handle:streamInfo():dynamicMetadata():set("lua_info", "msg", full_log_msg)
+
+        -- 返回400 Bad Request响应
+        request_handle:respond(
+            {
+                [":status"] = "400",
+                Content_Type = "text/plain; charset=utf-8",
+                X_Error_Type = "Missing x-rate-limit-enable header"
+            },
+            "Bad Request: x-rate-limit-enable header is missing or invalid."
+        )
+
+        return
+    end
+
     if x_enable_str == "false" then
+        -- 拼接log_map所有日志，写入元数据（无需单独处理错误元数据）
+        local full_log_msg = table.concat(log_map, "; ")
+        request_handle:streamInfo():dynamicMetadata():set("lua_info", "msg", full_log_msg)
         return
     end
 
