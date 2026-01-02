@@ -132,6 +132,11 @@ func handler(logger *slog.Logger) http.HandlerFunc {
 		//req.Header.Set(HeaderHops, hopsStr)
 		req.Host = targetHop
 
+		logger.Info("Forwarded request headers",
+			"x-index", req.Header.Get(HeaderIndex),
+			"x-hops", req.Header.Get(HeaderHost),
+			"all_headers", req.Header)
+
 		resp, err := client.Do(req)
 		if err != nil {
 			http.Error(w, "Failed to forward request", ServerErrorCode)
@@ -139,6 +144,11 @@ func handler(logger *slog.Logger) http.HandlerFunc {
 			return
 		}
 		defer resp.Body.Close()
+
+		logger.Info("Forwarded response headers",
+			"x-index", resp.Header.Get(HeaderIndex),
+			"x-hops", resp.Header.Get(HeaderHost),
+			"all_headers", resp.Header)
 
 		for key, values := range resp.Header {
 			for _, v := range values {
