@@ -191,7 +191,10 @@ func main() {
 		c.JSON(http.StatusOK, checkCongestion(logger))
 	})
 
-	router.Any("/*proxyPath", func(c *gin.Context) {
+	//router.Any("/*proxyPath", func(c *gin.Context) {
+	//	handler(logger)(c.Writer, c.Request)
+	//})
+	router.NoRoute(func(c *gin.Context) {
 		handler(logger)(c.Writer, c.Request)
 	})
 
