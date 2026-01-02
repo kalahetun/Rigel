@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/tls"
+	"data-proxy/config"
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"io"
@@ -20,7 +21,6 @@ import (
 const (
 	HeaderHops      = "x-hops"
 	HeaderIndex     = "x-index"
-	HeaderPort      = "x-port"
 	HeaderHost      = "Host"
 	DefaultIndex    = "1"
 	ServerErrorCode = 503
@@ -179,7 +179,7 @@ func main() {
 		Level: slog.LevelInfo,
 	}))
 
-	Config_, _ = ReadYamlConfig(logger)
+	config.Config_, _ = config.ReadYamlConfig(logger)
 
 	router := gin.Default()
 
@@ -196,7 +196,7 @@ func main() {
 	})
 
 	port := "8095"
-	port = Config_.Port
+	port = config.Config_.Port
 
 	logger.Info("Listening", "port", port)
 	if err := router.Run(":" + port); err != nil {

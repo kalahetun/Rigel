@@ -27,7 +27,9 @@ type VMReport struct {
 	// 进程信息（可选）
 	Process ProcessInfo `json:"process,omitempty"`
 
-	EnvoyMem EnvoyBufferStats `json:"envoy_mem"`
+	//EnvoyMem EnvoyBufferStats `json:"envoy_mem"`
+
+	Congestion ProxyStatus `json:"congestion"`
 }
 
 // CPUInfo CPU维度信息
@@ -97,4 +99,11 @@ type ApiResponse struct {
 	Code int         `json:"code"` // 200=成功，400=参数错误，500=服务端错误
 	Msg  string      `json:"msg"`  // 提示信息
 	Data interface{} `json:"data"` // 业务数据：上报时放VMReport，响应时放回填充后的VMReport
+}
+
+type ProxyStatus struct {
+	ActiveConnections int64   `json:"active_connections"` // 当前活跃连接数
+	TotalMem          int64   `json:"total_mem"`          // 机器总内存（字节）
+	ProcessMem        int64   `json:"process_mem"`        // 当前进程使用内存（字节）
+	AvgCachePerConn   float64 `json:"avg_cache_per_conn"` // 平均每连接缓存大小（字节）
 }
