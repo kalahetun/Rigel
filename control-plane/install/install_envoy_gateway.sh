@@ -190,7 +190,7 @@ function envoy_on_request(request_handle)
     table.insert(log_map, header_log)
     request_handle:logErr(header_log)
 
-    local local x_enable_str = req_headers:get("x-rate-limit-enable")
+    local x_enable_str = req_headers:get("x-rate-limit-enable")
     if x_enable_str == nil then
 
         -- 拼接log_map所有日志，写入元数据（无需单独处理错误元数据）
