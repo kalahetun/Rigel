@@ -128,8 +128,9 @@ func handler(logger *slog.Logger) http.HandlerFunc {
 		}
 		req.Header = r.Header.Clone()
 		req.Header.Set(HeaderIndex, strconv.Itoa(newIndex))
-		req.Header.Set(HeaderHost, targetHop)
-		req.Header.Set(HeaderHops, hopsStr)
+		//req.Header.Set(HeaderHost, targetHop)
+		//req.Header.Set(HeaderHops, hopsStr)
+		req.Host = targetHop
 
 		resp, err := client.Do(req)
 		if err != nil {
