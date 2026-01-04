@@ -13,8 +13,8 @@ sudo apt install -y git vim wget build-essential ca-certificates
 
 echo "==> Install Go ${GO_VERSION}"
 if [ -d "/usr/local/go" ]; then
-echo "Found existing /usr/local/go, backing up to /usr/local/go.bak"
-sudo mv /usr/local/go /usr/local/go.bak
+    echo "Found existing /usr/local/go, backing up to /usr/local/go.bak"
+    sudo mv /usr/local/go /usr/local/go.bak
 fi
 
 wget -q ${GO_URL} -O /tmp/${GO_TAR}
@@ -26,9 +26,9 @@ BASHRC="$HOME/.bashrc"
 
 # 避免重复写入
 if ! grep -q "GOROOT=/usr/local/go" "$BASHRC"; then
-cat << 'EOF' >> "$BASHRC"
+cat << EOF >> "$BASHRC"
 
-# Go 1.21.3 environment
+# Go ${GO_VERSION} environment
 export GOROOT=/usr/local/go
 export GOPATH=\$HOME/go
 export PATH=\$PATH:\$GOROOT/bin:\$GOPATH/bin
@@ -38,8 +38,13 @@ fi
 
 mkdir -p "$HOME/go"
 
+# ===== 立即生效 =====
+export GOROOT=/usr/local/go
+export GOPATH=$HOME/go
+export PATH=$PATH:$GOROOT/bin:$GOPATH/bin
+
 echo "==> Reload bashrc"
-source "$BASHRC"
+# source $BASHRC 已经通过上面的 export 立即生效，不用再重复 source
 
 echo "==> Verify installation"
 git --version
