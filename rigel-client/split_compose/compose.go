@@ -68,5 +68,5 @@ func ComposeTree(
 		level++
 	}
 
-	return finalizeObject(ctx, bkt, parts[0], objectName)
+	return finalizeObject(ctx, bkt, current[0], objectName)
 }

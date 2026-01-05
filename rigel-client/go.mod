@@ -1,4 +1,4 @@
-module data-proxy
+module rigel-client
 
 go 1.24.0
 

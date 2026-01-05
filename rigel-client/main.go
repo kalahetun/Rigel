@@ -2,12 +2,12 @@ package main
 
 import (
 	"context"
-	"data-proxy/config"
-	"data-proxy/upload"
 	"github.com/gin-gonic/gin"
 	"log/slog"
 	"net/http"
 	"os"
+	"rigel-client/config"
+	"rigel-client/upload"
 )
 
 const (

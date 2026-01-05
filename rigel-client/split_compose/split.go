@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"rigel-client/util"
 	"strconv"
 	"sync"
 	"time"
@@ -20,14 +21,12 @@ type ChunkState struct {
 	ObjectName string
 	Offset     int64
 	Size       int64
-
-	LastSend time.Time
-	Acked    bool
+	LastSend   time.Time
+	Acked      bool
 }
 
 var (
-	chunks = make(map[int]*ChunkState)
-	mu     sync.RWMutex
+	chunks = util.NewSafeMap() //[int]*ChunkState
 )
 
 func splitFile(path, objectName string) (map[int]*ChunkState, error) {
