@@ -113,6 +113,12 @@ func handler(logger *slog.Logger) http.HandlerFunc {
 		targetPort := parts[1]
 
 		scheme := "http"
+		method := r.Method
+		//最后一跳的逻辑
+		if newIndex == len(hops) {
+			scheme = "https"
+			method = "PUT"
+		}
 
 		targetURL := scheme + "://" + targetIP + ":" + targetPort + r.URL.RequestURI()
 		logger.Info("Forwarding to target", "target_url", targetURL)
@@ -120,7 +126,7 @@ func handler(logger *slog.Logger) http.HandlerFunc {
 		target := targetIP + ":" + targetPort
 		client := getClient(target, scheme)
 
-		req, err := http.NewRequest(r.Method, targetURL, r.Body)
+		req, err := http.NewRequest(method, targetURL, r.Body)
 		if err != nil {
 			http.Error(w, "Failed to create request", http.StatusInternalServerError)
 			logger.Error("Failed to create request", "error", err)
@@ -128,8 +134,6 @@ func handler(logger *slog.Logger) http.HandlerFunc {
 		}
 		req.Header = r.Header.Clone()
 		req.Header.Set(HeaderIndex, strconv.Itoa(newIndex))
-		//req.Header.Set(HeaderHost, targetHop)
-		//req.Header.Set(HeaderHops, hopsStr)
 
 		logger.Info("Forwarded request headers", req.Header)
 

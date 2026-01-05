@@ -5,9 +5,11 @@ import (
 	"data-proxy/config"
 	"fmt"
 	"io"
+	"log"
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"cloud.google.com/go/storage"
@@ -123,6 +125,74 @@ func UploadToGCSbyDirectHttps(localFilePath, bucketName, objectName, credFile st
 	return nil
 }
 
+func UploadToGCSbyReDirectHttps(localFilePath, bucketName, credFile string, reqHeaders http.Header) error {
+	// 读取 bucket 和 object
+	//bucketName := reqHeaders.Get("X-Bucket-Name")
+	objectName := reqHeaders.Get("X-Object-Name")
+	if bucketName == "" || objectName == "" {
+		return fmt.Errorf("missing bucketName or objectName in header")
+	}
+
+	// 生成 access token
+	ctx := context.Background()
+	jsonBytes, err := os.ReadFile(credFile)
+	if err != nil {
+		return fmt.Errorf("failed to read credentials file: %w", err)
+	}
+	creds, err := google.CredentialsFromJSON(ctx, jsonBytes, "https://www.googleapis.com/auth/devstorage.full_control")
+	if err != nil {
+		return fmt.Errorf("failed to parse credentials: %w", err)
+	}
+	token, err := creds.TokenSource.Token()
+	if err != nil {
+		return fmt.Errorf("failed to get access token: %w", err)
+	}
+	accessToken := token.AccessToken
+
+	// 打开本地文件
+	f, err := os.Open(localFilePath)
+	if err != nil {
+		return fmt.Errorf("failed to open local file: %w", err)
+	}
+	defer f.Close()
+
+	hops := reqHeaders.Get("X-Hops") // "34.69.185.247:8090,136.116.114.219:8080"
+	hopList := strings.Split(hops, ",")
+	if len(hopList) <= 1 {
+		return fmt.Errorf("invalid X-Hops header: %s", hops)
+	}
+	firstHop := hopList[0] // 第一跳 IP:PORT
+
+	// 拼装最终 URI
+	url := fmt.Sprintf("http://%s/%s/%s", firstHop, bucketName, objectName)
+
+	// 构造 PUT 请求
+	putReq, err := http.NewRequest("PUT", url, f)
+	if err != nil {
+		return fmt.Errorf("failed to create PUT request: %w", err)
+	}
+	putReq.Header.Set("Authorization", "Bearer "+accessToken)
+	putReq.Header.Set("Content-Type", "application/octet-stream")
+	putReq.Header.Set("X-Hops", hops)
+	putReq.Header.Set("X-Index", "1")
+	putReq.Header.Set("X-Rate-Limit-Enable", "false")
+
+	client := &http.Client{Timeout: 10 * time.Minute}
+	resp, err := client.Do(putReq)
+	if err != nil {
+		return fmt.Errorf("failed to upload to GCS: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("upload failed, status: %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	log.Println("UploadToGCSbyReDirectHttps success:", bucketName, objectName)
+	return nil
+}
+
 func main() {
 	bucketName := "rigel-data"
 	credFile := "/home/matth/civil-honor-480405-e0-bdec4345bdd7.json"
@@ -191,6 +261,27 @@ func main() {
 			"file_name":  fileName,
 			"bucket":     bucketName,
 			"objectName": fileName,
+		})
+	})
+
+	router.POST("/gcp/redirect/upload", func(c *gin.Context) {
+		fileName := c.GetHeader(HeaderFileName)
+		if fileName == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Missing X-File-Name header"})
+			return
+		}
+
+		localFilePath := localBaseDir + fileName
+
+		if err := UploadToGCSbyReDirectHttps(localFilePath, bucketName, credFile, c.Request.Header); err != nil {
+			logger.Error("ReDirect HTTPS upload failed: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"message":   "redirect upload success",
+			"file_name": fileName,
 		})
 	})
 
