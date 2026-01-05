@@ -14,7 +14,7 @@ const (
 	HeaderFileName = "X-File-Name" // 通过 Header 传文件名
 	bucketName     = "rigel-data"
 	credFile       = "/home/matth/civil-honor-480405-e0-bdec4345bdd7.json"
-	localBaseDir   = "/home/matth/" // 本地文件目录前缀
+	localBaseDir   = "/home/matth/upload/" // 本地文件目录前缀
 )
 
 func main() {

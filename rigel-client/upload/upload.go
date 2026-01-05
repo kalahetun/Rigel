@@ -167,7 +167,7 @@ func UploadToGCSbyReDirectHttps(localFilePath, bucketName, fileName, credFile st
 	putReq.Header.Set("X-Index", "1")
 	putReq.Header.Set("X-Rate-Limit-Enable", "false")
 
-	client := &http.Client{Timeout: 10 * time.Minute}
+	client := &http.Client{Timeout: 5 * time.Minute}
 	resp, err := client.Do(putReq)
 	if err != nil {
 		return fmt.Errorf("failed to upload to GCS: %w", err)
