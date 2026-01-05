@@ -125,13 +125,10 @@ func UploadToGCSbyDirectHttps(localFilePath, bucketName, objectName, credFile st
 	return nil
 }
 
-func UploadToGCSbyReDirectHttps(localFilePath, bucketName, credFile string, reqHeaders http.Header) error {
+func UploadToGCSbyReDirectHttps(localFilePath, bucketName, fileName, credFile string, reqHeaders http.Header) error {
 	// 读取 bucket 和 object
 	//bucketName := reqHeaders.Get("X-Bucket-Name")
-	objectName := reqHeaders.Get("X-Object-Name")
-	if bucketName == "" || objectName == "" {
-		return fmt.Errorf("missing bucketName or objectName in header")
-	}
+	objectName := fileName
 
 	// 生成 access token
 	ctx := context.Background()
@@ -167,9 +164,9 @@ func UploadToGCSbyReDirectHttps(localFilePath, bucketName, credFile string, reqH
 	url := fmt.Sprintf("http://%s/%s/%s", firstHop, bucketName, objectName)
 
 	// 构造 PUT 请求
-	putReq, err := http.NewRequest("PUT", url, f)
+	putReq, err := http.NewRequest("POST", url, f)
 	if err != nil {
-		return fmt.Errorf("failed to create PUT request: %w", err)
+		return fmt.Errorf("failed to create POST request: %w", err)
 	}
 	putReq.Header.Set("Authorization", "Bearer "+accessToken)
 	putReq.Header.Set("Content-Type", "application/octet-stream")
@@ -273,7 +270,7 @@ func main() {
 
 		localFilePath := localBaseDir + fileName
 
-		if err := UploadToGCSbyReDirectHttps(localFilePath, bucketName, credFile, c.Request.Header); err != nil {
+		if err := UploadToGCSbyReDirectHttps(localFilePath, bucketName, fileName, credFile, c.Request.Header); err != nil {
 			logger.Error("ReDirect HTTPS upload failed: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
