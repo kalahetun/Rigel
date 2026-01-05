@@ -130,7 +130,7 @@ func main() {
 
 	logDir := "log"
 	_ = os.MkdirAll(logDir, 0755)
-	logFile, err := os.OpenFile(logDir+"/proxy.log", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	logFile, err := os.OpenFile(logDir+"/client.log", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
 		panic(err)
 	}
@@ -194,7 +194,7 @@ func main() {
 		})
 	})
 
-	port := "8095"
+	port := "8080"
 	logger.Info("Starting server on port %s...", port)
 	router.Run(":" + port)
 }
