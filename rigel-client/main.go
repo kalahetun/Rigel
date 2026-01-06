@@ -36,7 +36,7 @@ func main() {
 	router := gin.Default()
 
 	// 上传接口
-	router.POST("/gcp/client/upload", func(c *gin.Context) {
+	router.POST("/gcp/upload/client", func(c *gin.Context) {
 		// 从 Header 获取文件名
 		fileName := c.GetHeader(HeaderFileName)
 		if fileName == "" {
@@ -62,7 +62,7 @@ func main() {
 	})
 
 	// ========== 新增 HTTPS 直传 ==========
-	router.POST("/gcp/direct/upload", func(c *gin.Context) {
+	router.POST("/gcp/upload/direct", func(c *gin.Context) {
 		fileName := c.GetHeader(HeaderFileName)
 		if fileName == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Missing X-File-Name header"})
@@ -85,16 +85,23 @@ func main() {
 		})
 	})
 
-	router.POST("/gcp/redirect/upload", func(c *gin.Context) {
+	router.POST("/gcp/upload/redirect/v1", func(c *gin.Context) {
 		fileName := c.GetHeader(HeaderFileName)
 		if fileName == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Missing X-File-Name header"})
 			return
 		}
 
+		hops := c.GetHeader("X-Hops") // "34.69.185.247:8090,136.116.114.219:8080"
+		if len(hops) <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Missing X-Hops header"})
+			return
+		}
+
 		localFilePath := localBaseDir + fileName
 
-		if err := upload.UploadToGCSbyReDirectHttps(localFilePath, bucketName, fileName, credFile, c.Request.Header); err != nil {
+		if err := upload.UploadToGCSbyReDirectHttpsV1(localFilePath, bucketName, fileName, credFile,
+			hops, c.Request.Header, logger); err != nil {
 			logger.Error("ReDirect HTTPS upload failed: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -102,6 +109,34 @@ func main() {
 
 		c.JSON(http.StatusOK, gin.H{
 			"message":   "redirect upload success",
+			"file_name": fileName,
+		})
+	})
+
+	router.POST("/gcp/upload/redirect/v2", func(c *gin.Context) {
+		fileName := c.GetHeader(HeaderFileName)
+		if fileName == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Missing X-File-Name header"})
+			return
+		}
+
+		hops := c.GetHeader("X-Hops") // "34.69.185.247:8090,136.116.114.219:8080"
+		if len(hops) <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Missing X-Hops header"})
+			return
+		}
+
+		localFilePath := localBaseDir + fileName
+
+		if err := upload.UploadToGCSbyReDirectHttpsV2(localFilePath, bucketName, fileName, credFile,
+			hops, c.Request.Header, logger); err != nil {
+			logger.Error("ReDirect v2 HTTPS upload failed: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"message":   "redirect v2 upload success",
 			"file_name": fileName,
 		})
 	})

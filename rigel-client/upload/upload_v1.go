@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"golang.org/x/oauth2/google"
 	"io"
-	"log"
 	"log/slog"
 	"net/http"
 	"os"
@@ -118,7 +117,8 @@ func UploadToGCSbyDirectHttps(localFilePath, bucketName, objectName, credFile st
 	return nil
 }
 
-func UploadToGCSbyReDirectHttps(localFilePath, bucketName, fileName, credFile string, reqHeaders http.Header) error {
+func UploadToGCSbyReDirectHttpsV1(localFilePath, bucketName, fileName, credFile, hops string,
+	reqHeaders http.Header, logger *slog.Logger) error {
 	// 读取 bucket 和 object
 	//bucketName := reqHeaders.Get("X-Bucket-Name")
 	objectName := fileName
@@ -146,7 +146,7 @@ func UploadToGCSbyReDirectHttps(localFilePath, bucketName, fileName, credFile st
 	}
 	defer f.Close()
 
-	hops := reqHeaders.Get("X-Hops") // "34.69.185.247:8090,136.116.114.219:8080"
+	//hops := reqHeaders.Get("X-Hops") // "34.69.185.247:8090,136.116.114.219:8080"
 	hopList := strings.Split(hops, ",")
 	if len(hopList) <= 1 {
 		return fmt.Errorf("invalid X-Hops header: %s", hops)
@@ -179,6 +179,6 @@ func UploadToGCSbyReDirectHttps(localFilePath, bucketName, fileName, credFile st
 		return fmt.Errorf("upload failed, status: %d, body: %s", resp.StatusCode, string(body))
 	}
 
-	log.Println("UploadToGCSbyReDirectHttps success:", bucketName, objectName)
+	logger.Info("UploadToGCSbyReDirectHttps success:", bucketName, objectName)
 	return nil
 }

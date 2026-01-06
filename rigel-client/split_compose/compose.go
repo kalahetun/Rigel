@@ -23,7 +23,7 @@ func finalizeObject(ctx context.Context, bkt *storage.BucketHandle, tempName, fi
 
 func ComposeTree(
 	ctx context.Context,
-	client *storage.Client,
+//client *storage.Client,
 	bucket, objectName, credFile string,
 	parts []string,
 ) error {
