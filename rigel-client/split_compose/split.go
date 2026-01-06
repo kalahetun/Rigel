@@ -21,7 +21,7 @@ type ChunkState struct {
 	Acked      bool
 }
 
-func SplitFile(path, objectName string, chunks *util.SafeMap) error {
+func SplitFile(path, fileName string, chunks *util.SafeMap) error {
 
 	fi, err := os.Stat(path)
 	if err != nil {
@@ -40,7 +40,7 @@ func SplitFile(path, objectName string, chunks *util.SafeMap) error {
 			partSize = size - offset
 		}
 
-		partName := fmt.Sprintf("%s.part.%05d", objectName, index)
+		partName := fmt.Sprintf("%s.part.%05d", fileName, index)
 
 		chunks.Set(strconv.Itoa(index), &ChunkState{
 			Index:      strconv.Itoa(index),

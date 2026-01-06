@@ -31,7 +31,7 @@ const (
 
 type ChunkEvent struct {
 	Type    ChunkEventType
-	Indexes []string
+	Indexes []*split_compose.ChunkState
 }
 
 // 这个函数主要是 分片+限流+ack+compose 功能的upload
@@ -52,7 +52,7 @@ func UploadToGCSbyReDirectHttpsV2(localFilePath, bucketName, fileName, credFile,
 	done := make(chan struct{})
 
 	//events 消费
-	ChunkEventLoop(ctx, chunks, bucketName, fileName, credFile, events, done, logger)
+	ChunkEventLoop(ctx, chunks, localFilePath, bucketName, fileName, credFile, hops, events, done, logger)
 
 	//限流相关的逻辑
 	rateStr := reqHeaders.Get("X-Rate")
@@ -87,7 +87,7 @@ func UploadToGCSbyReDirectHttpsV2(localFilePath, bucketName, fileName, credFile,
 func CollectExpiredChunks(
 	s *util.SafeMap,
 	expire time.Duration,
-) (expired []string, finished bool) {
+) (expired []*split_compose.ChunkState, finished bool) {
 	now := time.Now()
 	finished = true // 先假设都 ack 了
 
@@ -103,7 +103,7 @@ func CollectExpiredChunks(
 			finished = false // 只要发现一个没 ack，就没完成
 
 			if !v_.LastSend.IsZero() && now.Sub(v_.LastSend) > expire {
-				expired = append(expired, v_.Index)
+				expired = append(expired, v_)
 			}
 		}
 	}
@@ -149,8 +149,8 @@ func StartChunkTimeoutChecker(
 	}()
 }
 
-func ChunkEventLoop(ctx context.Context, s *util.SafeMap, bucketName, fileName, credFile string,
-	events <-chan ChunkEvent, done chan struct{}, logger *slog.Logger) {
+func ChunkEventLoop(ctx context.Context, s *util.SafeMap, localFilePath, bucketName, fileName, credFile,
+	hops string, events <-chan ChunkEvent, done chan struct{}, logger *slog.Logger) {
 	for {
 		select {
 		case ev := <-events:
@@ -173,7 +173,7 @@ func ChunkEventLoop(ctx context.Context, s *util.SafeMap, bucketName, fileName, 
 					}
 					parts = append(parts, v_.ObjectName)
 				}
-				split_compose.ComposeTree(ctx, bucketName, fileName, credFile, parts)
+				_ = split_compose.ComposeTree(ctx, bucketName, fileName, credFile, parts)
 				close(done)
 				return
 			}
@@ -191,6 +191,7 @@ type ChunkTask struct {
 	localFilePath string
 	bucketName    string
 	fileName      string
+	objectName    string
 	hops          string
 	credFile      string
 	limiter       *rate.Limiter //限流
@@ -275,6 +276,7 @@ func StartChunkSubmitLoop(
 					localFilePath: localFilePath,
 					bucketName:    bucketName,
 					fileName:      fileName,
+					objectName:    v_.ObjectName,
 					hops:          hops,
 					credFile:      credFile,
 					limiter:       limiter,
