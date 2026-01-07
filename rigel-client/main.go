@@ -63,6 +63,7 @@ func main() {
 
 	// ========== 新增 HTTPS 直传 ==========
 	router.POST("/gcp/upload/direct", func(c *gin.Context) {
+
 		fileName := c.GetHeader(HeaderFileName)
 		if fileName == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Missing X-File-Name header"})
@@ -86,6 +87,7 @@ func main() {
 	})
 
 	router.POST("/gcp/upload/redirect/v1", func(c *gin.Context) {
+
 		fileName := c.GetHeader(HeaderFileName)
 		if fileName == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Missing X-File-Name header"})
@@ -114,22 +116,43 @@ func main() {
 	})
 
 	router.POST("/gcp/upload/redirect/v2", func(c *gin.Context) {
+
+		var routingInfo upload.RoutingInfo
+		if err := c.ShouldBindJSON(&routingInfo); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":  "invalid json body for routing",
+				"detail": err.Error(),
+			})
+			return
+		}
+
+		if len(routingInfo.Routing) == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "routing info is empty",
+			})
+			return
+		}
+
 		fileName := c.GetHeader(HeaderFileName)
 		if fileName == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Missing X-File-Name header"})
 			return
 		}
 
-		hops := c.GetHeader("X-Hops") // "34.69.185.247:8090,136.116.114.219:8080"
-		if len(hops) <= 0 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Missing X-Hops header"})
-			return
-		}
-
+		//hops := c.GetHeader("X-Hops") // "34.69.185.247:8090,136.116.114.219:8080"
+		//if len(hops) <= 0 {
+		//	c.JSON(http.StatusBadRequest, gin.H{"error": "Missing X-Hops header"})
+		//	return
+		//}
 		localFilePath := localBaseDir + fileName
 
-		if err := upload.UploadToGCSbyReDirectHttpsV2(localFilePath, bucketName, fileName, credFile,
-			hops, c.Request.Header, logger); err != nil {
+		uploadInfo := upload.UploadFileInfo{
+			LocalFilePath: localFilePath,
+			BucketName:    bucketName,
+			FileName:      fileName,
+			CredFile:      credFile}
+
+		if err := upload.UploadToGCSbyReDirectHttpsV2(uploadInfo, routingInfo, logger); err != nil {
 			logger.Error("ReDirect v2 HTTPS upload failed: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
