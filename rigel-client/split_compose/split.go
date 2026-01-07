@@ -14,6 +14,7 @@ const (
 
 type ChunkState struct {
 	Index      string
+	FileName   string
 	ObjectName string
 	Offset     int64
 	Size       int64
@@ -44,6 +45,7 @@ func SplitFile(path, fileName string, chunks *util.SafeMap) error {
 
 		chunks.Set(strconv.Itoa(index), &ChunkState{
 			Index:      strconv.Itoa(index),
+			FileName:   fileName,
 			ObjectName: partName,
 			Offset:     offset,
 			Size:       partSize,

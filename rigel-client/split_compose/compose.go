@@ -23,7 +23,6 @@ func finalizeObject(ctx context.Context, bkt *storage.BucketHandle, tempName, fi
 
 func ComposeTree(
 	ctx context.Context,
-//client *storage.Client,
 	bucket, objectName, credFile string,
 	parts []string,
 ) error {
@@ -39,6 +38,8 @@ func ComposeTree(
 
 	current := parts
 	level := 0
+
+	var tempObjects []string // 保存所有临时对象
 
 	for len(current) > 1 {
 		var next []string
@@ -62,11 +63,24 @@ func ComposeTree(
 			}
 
 			next = append(next, tmp)
+			tempObjects = append(tempObjects, tmp) // 记录临时对象
 		}
 
 		current = next
 		level++
 	}
 
-	return finalizeObject(ctx, bkt, current[0], objectName)
+	// 最终复制 temp → final
+	if err := finalizeObject(ctx, bkt, current[0], objectName); err != nil {
+		return err
+	}
+
+	// 删除所有中间临时对象（不包括 current[0]，已经在 finalizeObject 删除）
+	for _, tmp := range tempObjects {
+		if tmp != current[0] {
+			_ = bkt.Object(tmp).Delete(ctx)
+		}
+	}
+
+	return nil
 }
