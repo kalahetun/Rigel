@@ -102,7 +102,7 @@ func UploadToGCSbyReDirectHttpsV2(uploadInfo UploadFileInfo, routingInfo Routing
 func CollectExpiredChunks(
 	s *util.SafeMap,
 	expire time.Duration,
-) (expired []*split_compose.ChunkState, finished bool) {
+) (expired []*split_compose.ChunkState, finished, unfinished bool) {
 	now := time.Now()
 	finished = true // 先假设都 ack 了
 
@@ -114,6 +114,11 @@ func CollectExpiredChunks(
 			continue
 		}
 
+		//还没发送完不能resubmit
+		if v_.LastSend.IsZero() {
+			return expired, false, true
+		}
+
 		if !v_.Acked {
 			finished = false // 只要发现一个没 ack，就没完成
 
@@ -123,7 +128,7 @@ func CollectExpiredChunks(
 		}
 	}
 
-	return expired, finished
+	return expired, finished, false
 }
 
 func StartChunkTimeoutChecker(
@@ -141,19 +146,21 @@ func StartChunkTimeoutChecker(
 		for {
 			select {
 			case <-ticker.C:
-				expired, finished := CollectExpiredChunks(s, expire)
+				expired, finished, unfinished := CollectExpiredChunks(s, expire)
 
-				if finished {
-					events <- ChunkEvent{
-						Type: ChunkFinished,
+				if !unfinished {
+					if finished {
+						events <- ChunkEvent{
+							Type: ChunkFinished,
+						}
+						return
 					}
-					return
-				}
 
-				if len(expired) > 0 {
-					events <- ChunkEvent{
-						Type:    ChunkExpired,
-						Indexes: expired,
+					if len(expired) > 0 {
+						events <- ChunkEvent{
+							Type:    ChunkExpired,
+							Indexes: expired,
+						}
 					}
 				}
 
@@ -383,6 +390,7 @@ func uploadChunk(task ChunkTask, hops string, rateLimiter *rate.Limiter, logger 
 		LastSend:   time.Now(),
 		Acked:      false,
 	})
+	logger.Info("开始上传分片", "fileName", task.uploadInfo.FileName, "index", task.Index, "hops", hops)
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -407,6 +415,7 @@ func uploadChunk(task ChunkTask, hops string, rateLimiter *rate.Limiter, logger 
 		LastSend:   chunk.LastSend,
 		Acked:      true,
 	})
+	logger.Info("上传分片成功", "fileName", task.uploadInfo.FileName, "index", task.Index, "hops", hops)
 
 	return nil
 }
