@@ -28,6 +28,18 @@ type ChunkEvent struct {
 	Indexes []*split_compose.ChunkState
 }
 
+type ChunkTask struct {
+	ctx        context.Context
+	Index      string
+	s          *util.SafeMap
+	uploadInfo UploadFileInfo
+	objectName string
+}
+
+type WorkerPool struct {
+	taskCh chan ChunkTask
+}
+
 type PathInfo struct {
 	Hops string `json:"hops"`
 	Rate int64  `json:"rate"`
@@ -189,18 +201,6 @@ func ChunkEventLoop(ctx context.Context, chunks *util.SafeMap, workerPool *Worke
 			return
 		}
 	}
-}
-
-type ChunkTask struct {
-	ctx        context.Context
-	Index      string
-	s          *util.SafeMap
-	uploadInfo UploadFileInfo
-	objectName string
-}
-
-type WorkerPool struct {
-	taskCh chan ChunkTask
 }
 
 func NewWorkerPool(
