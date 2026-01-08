@@ -83,7 +83,7 @@ func UploadToGCSbyReDirectHttpsV2(uploadInfo UploadFileInfo, routingInfo Routing
 	go ChunkEventLoop(ctx, chunks, workerPool, uploadInfo, events, done, logger)
 
 	// 4. 启动分片上传
-	StartChunkSubmitLoop(ctx, chunks, workerPool, uploadInfo, nil, logger)
+	go StartChunkSubmitLoop(ctx, chunks, workerPool, uploadInfo, false, nil, logger)
 
 	// 5分钟超时定时器
 	timeout := 5 * time.Minute
@@ -189,7 +189,7 @@ func ChunkEventLoop(ctx context.Context, chunks *util.SafeMap, workerPool *Worke
 			switch ev.Type {
 			case ChunkExpired:
 				logger.Warn("超时重传", "indexes", ev.Indexes)
-				StartChunkSubmitLoop(ctx, chunks, workerPool, uploadInfo, ev.Indexes, logger)
+				StartChunkSubmitLoop(ctx, chunks, workerPool, uploadInfo, true, ev.Indexes, logger)
 			case ChunkFinished:
 				var parts = []string{}
 				bucketName := uploadInfo.BucketName
@@ -282,52 +282,46 @@ func StartChunkSubmitLoop(
 	chunks *util.SafeMap,
 	workerPool *WorkerPool,
 	uploadInfo UploadFileInfo,
+	resubmit bool,
 	resubmitIndexes map[string]*split_compose.ChunkState,
 	logger *slog.Logger,
 ) {
 	logger.Info("开始分片上传", "fileName", uploadInfo.FileName)
+	chunks_ := chunks.GetAll()
 
-	go func() {
-		ticker := time.NewTicker(200 * time.Millisecond)
-		defer ticker.Stop()
+	for _, v := range chunks_ {
 
-		for {
-			select {
-			case <-ctx.Done():
-				return
+		time.Sleep(200 * time.Millisecond)
 
-			case <-ticker.C:
-				chunks_ := chunks.GetAll()
+		v_, ok := v.(*split_compose.ChunkState)
+		if !ok {
+			continue
+		}
 
-				for _, v := range chunks_ {
-					v_, ok := v.(*split_compose.ChunkState)
-					if !ok {
-						continue
-					}
-
-					if resubmitIndexes != nil {
-						if _, ok := resubmitIndexes[v_.Index]; !ok {
-							continue
-						}
-					}
-
-					task := ChunkTask{
-						ctx:        ctx,
-						Index:      v_.Index,
-						s:          chunks,
-						uploadInfo: uploadInfo,
-						objectName: v_.ObjectName,
-					}
-
-					if !workerPool.Submit(task) {
-						// 队列满了，本轮结束，等下个 tick
-						time.Sleep(10 * time.Second)
-						break
-					}
-				}
+		if resubmit {
+			if _, ok := resubmitIndexes[v_.Index]; !ok || v_.Acked == 2 {
+				continue
+			}
+		} else {
+			if v_.Acked != 0 {
+				continue
 			}
 		}
-	}()
+
+		task := ChunkTask{
+			ctx:        ctx,
+			Index:      v_.Index,
+			s:          chunks,
+			uploadInfo: uploadInfo,
+			objectName: v_.ObjectName,
+		}
+
+		if !workerPool.Submit(task) {
+			// 队列满了，本轮结束，等下个 tick
+			time.Sleep(10 * time.Second)
+			break
+		}
+	}
 
 }
 
