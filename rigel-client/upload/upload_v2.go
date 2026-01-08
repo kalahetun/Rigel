@@ -208,10 +208,13 @@ func ChunkEventLoop(ctx context.Context, chunks *util.SafeMap, workerPool *Worke
 						close(done)
 						return
 					}
-					logger.Info("传输完成", "fileName", fileName, "index", v_.Index, v_.ObjectName)
+					logger.Info("传输完成", "fileName", fileName, "index", v_.Index, "ObjectName", v_.ObjectName)
 					parts = append(parts, v_.ObjectName)
 				}
-				_ = split_compose.ComposeTree(ctx, bucketName, fileName, credFile, parts, logger)
+				err := split_compose.ComposeTree(ctx, bucketName, fileName, credFile, parts, logger)
+				if err != nil {
+					logger.Error("compose failed", "fileName", fileName, "err", err)
+				}
 				close(done)
 				return
 			}
@@ -378,7 +381,7 @@ func uploadChunk(task ChunkTask, hops string, rateLimiter *rate.Limiter, logger 
 		"http://%s/%s/%s",
 		firstHop,
 		task.uploadInfo.BucketName,
-		task.uploadInfo.FileName,
+		task.objectName,
 	)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, body)
@@ -405,7 +408,7 @@ func uploadChunk(task ChunkTask, hops string, rateLimiter *rate.Limiter, logger 
 		LastSend:   time.Now(),
 		Acked:      1,
 	})
-	logger.Info("开始上传分片", "fileName", task.uploadInfo.FileName, "index", task.Index, "hops", hops)
+	logger.Info("上传分片", "url", url, "fileName", task.uploadInfo.FileName, "index", task.Index, "hops", hops)
 
 	resp, err := client.Do(req)
 	if err != nil {
