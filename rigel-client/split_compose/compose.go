@@ -4,6 +4,7 @@ import (
 	"cloud.google.com/go/storage"
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 )
 
@@ -25,6 +26,7 @@ func ComposeTree(
 	ctx context.Context,
 	bucket, objectName, credFile string,
 	parts []string,
+	logger *slog.Logger,
 ) error {
 
 	os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", credFile)
@@ -64,6 +66,7 @@ func ComposeTree(
 
 			next = append(next, tmp)
 			tempObjects = append(tempObjects, tmp) // 记录临时对象
+			logger.Info("合并生成临时文件", "name", tmp, "level", level, "from", group)
 		}
 
 		current = next

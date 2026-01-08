@@ -206,11 +206,13 @@ func ChunkEventLoop(ctx context.Context, chunks *util.SafeMap, workerPool *Worke
 					}
 					if v_.Acked != 2 {
 						logger.Error("upload failed", "fileName", fileName, "index", v_.Index)
+						close(done)
 						return
 					}
+					logger.Info("传输完成", "fileName", fileName, "index", v_.Index, v_.ObjectName)
 					parts = append(parts, v_.ObjectName)
 				}
-				_ = split_compose.ComposeTree(ctx, bucketName, fileName, credFile, parts)
+				_ = split_compose.ComposeTree(ctx, bucketName, fileName, credFile, parts, logger)
 				close(done)
 				return
 			}
