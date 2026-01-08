@@ -70,6 +70,8 @@ func UploadToGCSbyReDirectHttpsV2(uploadInfo UploadFileInfo, routingInfo Routing
 	chunks := util.NewSafeMap()
 	_ = split_compose.SplitFile(localFilePath, fileName, chunks)
 
+	fmt.Println("分片数据", chunks.GetAll())
+
 	//启动定时重传 & check传输完毕
 	events := make(chan ChunkEvent, 100)
 	interval := 10 * time.Duration(time.Second)
@@ -77,12 +79,15 @@ func UploadToGCSbyReDirectHttpsV2(uploadInfo UploadFileInfo, routingInfo Routing
 	StartChunkTimeoutChecker(ctx, chunks, interval, expire, events)
 
 	//启动消费者 默认一个http并发度
+	fmt.Println("NewWorkerPool")
 	workerPool := NewWorkerPool(100, routingInfo, uploadChunk, logger)
 
 	//events 消费
+	fmt.Println("ChunkEventLoop")
 	ChunkEventLoop(ctx, chunks, workerPool, uploadInfo, events, done, logger)
 
 	// 4. 启动分片上传
+	fmt.Println("StartChunkSubmitLoop")
 	StartChunkSubmitLoop(ctx, chunks, workerPool, uploadInfo, logger)
 
 	// 5分钟超时定时器
@@ -140,6 +145,8 @@ func StartChunkTimeoutChecker(
 ) {
 	ticker := time.NewTicker(interval)
 
+	fmt.Println("定时器启动")
+
 	go func() {
 		defer ticker.Stop()
 
@@ -173,6 +180,9 @@ func StartChunkTimeoutChecker(
 
 func ChunkEventLoop(ctx context.Context, chunks *util.SafeMap, workerPool *WorkerPool,
 	uploadInfo UploadFileInfo, events <-chan ChunkEvent, done chan struct{}, logger *slog.Logger) {
+
+	fmt.Println("事件循环启动")
+
 	for {
 		select {
 		case ev := <-events:
@@ -255,6 +265,7 @@ func NewWorkerPool(
 func (p *WorkerPool) Submit(task ChunkTask) bool {
 	select {
 	case p.taskCh <- task:
+		fmt.Println("submit task", task)
 		return true
 	default:
 		// 队列满了，可以选择丢 / 打日志 / 统计
