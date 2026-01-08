@@ -84,7 +84,7 @@ func UploadToGCSbyReDirectHttpsV2(uploadInfo UploadFileInfo, routingInfo Routing
 
 	//events 消费
 	fmt.Println("ChunkEventLoop")
-	ChunkEventLoop(ctx, chunks, workerPool, uploadInfo, events, done, logger)
+	go ChunkEventLoop(ctx, chunks, workerPool, uploadInfo, events, done, logger)
 
 	// 4. 启动分片上传
 	fmt.Println("StartChunkSubmitLoop")
