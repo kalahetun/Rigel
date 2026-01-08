@@ -83,8 +83,7 @@ func UploadToGCSbyReDirectHttpsV2(uploadInfo UploadFileInfo, routingInfo Routing
 	go ChunkEventLoop(ctx, chunks, workerPool, uploadInfo, events, done, logger)
 
 	// 4. 启动分片上传
-	resubmitIndexes := make(map[string]*split_compose.ChunkState)
-	StartChunkSubmitLoop(ctx, chunks, workerPool, uploadInfo, resubmitIndexes, logger)
+	StartChunkSubmitLoop(ctx, chunks, workerPool, uploadInfo, nil, logger)
 
 	// 5分钟超时定时器
 	timeout := 5 * time.Minute
@@ -287,45 +286,49 @@ func StartChunkSubmitLoop(
 	logger *slog.Logger,
 ) {
 	logger.Info("开始分片上传", "fileName", uploadInfo.FileName)
+
 	go func() {
+		ticker := time.NewTicker(200 * time.Millisecond)
+		defer ticker.Stop()
+
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			default:
-			}
 
-			chunks_ := chunks.GetAll()
+			case <-ticker.C:
+				chunks_ := chunks.GetAll()
 
-			for _, v := range chunks_ {
-				v_, ok := v.(*split_compose.ChunkState)
-				if !ok {
-					continue
-				}
-
-				if resubmitIndexes != nil {
-					if _, ok := resubmitIndexes[v_.Index]; !ok {
+				for _, v := range chunks_ {
+					v_, ok := v.(*split_compose.ChunkState)
+					if !ok {
 						continue
 					}
-				}
 
-				task := ChunkTask{
-					ctx:        ctx,
-					Index:      v_.Index,
-					s:          chunks,
-					uploadInfo: uploadInfo,
-					objectName: v_.ObjectName,
-				}
+					if resubmitIndexes != nil {
+						if _, ok := resubmitIndexes[v_.Index]; !ok {
+							continue
+						}
+					}
 
-				ok = workerPool.Submit(task)
-				if !ok {
-					// 队列满了，睡 10s 再来
-					time.Sleep(10 * time.Second)
-					continue
+					task := ChunkTask{
+						ctx:        ctx,
+						Index:      v_.Index,
+						s:          chunks,
+						uploadInfo: uploadInfo,
+						objectName: v_.ObjectName,
+					}
+
+					if !workerPool.Submit(task) {
+						// 队列满了，本轮结束，等下个 tick
+						time.Sleep(10 * time.Second)
+						break
+					}
 				}
 			}
 		}
 	}()
+
 }
 
 func uploadChunk(task ChunkTask, hops string, rateLimiter *rate.Limiter, logger *slog.Logger) error {
