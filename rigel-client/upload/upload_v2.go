@@ -25,7 +25,7 @@ const (
 
 type ChunkEvent struct {
 	Type    ChunkEventType
-	Indexes []*split_compose.ChunkState
+	Indexes map[string]*split_compose.ChunkState
 }
 
 type ChunkTask struct {
@@ -68,27 +68,23 @@ func UploadToGCSbyReDirectHttpsV2(uploadInfo UploadFileInfo, routingInfo Routing
 
 	//获取分片
 	chunks := util.NewSafeMap()
-	_ = split_compose.SplitFile(localFilePath, fileName, chunks)
-
-	fmt.Println("分片数据", chunks.GetAll())
+	_ = split_compose.SplitFile(localFilePath, fileName, chunks, logger)
 
 	//启动定时重传 & check传输完毕
 	events := make(chan ChunkEvent, 100)
 	interval := 10 * time.Duration(time.Second)
 	expire := 120 * time.Duration(time.Second)
-	StartChunkTimeoutChecker(ctx, chunks, interval, expire, events)
+	StartChunkTimeoutChecker(ctx, chunks, interval, expire, events, logger)
 
 	//启动消费者 默认一个http并发度
-	fmt.Println("NewWorkerPool")
 	workerPool := NewWorkerPool(100, routingInfo, uploadChunk, logger)
 
 	//events 消费
-	fmt.Println("ChunkEventLoop")
 	go ChunkEventLoop(ctx, chunks, workerPool, uploadInfo, events, done, logger)
 
 	// 4. 启动分片上传
-	fmt.Println("StartChunkSubmitLoop")
-	StartChunkSubmitLoop(ctx, chunks, workerPool, uploadInfo, logger)
+	resubmitIndexes := make(map[string]*split_compose.ChunkState)
+	StartChunkSubmitLoop(ctx, chunks, workerPool, uploadInfo, resubmitIndexes, logger)
 
 	// 5分钟超时定时器
 	timeout := 5 * time.Minute
@@ -107,10 +103,13 @@ func UploadToGCSbyReDirectHttpsV2(uploadInfo UploadFileInfo, routingInfo Routing
 func CollectExpiredChunks(
 	s *util.SafeMap,
 	expire time.Duration,
-) (expired []*split_compose.ChunkState, finished, unfinished bool) {
+	logger *slog.Logger,
+) (expired map[string]*split_compose.ChunkState, finished, unfinished bool) {
 	now := time.Now()
+	expired = make(map[string]*split_compose.ChunkState)
 	finished = true // 先假设都 ack 了
 
+	logger.Info("CollectExpiredChunks", now, expire)
 	chunks_ := s.GetAll()
 
 	for _, v := range chunks_ {
@@ -120,15 +119,16 @@ func CollectExpiredChunks(
 		}
 
 		//还没发送完不能resubmit
-		if v_.LastSend.IsZero() {
+		if v_.Acked == 0 {
+			logger.Info("还没发送完不能resubmit", v_.Index)
 			return expired, false, true
 		}
 
-		if !v_.Acked {
+		if v_.Acked == 1 {
 			finished = false // 只要发现一个没 ack，就没完成
 
 			if !v_.LastSend.IsZero() && now.Sub(v_.LastSend) > expire {
-				expired = append(expired, v_)
+				expired[v_.Index] = v_
 			}
 		}
 	}
@@ -142,10 +142,11 @@ func StartChunkTimeoutChecker(
 	interval time.Duration,
 	expire time.Duration,
 	events chan<- ChunkEvent,
+	logger *slog.Logger,
 ) {
 	ticker := time.NewTicker(interval)
 
-	fmt.Println("定时器启动")
+	logger.Info("定时器启动", interval, expire)
 
 	go func() {
 		defer ticker.Stop()
@@ -153,7 +154,7 @@ func StartChunkTimeoutChecker(
 		for {
 			select {
 			case <-ticker.C:
-				expired, finished, unfinished := CollectExpiredChunks(s, expire)
+				expired, finished, unfinished := CollectExpiredChunks(s, expire, logger)
 
 				if !unfinished {
 					if finished {
@@ -189,7 +190,7 @@ func ChunkEventLoop(ctx context.Context, chunks *util.SafeMap, workerPool *Worke
 			switch ev.Type {
 			case ChunkExpired:
 				logger.Warn("超时重传", "indexes", ev.Indexes)
-				StartChunkSubmitLoop(ctx, chunks, workerPool, uploadInfo, logger)
+				StartChunkSubmitLoop(ctx, chunks, workerPool, uploadInfo, ev.Indexes, logger)
 			case ChunkFinished:
 				var parts = []string{}
 				bucketName := uploadInfo.BucketName
@@ -203,7 +204,7 @@ func ChunkEventLoop(ctx context.Context, chunks *util.SafeMap, workerPool *Worke
 					if !ok {
 						continue
 					}
-					if !v_.Acked {
+					if v_.Acked != 2 {
 						logger.Error("upload failed", "fileName", fileName, "index", v_.Index)
 						return
 					}
@@ -229,6 +230,8 @@ func NewWorkerPool(
 	p := &WorkerPool{
 		taskCh: make(chan ChunkTask, queueSize),
 	}
+
+	logger.Info("WorkerPool 启动", "queueSize", queueSize)
 
 	workerNum := len(routingInfo.Routing)
 
@@ -278,6 +281,7 @@ func StartChunkSubmitLoop(
 	chunks *util.SafeMap,
 	workerPool *WorkerPool,
 	uploadInfo UploadFileInfo,
+	resubmitIndexes map[string]*split_compose.ChunkState,
 	logger *slog.Logger,
 ) {
 	logger.Info("开始分片上传", "fileName", uploadInfo.FileName)
@@ -297,9 +301,10 @@ func StartChunkSubmitLoop(
 					continue
 				}
 
-				// 已 ack 的不用再发
-				if v_.Acked {
-					continue
+				if resubmitIndexes != nil {
+					if _, ok := resubmitIndexes[v_.Index]; !ok {
+						continue
+					}
 				}
 
 				task := ChunkTask{
@@ -399,7 +404,7 @@ func uploadChunk(task ChunkTask, hops string, rateLimiter *rate.Limiter, logger 
 		Offset:     chunk.Offset,
 		Size:       chunk.Size,
 		LastSend:   time.Now(),
-		Acked:      false,
+		Acked:      1,
 	})
 	logger.Info("开始上传分片", "fileName", task.uploadInfo.FileName, "index", task.Index, "hops", hops)
 
@@ -424,7 +429,7 @@ func uploadChunk(task ChunkTask, hops string, rateLimiter *rate.Limiter, logger 
 		Offset:     chunk.Offset,
 		Size:       chunk.Size,
 		LastSend:   chunk.LastSend,
-		Acked:      true,
+		Acked:      2,
 	})
 	logger.Info("上传分片成功", "fileName", task.uploadInfo.FileName, "index", task.Index, "hops", hops)
 

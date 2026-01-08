@@ -2,6 +2,7 @@ package split_compose
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"rigel-client/util"
 	"strconv"
@@ -19,10 +20,10 @@ type ChunkState struct {
 	Offset     int64
 	Size       int64
 	LastSend   time.Time
-	Acked      bool
+	Acked      int
 }
 
-func SplitFile(path, fileName string, chunks *util.SafeMap) error {
+func SplitFile(path, fileName string, chunks *util.SafeMap, logger *slog.Logger) error {
 
 	fi, err := os.Stat(path)
 	if err != nil {
@@ -49,11 +50,13 @@ func SplitFile(path, fileName string, chunks *util.SafeMap) error {
 			ObjectName: partName,
 			Offset:     offset,
 			Size:       partSize,
-			Acked:      false,
+			Acked:      0,
 		})
 
 		offset += partSize
 		index++
+
+		logger.Info("SplitFile", "partName", partName, "offset", offset, "size", size)
 	}
 
 	return nil
