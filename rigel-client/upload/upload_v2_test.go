@@ -98,7 +98,7 @@ func TestCollectExpiredChunks(t *testing.T) {
 	chunks.Set("1", &split_compose.ChunkState{Index: "1", Acked: false, LastSend: now.Add(-time.Minute)})
 	chunks.Set("2", &split_compose.ChunkState{Index: "2", Acked: true})
 
-	expired, finished := CollectExpiredChunks(chunks, 10*time.Second)
+	expired, finished, _ := CollectExpiredChunks(chunks, 10*time.Second)
 	if len(expired) != 1 {
 		t.Errorf("expected 1 expired chunk, got %d", len(expired))
 	}

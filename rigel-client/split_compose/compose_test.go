@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"strconv"
 	"testing"
 
 	"cloud.google.com/go/storage"
@@ -55,7 +56,7 @@ func TestComposeTree(t *testing.T) {
 	// 检查临时对象是否已经删除
 	for level := 0; level < 10; level++ { // 假设最多10层
 		for i := 0; i < len(parts); i += 32 {
-			tmp := objectName + ".compose." + string(level) + "." + string(i)
+			tmp := objectName + ".compose." + strconv.Itoa(level) + "." + strconv.Itoa(i)
 			_, err := bkt.Object(tmp).Attrs(ctx)
 			if err == nil {
 				t.Errorf("temporary object %s should have been deleted", tmp)

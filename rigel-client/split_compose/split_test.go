@@ -1,6 +1,7 @@
 package split_compose
 
 import (
+	"fmt"
 	"io/ioutil"
 	"os"
 	"strconv"
@@ -22,6 +23,8 @@ func TestSplitFile(t *testing.T) {
 	for i := range data {
 		data[i] = byte(i % 256)
 	}
+
+	fmt.Println("split file size", len(data))
 
 	if _, err := tmpFile.Write(data); err != nil {
 		t.Fatalf("failed to write temp file: %v", err)
@@ -56,6 +59,7 @@ func TestSplitFile(t *testing.T) {
 			t.Errorf("chunk %d has wrong type", i)
 			continue
 		}
+		fmt.Println("split chunk info", chunk)
 		if chunk.Index != key {
 			t.Errorf("chunk %d index mismatch, got %s", i, chunk.Index)
 		}
