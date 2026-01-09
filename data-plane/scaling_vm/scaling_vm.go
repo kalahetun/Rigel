@@ -65,7 +65,7 @@ func CreateVM(
 			networkInterface,
 		},
 		Tags: &computepb.Tags{
-			Items: []string{"http-server", "https-server", "lb-health-check"}, // 防火墙标签
+			Items: []string{"http-server", "https-server", "lb-health-check", "default-allow-internal"}, // 防火墙标签
 		},
 		Metadata: &computepb.Metadata{
 			Items: []*computepb.Items{

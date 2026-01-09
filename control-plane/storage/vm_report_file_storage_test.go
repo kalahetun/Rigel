@@ -20,7 +20,7 @@ func TestNewFileStorage(t *testing.T) {
 	defer os.RemoveAll(testStorageDir)
 
 	// 测试正常初始化
-	storage, err := NewFileStorage(testStorageDir, 5)
+	storage, err := NewFileStorage(testStorageDir, 5, nil)
 	if err != nil {
 		t.Fatalf("初始化存储实例失败: %v", err)
 	}
@@ -32,7 +32,7 @@ func TestNewFileStorage(t *testing.T) {
 	}
 
 	// 测试自定义过期时长
-	storage2, err := NewFileStorage(testStorageDir, 10)
+	storage2, err := NewFileStorage(testStorageDir, 10, nil)
 	if err != nil {
 		t.Fatalf("初始化自定义过期时长失败: %v", err)
 	}
@@ -46,7 +46,7 @@ func TestFileStorage_Put(t *testing.T) {
 	defer os.RemoveAll(testStorageDir)
 
 	// 初始化存储
-	storage, err := NewFileStorage(testStorageDir, 5)
+	storage, err := NewFileStorage(testStorageDir, 5, nil)
 	if err != nil {
 		t.Fatalf("初始化存储失败: %v", err)
 	}
@@ -102,7 +102,7 @@ func TestFileStorage_Get(t *testing.T) {
 	defer os.RemoveAll(testStorageDir)
 
 	// 初始化存储
-	storage, err := NewFileStorage(testStorageDir, 5)
+	storage, err := NewFileStorage(testStorageDir, 5, nil)
 	if err != nil {
 		t.Fatalf("初始化存储失败: %v", err)
 	}
@@ -159,7 +159,7 @@ func TestFileStorage_CleanupExpiredFiles(t *testing.T) {
 	defer os.RemoveAll(testStorageDir)
 
 	// 初始化存储（过期时长1秒，便于测试）
-	storage, err := NewFileStorage(testStorageDir, 1)
+	storage, err := NewFileStorage(testStorageDir, 1, nil)
 	if err != nil {
 		t.Fatalf("初始化存储失败: %v", err)
 	}
@@ -209,7 +209,7 @@ func TestFileStorage_Concurrent(t *testing.T) {
 	defer os.RemoveAll(testStorageDir)
 
 	// 初始化存储
-	storage, err := NewFileStorage(testStorageDir, 5)
+	storage, err := NewFileStorage(testStorageDir, 5, nil)
 	if err != nil {
 		t.Fatalf("初始化存储失败: %v", err)
 	}
@@ -268,7 +268,7 @@ func TestFileStorage_Save(t *testing.T) {
 	defer os.RemoveAll(testStorageDir)
 
 	// 初始化存储
-	storage, err := NewFileStorage(testStorageDir, 5)
+	storage, err := NewFileStorage(testStorageDir, 5, nil)
 	if err != nil {
 		t.Fatalf("初始化存储失败: %v", err)
 	}
