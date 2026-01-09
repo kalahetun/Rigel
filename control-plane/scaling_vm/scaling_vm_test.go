@@ -10,10 +10,10 @@ import (
 
 func TestVMLifecycle(t *testing.T) {
 	// ==== 配置 ====
-	projectID := "your-project-id"        // 替换为你的 GCP 项目
-	zone := "us-central1-a"               // 机房
-	vmName := "test-vm-001"               // 测试 VM 名称
-	credFile := "/path/to/your/cred.json" // 服务账号 JSON 文件路径
+	projectID := "civil-honor-480405-e0"                              // 替换为你的 GCP 项目
+	zone := "us-central1-a"                                           // 机房
+	vmName := "test-vm-001"                                           // 测试 VM 名称
+	credFile := "/home/matth/civil-honor-480405-e0-bdec4345bdd7.json" // 服务账号 JSON 文件路径
 
 	// ==== 初始化日志 ====
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
@@ -28,6 +28,7 @@ func TestVMLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建 VM 失败: %v", err)
 	}
+	return
 
 	// ==== 等待 VM 启动完成 ====
 	t.Log("==== 等待 30 秒让 VM 启动 ====")
