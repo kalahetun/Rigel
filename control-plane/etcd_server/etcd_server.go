@@ -1,0 +1,48 @@
+package etcd_server
+
+import (
+	"log"
+	"net/url"
+	"strings"
+
+	"go.etcd.io/etcd/server/v3/embed"
+)
+
+// StartEmbeddedEtcd 多节点嵌入式 etcd（v3.6.7）
+// serverList: 集群所有节点 IP 列表，包括自己
+// serverIP: 当前节点 IP
+// dataDir: 数据目录
+// name: 当前节点名称
+func StartEmbeddedEtcd(serverList []string, serverIP, dataDir, name string) (*embed.Etcd, error) {
+	cfg := embed.NewConfig()
+	cfg.Dir = dataDir
+	cfg.Name = name
+
+	// 当前节点 URL
+	clientAddr, _ := url.Parse("http://" + serverIP + ":2379")
+	peerAddr, _ := url.Parse("http://" + serverIP + ":2380")
+
+	cfg.ListenClientUrls = []url.URL{*clientAddr}    // 必须这么写
+	cfg.AdvertiseClientUrls = []url.URL{*clientAddr} // 必须这么写
+	cfg.ListenPeerUrls = []url.URL{*peerAddr}        // 必须这么写
+	cfg.AdvertisePeerUrls = []url.URL{*peerAddr}     // 必须这么写
+
+	// 构造 InitialCluster 字符串
+	var clusterEntries []string
+	for _, ip := range serverList {
+		nodeName := "etcd-" + strings.ReplaceAll(ip, ".", "-") // etcd-192-168-1-10
+		clusterEntries = append(clusterEntries, nodeName+"=http://"+ip+":2380")
+	}
+	cfg.InitialCluster = strings.Join(clusterEntries, ",")
+	cfg.ClusterState = embed.ClusterStateFlagNew
+
+	// 启动 etcd
+	e, err := embed.StartEtcd(cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	<-e.Server.ReadyNotify()
+	log.Printf("Embedded etcd [%s] started at %s:2379\n", name, serverIP)
+	return e, nil
+}
