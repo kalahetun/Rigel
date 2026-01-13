@@ -97,8 +97,9 @@ func CheckCongestion(allBufferSize int, logger *slog.Logger) ProxyStatus {
 		}
 
 		logger.Info("Proxy status: %+v", s)
-
 		return s
 	}
+
+	logger.Info("Proxy status: %+v", s)
 	return s
 }
