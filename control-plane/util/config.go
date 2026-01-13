@@ -12,7 +12,11 @@ var Config_ *Config
 
 // Config 一级结构体，对应yaml平级配置
 type Config struct {
-	EnvoyPath string `yaml:"envoy_path"`
+	EnvoyPath  string   `yaml:"envoy_path"`  // Envoy 可执行文件路径
+	ServerList []string `yaml:"server_list"` // Etcd 集群所有节点的地址
+	ServerIP   string   `yaml:"server_ip"`   // 当前节点 IP
+	DataDir    string   `yaml:"data_dir"`    // Etcd 数据目录
+	//Name       string   `yaml:"name"`         // 当前节点名字
 }
 
 // ReadYamlConfig 读取同层级的config.yaml配置

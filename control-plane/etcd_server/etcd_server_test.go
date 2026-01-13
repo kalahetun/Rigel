@@ -3,6 +3,7 @@ package etcd_server
 import (
 	"context"
 	"log"
+	"log/slog"
 	"os"
 	"strings"
 	"testing"
@@ -15,6 +16,8 @@ func TestStartEmbeddedEtcd(t *testing.T) {
 	serverIP := "127.0.0.1" // 测试用本地 IP
 	dataDir := "test.etcd"
 
+	logger := slog.New(slog.NewTextHandler(log.Writer(), nil))
+
 	// 测试集群列表，这里单机模拟多个节点可以用不同端口
 	serverList := []string{"127.0.0.1"} // 如果本机模拟多个节点，可以加多个 IP 或用 127.0.0.1 不同端口
 
@@ -25,7 +28,7 @@ func TestStartEmbeddedEtcd(t *testing.T) {
 	os.RemoveAll(dataDir)
 
 	// 启动嵌入式 etcd
-	etcdServer, err := StartEmbeddedEtcd(serverList, serverIP, dataDir, nodeName)
+	etcdServer, err := StartEmbeddedEtcd(serverList, serverIP, dataDir, nodeName, logger)
 	if err != nil {
 		t.Fatalf("Failed to start embedded etcd: %v", err)
 	}
