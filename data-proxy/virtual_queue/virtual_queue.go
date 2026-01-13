@@ -10,6 +10,11 @@ import (
 	"sync/atomic"
 )
 
+const (
+	WarningLevelforBuffer  = 0.6
+	CriticalLevelforBuffer = 0.8
+)
+
 // 当前正在“真实转发数据”的请求数
 var ActiveTransfers int64
 
@@ -35,6 +40,7 @@ type ProxyStatus struct {
 	TotalMem          int64   `json:"total_mem"`          // 机器总内存（字节）
 	ProcessMem        int64   `json:"process_mem"`        // 当前进程使用内存（字节）
 	AvgCachePerConn   float64 `json:"avg_cache_per_conn"` // 平均每连接缓存大小（字节）
+	CacheUsageRatio   float64 `json:"cache_usage_ratio"`  // 缓存使用比例 [0,1]
 }
 
 // checkCongestion 检查系统是否处于拥堵状态，并返回平均每连接的内存使用量
@@ -43,7 +49,7 @@ type ProxyStatus struct {
 //
 // 返回值:
 //   - float64: 平均每连接的内存使用量，如果未检测到拥堵则返回0
-func CheckCongestion(logger *slog.Logger) ProxyStatus {
+func CheckCongestion(allBufferSize int, logger *slog.Logger) ProxyStatus {
 
 	s := ProxyStatus{}
 	// 获取系统总内存大小
@@ -72,8 +78,8 @@ func CheckCongestion(logger *slog.Logger) ProxyStatus {
 	logger.Info("Proxy memory: %v MiB, Total memory: %v MiB, Ratio: %.2f%%\n",
 		proxyMem/1024/1024, totalMem/1024/1024, usageRatio*100)
 
-	if usageRatio > 0.6 {
-		perConnCache := 2 * 64 * 1024 // 每连接 128 KB
+	if usageRatio > WarningLevelforBuffer {
+		perConnCache := allBufferSize * 1024 // 每连接 128 KB
 		active := atomic.LoadInt64(&ActiveTransfers)
 		if active <= 0 {
 			return s
@@ -84,10 +90,14 @@ func CheckCongestion(logger *slog.Logger) ProxyStatus {
 		logger.Info("Active connections: %d, Average per-connection memory: %.2f KB\n",
 			active, avgCache/1024)
 		s.AvgCachePerConn = avgCache
+		s.CacheUsageRatio = float64(avgCache) / float64(perConnCache)
 
-		if avgCache >= float64(perConnCache) {
+		if s.CacheUsageRatio > CriticalLevelforBuffer {
 			logger.Warn("Potential congestion: average per-connection buffer near 128KB")
 		}
+
+		logger.Info("Proxy status: %+v", s)
+
 		return s
 	}
 	return s

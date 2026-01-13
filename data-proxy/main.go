@@ -23,6 +23,7 @@ const (
 	//HeaderHost      = "Host"
 	DefaultIndex    = "1"
 	ServerErrorCode = 503
+	BufferSize      = 64
 )
 
 /*
@@ -76,8 +77,8 @@ func getClient(target string, scheme string) *http.Client {
 		MaxIdleConns:        50,
 		MaxIdleConnsPerHost: 50,
 		IdleConnTimeout:     10 * time.Second,
-		ReadBufferSize:      64 * 1024,
-		WriteBufferSize:     64 * 1024,
+		ReadBufferSize:      BufferSize * 1024,
+		WriteBufferSize:     BufferSize * 1024,
 	}
 
 	if scheme == "https" {
@@ -226,7 +227,7 @@ func main() {
 	})
 
 	router.GET("/getCongestionInfo", func(c *gin.Context) {
-		c.JSON(http.StatusOK, virtual_queue.CheckCongestion(logger))
+		c.JSON(http.StatusOK, virtual_queue.CheckCongestion(2*BufferSize, logger))
 	})
 
 	//router.Any("/*proxyPath", func(c *gin.Context) {

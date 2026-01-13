@@ -108,4 +108,5 @@ type ProxyStatus struct {
 	TotalMem          int64   `json:"total_mem"`          // 机器总内存（字节）
 	ProcessMem        int64   `json:"process_mem"`        // 当前进程使用内存（字节）
 	AvgCachePerConn   float64 `json:"avg_cache_per_conn"` // 平均每连接缓存大小（字节）
+	CacheUsageRatio   float64 `json:"cache_usage_ratio"`  // 缓存使用比例 [0,1]
 }
