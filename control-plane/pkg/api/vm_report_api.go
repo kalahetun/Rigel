@@ -1,14 +1,13 @@
 package api
 
 import (
+	model "control-plane/local_info"
 	"control-plane/util"
 	"log/slog"
 	"net/http"
-	"path/filepath"
 	"strings"
 	"time"
 
-	model "control-plane/pkg/local_info_manager" // 保持你的实际导入路径
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	// 修正存储层导入路径（需匹配你的项目实际路径）
@@ -134,11 +133,11 @@ func (h *VmReportAPIHandler) PostVMReport(c *gin.Context) {
 }
 
 // NewRouter 初始化路由（无修改）
-func InitVmReportAPIRouter(router *gin.Engine, logger *slog.Logger) *gin.Engine {
+func InitVmReportAPIRouter(router *gin.Engine, s *storage.FileStorage, logger *slog.Logger) *gin.Engine {
 
-	logDir := filepath.Join(".", "vm_local_info_storage")
-	var s storage.Storage
-	s, _ = storage.NewFileStorage(logDir, 0, logger)
+	//logDir := filepath.Join(".", "vm_local_info_storage")
+	//var s storage.Storage
+	//s, _ = storage.NewFileStorage(logDir, 0, logger)
 
 	r := router
 

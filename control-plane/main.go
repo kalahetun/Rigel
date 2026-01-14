@@ -4,6 +4,7 @@ import (
 	"control-plane/etcd_client"
 	"control-plane/etcd_server"
 	"control-plane/pkg/api"
+	"control-plane/storage"
 	"control-plane/util"
 	"github.com/gin-gonic/gin"
 	"log/slog"
@@ -85,11 +86,17 @@ func main() {
 		}
 	}, logger)
 
+	storDir := filepath.Join(".", "vm_local_info_storage")
+	s, _ := storage.NewFileStorage(storDir, 0, logger)
+	queue := util.NewFixedQueue(10)
+
+	storage.CalcWeightedAvgWithTimer(s, 30*time.Second, cli, queue, logger)
+
 	// 初始化Gin路由
 	router := gin.Default()
 
 	//
-	api.InitVmReportAPIRouter(router, logger)
+	api.InitVmReportAPIRouter(router, s, logger)
 
 	// 注册Envoy端口API（已适配matth目录）
 	api.InitEnvoyAPIRouter(router, logger, logger1)

@@ -1,13 +1,12 @@
 package storage
 
 import (
+	model "control-plane/local_info"
 	"os"
 	"path/filepath"
 	"sync"
 	"testing"
 	"time"
-
-	model "control-plane/pkg/local_info_manager"
 )
 
 // 测试用临时目录（每次测试前清理）

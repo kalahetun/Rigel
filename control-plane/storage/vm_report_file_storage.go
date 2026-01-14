@@ -1,6 +1,7 @@
 package storage
 
 import (
+	model "control-plane/local_info"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,8 +11,6 @@ import (
 	"strconv"
 	"sync"
 	"time"
-
-	model "control-plane/pkg/local_info_manager"
 )
 
 // -------------------------- 存储抽象接口（保持不变） --------------------------
@@ -19,6 +18,8 @@ type Storage interface {
 	Save(report *model.VMReport) (string, error)
 	Put(report *model.VMReport) (string, error)
 	Get(vmID string) (*model.VMReport, error)
+	// 新增：获取所有存储的VM上报数据
+	GetAll() ([]*model.VMReport, error)
 	// 新增：关闭存储（停止清理协程）
 	Close()
 }
@@ -238,4 +239,51 @@ func (fs *FileStorage) cleanupExpiredFiles() error {
 	}
 
 	return nil
+}
+
+// GetAll 读取存储目录下所有有效VM上报文件，直接返回原始VMReport切片
+func (fs *FileStorage) GetAll() ([]*model.VMReport, error) {
+	// 复用你提供的：加读锁保证并发安全
+	fs.mu.RLock()
+	defer fs.mu.RUnlock()
+
+	// 复用你提供的：读取目录下所有文件
+	files, err := os.ReadDir(fs.storageDir)
+	if err != nil {
+		return nil, fmt.Errorf("读取目录失败: %w", err)
+	}
+
+	// 初始化VMReport切片（避免返回nil，保持代码严谨性）
+	var reports []*model.VMReport
+
+	// 复用你提供的：遍历文件，跳过目录
+	for _, file := range files {
+		if file.IsDir() {
+			continue
+		}
+
+		// 补充：获取文件名
+		fileName := file.Name()
+
+		// 补充：读取文件内容
+		filePath := filepath.Join(fs.storageDir, fileName)
+		data, err := os.ReadFile(filePath)
+		if err != nil {
+			fs.l.Warn("读取文件内容失败，跳过该文件", slog.String("file_name", fileName))
+			continue
+		}
+
+		// 补充：JSON反序列化为原始VMReport
+		var report model.VMReport
+		if err := json.Unmarshal(data, &report); err != nil {
+			fs.l.Warn("JSON反序列化失败，跳过该文件", slog.String("file_name", fileName))
+			continue
+		}
+
+		// 补充：添加到原始VMReport切片
+		reports = append(reports, &report)
+	}
+
+	// 直接返回原始VMReport切片
+	return reports, nil
 }
