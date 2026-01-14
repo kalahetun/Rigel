@@ -11,13 +11,17 @@ import (
 )
 
 // VMWeightedAvgResult 封装加权缓存平均值计算结果（用于发送给Etcd的结构体）
-type VMWeightedAvgResult struct {
-	WeightedAvg        float64   `json:"weighted_avg"`         // 最终加权平均值
-	TotalWeightedCache float64   `json:"total_weighted_cache"` // 总加权缓存 Σ(ActiveConnections*AvgCachePerConn)
-	TotalActiveConns   float64   `json:"total_active_conns"`   // 总活跃连接数 Σ(ActiveConnections)
-	VMCount            int       `json:"vm_count"`             // 参与计算的VM数量
-	CalculateTime      time.Time `json:"calculate_time"`       // 本次计算时间（便于追踪）
-	//StorageDir         string    `json:"storage_dir"`          // 存储目录（便于溯源）
+type NodeWeightedAvgResult struct {
+	WeightedAvg        float64   `json:"weighted_avg"`
+	TotalWeightedCache float64   `json:"total_weighted_cache"`
+	TotalActiveConns   float64   `json:"total_active_conns"`
+	VMCount            int       `json:"vm_count"`
+	CalculateTime      time.Time `json:"calculate_time"`
+
+	// 节点信息
+	PublicIP  string `json:"public_ip"`
+	Provider  string `json:"provider"`
+	Continent string `json:"continent"`
 }
 
 //1、定时器 读storage文件 汇聚group信息 到etcd 并且 加入一个全局的 queue供 elastic scaling使用
@@ -64,13 +68,15 @@ func CalcWeightedAvgWithTimer(fs *FileStorage, interval time.Duration,
 		}
 
 		// 填充结果结构体
-		result := VMWeightedAvgResult{
+		result := NodeWeightedAvgResult{
 			WeightedAvg:        totalWeightedCache / totalActiveConns,
 			TotalWeightedCache: totalWeightedCache,
 			TotalActiveConns:   totalActiveConns,
 			VMCount:            len(allReports),
 			CalculateTime:      time.Now(),
-			//StorageDir:         fs.storageDir,
+			PublicIP:           util.Config_.Node.IP.Public,
+			Provider:           util.Config_.Node.Provider,
+			Continent:          util.Config_.Node.Continent,
 		}
 
 		// 4. 结构体序列化为JSON（Etcd存储二进制数据，JSON格式易解析）
@@ -84,6 +90,7 @@ func CalcWeightedAvgWithTimer(fs *FileStorage, interval time.Duration,
 		ip, _ := util.GetPublicIP()
 		key := fmt.Sprintf("/routing/%s", ip)
 		etcd_client.PutKey(etcdClient, key, string(jsonData), logger)
+		_ = etcd_client.PutKeyWithLease(etcdClient, key, string(jsonData), int64(60*expireTime), logger)
 		//放入queue 为自动化扩缩容做准备
 		queue.Push(result)
 

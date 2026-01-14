@@ -7,16 +7,24 @@ import (
 )
 
 // ----------------------- Edge -----------------------
+// Edge 表示两个节点之间的边（逻辑或物理）
 type Edge struct {
-	Source          string  `json:"source"`            // A 节点名/ID
-	Destination     string  `json:"destination"`       // B 节点名/ID 如果是逻辑边A和B相同 如果物理边不同 物理边主要更新latency
-	SourceProvider  string  `json:"source_provider"`   // A 节点云服务商
-	BandwidthPrice  float64 `json:"bandwidth_price"`   // A 节点出口带宽价格 ($/GB) 逻辑边主要更新价格 和 拥塞程度
+	Source      string `json:"source"`      // A 节点名/ID
+	Destination string `json:"destination"` // B 节点名/ID
+
+	// 节点额外信息
+	SourceProvider       string `json:"source_provider"`       // A 节点云服务商
+	SourceContinent      string `json:"source_continent"`      // A 节点大区
+	DestinationProvider  string `json:"destination_provider"`  // B 节点云服务商
+	DestinationContinent string `json:"destination_continent"` // B 节点大区
+
+	// 网络/缓存信息
+	BandwidthPrice  float64 `json:"bandwidth_price"`   // A 节点出口带宽价格 ($/GB)
 	Latency         float64 `json:"latency_ms"`        // A->B 时延
 	CacheUsageRatio float64 `json:"cache_usage_ratio"` // 缓存占用比例 [0,1]
 	EdgeWeight      float64 `json:"edge_weight"`       // 综合权重，用于最短路径计算
 
-	mu sync.RWMutex // 保护动态字段
+	mu sync.RWMutex // 保护动态字段（BandwidthPrice, Latency, CacheUsageRatio, EdgeWeight）
 }
 
 // UpdateWeight 安全更新 EdgeWeight

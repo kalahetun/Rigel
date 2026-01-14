@@ -13,6 +13,10 @@ import (
 	"time"
 )
 
+const (
+	expireTime = 5
+)
+
 // -------------------------- 存储抽象接口（保持不变） --------------------------
 type Storage interface {
 	Save(report *model.VMReport) (string, error)
@@ -45,7 +49,7 @@ func NewFileStorage(storageDir string, expireMinutes int, l *slog.Logger) (*File
 	}
 
 	// 设置过期时长（默认5分钟）
-	expireDur := 5 * time.Minute
+	expireDur := expireTime * time.Minute
 	if expireMinutes > 0 {
 		expireDur = time.Duration(expireMinutes) * time.Minute
 	}

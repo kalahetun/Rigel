@@ -43,6 +43,9 @@ func main() {
 	uu := util.Config_
 	logger.Info("读取配置文件成功", "config", uu)
 
+	//初始化 bandwidth cost信息
+	_ = util.LoadBandwidthCost(logger)
+
 	// 启动 etcd server端
 	if uu.ServerIP != "" {
 		nodeName := "etcd-" + strings.ReplaceAll(uu.ServerIP, ".", "-")                                            // 节点名用 IP 做后缀，保证唯一
@@ -68,7 +71,9 @@ func main() {
 	}
 	defer cli.Close()
 
-	// 监听 /routing/ 前缀
+	//获取全量前缀信息 然后初始化 routing map
+
+	// 监听 /routing/ 前缀 更新routing map
 	etcd_client.WatchPrefix(cli, "/routing/", func(eventType, key, val string, logger *slog.Logger) {
 		logger.Info("[WATCH] %s %s = %s", eventType, key, val, logger)
 		switch eventType {

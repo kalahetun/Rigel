@@ -17,6 +17,24 @@ type Config struct {
 	ServerIP   string   `yaml:"server_ip"`   // 当前节点 IP
 	DataDir    string   `yaml:"data_dir"`    // Etcd 数据目录
 	//Name       string   `yaml:"name"`         // 当前节点名字
+	// Node 配置
+	Node NodeConfig `yaml:"node"`
+}
+
+// NodeConfig 对应 node 配置
+type NodeConfig struct {
+	Provider  string `yaml:"provider"`  // gcp | aws | azure | vultr | digitalocean | onprem
+	Continent string `yaml:"continent"` // 仅用于 bandwidth / cost 查询
+	Country   string `yaml:"country"`   // 可选，用于日志/可解释性
+	City      string `yaml:"city"`      // 可选，用于日志/可解释性
+
+	IP NodeIP `yaml:"ip"` // 内外网 IP
+}
+
+// NodeIP 内外网 IP
+type NodeIP struct {
+	Private string `yaml:"private"` // 内网 IP
+	Public  string `yaml:"public"`  // 公网 IP（可选）
 }
 
 // ReadYamlConfig 读取同层级的config.yaml配置

@@ -7,3 +7,13 @@ server_list:                             # Etcd 集群所有节点
 server_ip: "10.0.0.1"                    # 当前节点 IP
 data_dir: "/home/matth/etcd"                # Etcd 数据目录
 #name: "etcd-1"                            # 当前节点名字
+
+node:
+  provider: "gcp"        # gcp | aws | azure | vultr | digitalocean | onprem
+  continent: "Asia"      # ONLY field used for bandwidth / cost query
+  country: "JP"          # 可选，用于日志/解释/未来扩展
+  city: "Tokyo"          # 可选，用于日志/解释/未来扩展
+
+  ip:
+    private: "10.0.0.1"  # 内网 IP
+    public: "34.92.18.7" # 公网 IP 作为hostname

@@ -1,0 +1,59 @@
+{
+  "unit": "USD_per_GB",
+  "dimension": "continent_to_continent",
+
+  "continents": [
+    "NorthAmerica",
+    "Europe",
+    "Asia",
+    "Oceania",
+    "SouthAmerica",
+    "Africa",
+    "MiddleEast"
+  ],
+
+  "providers": {
+    "gcp": {
+      "NorthAmerica->NorthAmerica": 0.02,
+      "Europe->Europe": 0.02,
+      "Asia->Asia": 0.08,
+
+      "NorthAmerica->Europe": 0.05,
+      "Europe->NorthAmerica": 0.05,
+
+      "NorthAmerica->Asia": 0.08,
+      "Asia->NorthAmerica": 0.08,
+
+      "Europe->Asia": 0.08,
+      "Asia->Europe": 0.08,
+
+      "NorthAmerica->Oceania": 0.10,
+      "Europe->Oceania": 0.10,
+      "Asia->Oceania": 0.10,
+
+      "Any->SouthAmerica": 0.14,
+      "Any->Africa": 0.11,
+      "Any->MiddleEast": 0.11
+    },
+
+    "aws": {
+      "Any->Any": 0.02
+    },
+
+    "azure": {
+      "SameContinent": 0.02,
+      "DifferentContinent": 0.08
+    },
+
+    "vultr": {
+      "NorthAmerica->Any": 0.01,
+      "Europe->Any": 0.01,
+      "Asia->Any": 0.025,
+      "Oceania->Any": 0.05
+    },
+
+    "digitalocean": {
+      "Any->Any": 0.01
+    }
+  }
+}

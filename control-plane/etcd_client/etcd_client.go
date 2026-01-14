@@ -33,6 +33,28 @@ func PutKey(cli *clientv3.Client, key, value string, logger *slog.Logger) {
 	}
 }
 
+// PutKeyWithLease 简化版：写入 key + TTL lease，不打印日志，也不保活
+func PutKeyWithLease(cli *clientv3.Client, key, value string, ttlSeconds int64, logger *slog.Logger) error {
+	// 1. 创建 lease
+	leaseResp, err := cli.Grant(context.Background(), ttlSeconds)
+	if err != nil {
+		logger.Error("Put error:", err)
+		return err
+	}
+
+	// 2. Put key-value 并附加 lease
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	_, err = cli.Put(ctx, key, value, clientv3.WithLease(leaseResp.ID))
+	if err != nil {
+		logger.Error("Put error:", err)
+		return err
+	}
+
+	return nil
+}
+
 func DeleteKey(cli *clientv3.Client, key string, logger *slog.Logger) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
