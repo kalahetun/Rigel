@@ -87,12 +87,6 @@ func CalcWeightedAvgWithTimer(fs *FileStorage, interval time.Duration,
 		//放入queue 为自动化扩缩容做准备
 		queue.Push(result)
 
-		weightedAvg := totalWeightedCache / totalActiveConns
-		logger.Info("定时计算完成",
-			slog.Float64("加权平均值", weightedAvg),
-			slog.Float64("总加权缓存", totalWeightedCache),
-			slog.Float64("总活跃连接数", totalActiveConns),
-			slog.Int("参与计算的VM数量", len(allReports)),
-		)
+		logger.Info("定时计算完成", result)
 	}
 }

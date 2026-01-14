@@ -1,4 +1,4 @@
-package local_info
+package vm_info
 
 import "time"
 

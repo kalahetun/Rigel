@@ -1,7 +1,7 @@
 package storage
 
 import (
-	model "control-plane/local_info"
+	model "control-plane/vm_info"
 	"os"
 	"path/filepath"
 	"sync"
