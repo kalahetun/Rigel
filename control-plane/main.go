@@ -15,6 +15,7 @@ import (
 )
 
 func main() {
+
 	// 创建 log 目录（与 pkg 同级）
 	logDir := filepath.Join(".", "log")
 	if err := os.MkdirAll(logDir, os.ModePerm); err != nil {
@@ -30,7 +31,6 @@ func main() {
 	if err != nil {
 		panic("无法打开日志文件: " + err.Error())
 	}
-
 	// 初始化日志，输出到 log/app.log
 	logger := slog.New(slog.NewTextHandler(logFile, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
@@ -39,6 +39,7 @@ func main() {
 		Level: slog.LevelInfo,
 	}))
 
+	// 读取配置文件
 	util.Config_, _ = util.ReadYamlConfig(logger)
 	uu := util.Config_
 	logger.Info("读取配置文件成功", "config", uu)
@@ -78,36 +79,24 @@ func main() {
 		logger.Info("[WATCH] %s %s = %s", eventType, key, val, logger)
 		switch eventType {
 		case "CREATE":
-			etcd_client.PutKey(cli, key, val, logger)
-
 		case "UPDATE":
-			etcd_client.PutKey(cli, key, val, logger)
-
 		case "DELETE":
-			etcd_client.DeleteKey(cli, key, logger)
-
 		default:
 			logger.Warn("[WATCH] UNKNOWN eventType %s for %s", eventType, key)
 		}
 	}, logger)
 
+	//启动virtual queue逻辑
 	storDir := filepath.Join(".", "vm_local_info_storage")
 	s, _ := storage.NewFileStorage(storDir, 0, logger)
 	queue := util.NewFixedQueue(10)
-
 	storage.CalcWeightedAvgWithTimer(s, 30*time.Second, cli, queue, logger)
 
 	// 初始化Gin路由
 	router := gin.Default()
-
-	//
 	api.InitVmReportAPIRouter(router, s, logger)
-
-	// 注册Envoy端口API（已适配matth目录）
-	api.InitEnvoyAPIRouter(router, logger, logger1)
-
-	// 启动API服务
-	logger.Info("Envoy端口管理API启动", "addr", ":8081")
+	api.InitEnvoyAPIRouter(router, logger, logger1)      // 注册Envoy端口API（已适配matth目录）
+	logger.Info("Envoy端口管理API启动", "addr", ":8081") // 启动API服务
 	if err := router.Run(":8081"); err != nil {
 		logger.Error("API服务启动失败", "error", err)
 		os.Exit(1)
