@@ -2,37 +2,35 @@ package probing
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 )
 
-func TestPeriodicProbeLoss(t *testing.T) {
+func TestStartProbePeriodically(t *testing.T) {
+	// 测试目标（可以用本机端口测试，也可以用公网常用端口）
 	targets := []string{
-		"8.8.8.8:53",
-		"1.1.1.1:53",
-		"google.com:443",
+		"google.com:80",
+		"example.com:80",
 	}
 
 	cfg := Config{
 		Concurrency: 2,
-		Timeout:     2 * time.Second,
-		Interval:    3 * time.Second,
-		Attempts:    5, // 每轮尝试次数
+		Timeout:     1 * time.Second,
+		Interval:    2 * time.Second, // 周期短一点方便测试
+		Attempts:    3,
+		BufferSize:  10,
 	}
 
+	// 用 context 控制测试运行时间
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	results := StartProbePeriodically(ctx, targets, cfg)
+	resultsCh := StartProbePeriodically(ctx, targets, cfg)
 
-	count := 0
-	for res := range results {
-		count++
-		t.Logf("[RESULT] target=%s attempts=%d failures=%d loss=%.2f%%",
-			res.Target, res.Attempts, res.Failures, res.LossRate*100)
-	}
-
-	if count == 0 {
-		t.Errorf("no results received")
+	// 收集结果
+	for res := range resultsCh {
+		fmt.Printf("Target: %s, Attempts: %d, Failures: %d, LossRate: %.2f, AvgRTT: %v\n",
+			res.Target, res.Attempts, res.Failures, res.LossRate, res.AvgRTT)
 	}
 }

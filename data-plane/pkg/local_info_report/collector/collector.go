@@ -47,6 +47,8 @@ func (c *VMCollector) Collect(logger *slog.Logger) (*model.VMReport, error) {
 		return nil, err
 	}
 
+	linksCong := BuildLinkCongestion()
+
 	//hostname, _ := os.Hostname()
 
 	// 一站式获取缓冲统计
@@ -69,6 +71,7 @@ func (c *VMCollector) Collect(logger *slog.Logger) (*model.VMReport, error) {
 		OS:          osInfo,
 		Process:     processInfo,
 		//EnvoyMem:    envoyMemInfo,
-		Congestion: cong,
+		Congestion:      cong,
+		LinksCongestion: linksCong,
 	}, nil
 }

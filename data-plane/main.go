@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"data-plane/pkg/envoy_manager"
 	model "data-plane/pkg/local_info_report"
 	"data-plane/pkg/local_info_report/reporter"
+	"data-plane/probing"
 	"data-plane/util"
 	"github.com/gin-gonic/gin"
 	"log/slog"
@@ -65,7 +67,18 @@ func main() {
 	})
 
 	// 3. 初始化上报器
-	go reporter.ReportCycle(logger)
+	go reporter.ReportCycle(util.Config_.ControlHost, logger)
+
+	//启动探测逻辑
+	cfg := probing.Config{
+		Concurrency: 4,
+		Timeout:     2 * time.Second,
+		Interval:    5 * time.Second,
+		Attempts:    5, // 每轮尝试次数
+	}
+	ctx := context.Background()
+	probing.StartProbePeriodically(ctx, util.Config_.ControlHost, cfg, logger)
+	//logger.Info("", "probe result", probingResult)
 
 	//InitEnvoy(logger, logger1)
 

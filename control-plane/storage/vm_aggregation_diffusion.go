@@ -11,17 +11,44 @@ import (
 )
 
 // VMWeightedAvgResult 封装加权缓存平均值计算结果（用于发送给Etcd的结构体）
-type NodeWeightedAvgResult struct {
-	WeightedAvg        float64   `json:"weighted_avg"`
-	TotalWeightedCache float64   `json:"total_weighted_cache"`
-	TotalActiveConns   float64   `json:"total_active_conns"`
-	VMCount            int       `json:"vm_count"`
-	CalculateTime      time.Time `json:"calculate_time"`
+//type NodeWeightedAvgResult struct {
+//	WeightedAvg        float64   `json:"weighted_avg"`
+//	TotalWeightedCache float64   `json:"total_weighted_cache"`
+//	TotalActiveConns   float64   `json:"total_active_conns"`
+//	VMCount            int       `json:"vm_count"`
+//	CalculateTime      time.Time `json:"calculate_time"`
+//
+//	// 节点信息
+//	PublicIP  string `json:"public_ip"`
+//	Provider  string `json:"provider"`
+//	Continent string `json:"continent"`
+//}
 
-	// 节点信息
-	PublicIP  string `json:"public_ip"`
-	Provider  string `json:"provider"`
-	Continent string `json:"continent"`
+// 节点拥塞指标
+type NodeCongestionInfo struct {
+	WeightedAvg        float64   `json:"weighted_avg"`         // 节点加权平均拥塞指标
+	TotalWeightedCache float64   `json:"total_weighted_cache"` // 节点总加权缓存
+	TotalActiveConns   float64   `json:"total_active_conns"`   // 节点总活跃连接数
+	VMCount            int       `json:"vm_count"`             // 节点 VM 数量
+	CalculateTime      time.Time `json:"calculate_time"`       // 计算时间
+}
+
+// 链路拥塞信息
+type LinkCongestionInfo struct {
+	TargetIP       string  `json:"target_ip"`       // 目标节点 IP
+	PacketLoss     float64 `json:"packet_loss"`     // 丢包率，百分比
+	WeightedCache  float64 `json:"weighted_cache"`  // 链路缓存情况（可选）
+	AverageLatency float64 `json:"average_latency"` // 平均延迟（毫秒）
+	BandwidthUsage float64 `json:"bandwidth_usage"` // 带宽利用率（可选百分比）
+}
+
+// 节点遥测数据
+type NetworkTelemetry struct {
+	NodeCongestion  NodeCongestionInfo   `json:"node_congestion"`  // 节点拥塞指标
+	PublicIP        string               `json:"public_ip"`        // 节点公网 IP
+	Provider        string               `json:"provider"`         // 云厂商
+	Continent       string               `json:"continent"`        // 所属大洲
+	LinksCongestion []LinkCongestionInfo `json:"links_congestion"` // 节点到其他节点的链路拥塞信息
 }
 
 //1、定时器 读storage文件 汇聚group信息 到etcd 并且 加入一个全局的 queue供 elastic scaling使用
@@ -51,7 +78,9 @@ func CalcWeightedAvgWithTimer(fs *FileStorage, interval time.Duration,
 		var (
 			totalWeightedCache float64 // 总加权缓存：Σ(ActiveConnections*AvgCachePerConn)
 			totalActiveConns   float64 // 总活跃连接数：Σ(ActiveConnections)
+			totalLinksCong     map[string][]float64
 		)
+		totalLinksCong = make(map[string][]float64)
 
 		// 6. 遍历GetAll()结果，累加统计值
 		for _, report := range allReports {
@@ -59,24 +88,48 @@ func CalcWeightedAvgWithTimer(fs *FileStorage, interval time.Duration,
 			avgCache := report.Congestion.AvgCachePerConn
 			totalWeightedCache += activeConns * avgCache
 			totalActiveConns += activeConns
+
+			//处理链路
+			for _, v := range report.LinksCongestion {
+				totalLinksCong[report.Network.PublicIP] =
+					append(totalLinksCong[v.TargetIP], v.PacketLoss)
+			}
 		}
 
 		// 7. 避免除以0，输出计算结果
+		var weightedAvg float64 = 0
 		if totalActiveConns <= 0 {
 			logger.Info("本次计算：总活跃连接数为0，无需计算平均值")
-			continue
+			totalWeightedCache = 0
+		} else {
+			weightedAvg = totalWeightedCache / totalActiveConns
+		}
+
+		var links []LinkCongestionInfo
+		for k, vs := range totalLinksCong {
+			var avg float64 = 0
+			for _, v := range vs {
+				avg += v
+			}
+			if avg != 0 && len(vs) > 0 {
+				avg = avg / float64(len(vs))
+			}
+			links = append(links, LinkCongestionInfo{TargetIP: k, PacketLoss: avg})
 		}
 
 		// 填充结果结构体
-		result := NodeWeightedAvgResult{
-			WeightedAvg:        totalWeightedCache / totalActiveConns,
-			TotalWeightedCache: totalWeightedCache,
-			TotalActiveConns:   totalActiveConns,
-			VMCount:            len(allReports),
-			CalculateTime:      time.Now(),
-			PublicIP:           util.Config_.Node.IP.Public,
-			Provider:           util.Config_.Node.Provider,
-			Continent:          util.Config_.Node.Continent,
+		result := NetworkTelemetry{
+			NodeCongestion: NodeCongestionInfo{
+				WeightedAvg:        weightedAvg,
+				TotalWeightedCache: totalWeightedCache,
+				TotalActiveConns:   totalActiveConns,
+				VMCount:            len(allReports),
+				CalculateTime:      time.Now(),
+			},
+			LinksCongestion: links,
+			PublicIP:        util.Config_.Node.IP.Public,
+			Provider:        util.Config_.Node.Provider,
+			Continent:       util.Config_.Node.Continent,
 		}
 
 		// 4. 结构体序列化为JSON（Etcd存储二进制数据，JSON格式易解析）

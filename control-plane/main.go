@@ -8,6 +8,7 @@ import (
 	"control-plane/util"
 	"github.com/gin-gonic/gin"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -95,9 +96,10 @@ func main() {
 
 	// 初始化Gin路由
 	router := gin.Default()
+	router.GET("/health", func(c *gin.Context) { c.JSON(http.StatusOK, "success") })
 	api.InitVmReportAPIRouter(router, s, logger)
-	api.InitEnvoyAPIRouter(router, logger, logger1)      // 注册Envoy端口API（已适配matth目录）
-	logger.Info("Envoy端口管理API启动", "addr", ":8081") // 启动API服务
+	api.InitEnvoyAPIRouter(router, logger, logger1) // 注册Envoy端口API（已适配matth目录）
+	logger.Info("Envoy端口管理API启动", "addr", ":8081")  // 启动API服务
 	if err := router.Run(":8081"); err != nil {
 		logger.Error("API服务启动失败", "error", err)
 		os.Exit(1)

@@ -30,6 +30,8 @@ type VMReport struct {
 	//EnvoyMem EnvoyBufferStats `json:"envoy_mem"`
 
 	Congestion ProxyStatus `json:"congestion"`
+
+	LinksCongestion []LinkCongestionInfo `json:"links_congestion"`
 }
 
 // CPUInfo CPU维度信息
@@ -106,4 +108,12 @@ type ProxyStatus struct {
 	TotalMem          int64   `json:"total_mem"`          // 机器总内存（字节）
 	ProcessMem        int64   `json:"process_mem"`        // 当前进程使用内存（字节）
 	AvgCachePerConn   float64 `json:"avg_cache_per_conn"` // 平均每连接缓存大小（字节）
+}
+
+type LinkCongestionInfo struct {
+	TargetIP       string  `json:"target_ip"`       // 目标节点 IP
+	PacketLoss     float64 `json:"packet_loss"`     // 丢包率，百分比
+	WeightedCache  float64 `json:"weighted_cache"`  // 链路缓存情况（可选）
+	AverageLatency float64 `json:"average_latency"` // 平均延迟（毫秒）
+	BandwidthUsage float64 `json:"bandwidth_usage"` // 带宽利用率（可选百分比）
 }

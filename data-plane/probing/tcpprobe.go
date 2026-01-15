@@ -2,6 +2,7 @@ package probing
 
 import (
 	"context"
+	"log/slog"
 	"net"
 	"sync"
 	"time"
@@ -9,10 +10,11 @@ import (
 
 // Result 保存探测结果
 type Result struct {
-	Target   string
-	Attempts int     // 探测次数
-	Failures int     // 失败次数
-	LossRate float64 // 失败比例
+	Target   string        `json:"target"`    // 探测目标 IP/host
+	Attempts int           `json:"attempts"`  // 探测次数
+	Failures int           `json:"failures"`  // 失败次数
+	LossRate float64       `json:"loss_rate"` // 丢包率
+	AvgRTT   time.Duration `json:"avg_rtt"`   // 成功连接平均时延
 }
 
 // Config 配置
@@ -21,10 +23,45 @@ type Config struct {
 	Timeout     time.Duration // TCP Dial 超时
 	Interval    time.Duration // 周期
 	Attempts    int           // 每轮探测尝试次数
+	BufferSize  int           // 可选：channel缓冲大小（现在不用）
 }
 
-// StartProbePeriodically 启动周期性丢包探测
-func StartProbePeriodically(ctx context.Context, targets []string, cfg Config) <-chan Result {
+// ----------------- 全局存储最新一轮结果 -----------------
+
+var (
+	mu            sync.RWMutex
+	latestResults = make(map[string]Result)
+)
+
+// 更新全局最新结果
+func updateLatestResults(results []Result) {
+	mu.Lock()
+	defer mu.Unlock()
+	for _, r := range results {
+		latestResults[r.Target] = r
+	}
+}
+
+// 外部调用：获取最新探测结果
+func GetLatestResults() map[string]Result {
+	mu.RLock()
+	defer mu.RUnlock()
+
+	copied := make(map[string]Result, len(latestResults))
+	for k, v := range latestResults {
+		copied[k] = v
+	}
+	return copied
+}
+
+// ----------------- 核心周期探测函数 -----------------
+
+// StartProbePeriodically 启动无限周期探测
+// ctx 由调用方传入，用于停止
+// controlHost: 探测任务来源接口（返回目标节点列表）
+// cfg: 配置
+// logger: 日志
+func StartProbePeriodically(ctx context.Context, controlHost string, cfg Config, logger *slog.Logger) {
 	if cfg.Concurrency <= 0 {
 		cfg.Concurrency = 4
 	}
@@ -38,37 +75,46 @@ func StartProbePeriodically(ctx context.Context, targets []string, cfg Config) <
 		cfg.Attempts = 5
 	}
 
-	resultsCh := make(chan Result)
-
 	go func() {
 		ticker := time.NewTicker(cfg.Interval)
 		defer ticker.Stop()
-		defer close(resultsCh)
 
 		for {
 			select {
 			case <-ctx.Done():
+				logger.Info("周期探测已停止")
 				return
 			default:
-				doProbeLoss(targets, cfg, resultsCh)
 			}
 
+			// 获取探测任务
+			targets, err := GetProbeTasks(controlHost)
+			if err != nil {
+				logger.Error("获取探测任务失败", slog.Any("err", err))
+				time.Sleep(time.Second) // 防止死循环快速重试
+				continue
+			}
+
+			// 执行一轮探测
+			doProbeLossRTT(targets, cfg, logger)
+
+			// 等待下一个周期
 			select {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				// 下一轮探测
 			}
 		}
 	}()
-
-	return resultsCh
 }
 
-// doProbeLoss 执行一轮丢包探测
-func doProbeLoss(targets []string, cfg Config, resultsCh chan<- Result) {
+// ----------------- 单轮探测函数 -----------------
+
+func doProbeLossRTT(targets []string, cfg Config, logger *slog.Logger) {
 	jobs := make(chan string)
 	var wg sync.WaitGroup
+	roundResults := make([]Result, 0, len(targets))
+	var roundMu sync.Mutex
 
 	// worker
 	for i := 0; i < cfg.Concurrency; i++ {
@@ -77,24 +123,42 @@ func doProbeLoss(targets []string, cfg Config, resultsCh chan<- Result) {
 			defer wg.Done()
 			for target := range jobs {
 				failures := 0
+				var totalRTT time.Duration
+				successes := 0
+
 				for a := 0; a < cfg.Attempts; a++ {
+					start := time.Now()
 					conn, err := net.DialTimeout("tcp", target, cfg.Timeout)
+					rtt := time.Since(start)
+
 					if err != nil {
 						failures++
 					} else {
+						successes++
+						totalRTT += rtt
 						conn.Close()
 					}
 				}
-				select {
-				case resultsCh <- Result{
+
+				avgRTT := time.Duration(0)
+				if successes > 0 {
+					avgRTT = totalRTT / time.Duration(successes)
+				}
+
+				result := Result{
 					Target:   target,
 					Attempts: cfg.Attempts,
 					Failures: failures,
 					LossRate: float64(failures) / float64(cfg.Attempts),
-				}:
-				default:
-					// 避免阻塞
+					AvgRTT:   avgRTT,
 				}
+
+				logger.Info(result.Target, slog.Any("result", result))
+
+				// 收集到本轮结果
+				roundMu.Lock()
+				roundResults = append(roundResults, result)
+				roundMu.Unlock()
 			}
 		}()
 	}
@@ -108,4 +172,7 @@ func doProbeLoss(targets []string, cfg Config, resultsCh chan<- Result) {
 	}()
 
 	wg.Wait()
+
+	// 更新全局最新结果
+	updateLatestResults(roundResults)
 }
