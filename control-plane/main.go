@@ -73,6 +73,7 @@ func main() {
 	defer cli.Close()
 
 	//获取全量前缀信息 然后初始化 routing map
+	etcd_client.GetPrefixAll(cli, "/routing/", logger)
 
 	// 监听 /routing/ 前缀 更新routing map
 	etcd_client.WatchPrefix(cli, "/routing/", func(eventType, key, val string, logger *slog.Logger) {
