@@ -3,34 +3,51 @@ package probing
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"testing"
 	"time"
 )
 
-func TestStartProbePeriodically(t *testing.T) {
-	// 测试目标（可以用本机端口测试，也可以用公网常用端口）
-	targets := []string{
-		"google.com:80",
-		"example.com:80",
-	}
+// 模拟 GetProbeTasks 返回的目标列表
+//func init() {
+//	GetProbeTasks := func(controlHost string) ([]string, error) {
+//		// 简单模拟：探测本地的 80 和 443 端口
+//		return []string{"127.0.0.1:80", "127.0.0.1:443"}, nil
+//	}
+//}
 
+func TestStartProbePeriodically(t *testing.T) {
+	logger := slog.New(nil) // 简单 logger，可替换为真实实现
 	cfg := Config{
 		Concurrency: 2,
-		Timeout:     1 * time.Second,
-		Interval:    2 * time.Second, // 周期短一点方便测试
+		Timeout:     500 * time.Millisecond,
+		Interval:    2 * time.Second,
 		Attempts:    3,
-		BufferSize:  10,
 	}
 
-	// 用 context 控制测试运行时间
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
 	defer cancel()
 
-	resultsCh := StartProbePeriodically(ctx, targets, cfg)
+	// 启动周期探测（无限循环，但有ctx超时）
+	StartProbePeriodically(ctx, "http://127.0.0.1:8080", cfg, logger)
 
-	// 收集结果
-	for res := range resultsCh {
-		fmt.Printf("Target: %s, Attempts: %d, Failures: %d, LossRate: %.2f, AvgRTT: %v\n",
-			res.Target, res.Attempts, res.Failures, res.LossRate, res.AvgRTT)
+	// 每秒检查一次最新结果
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			fmt.Println("测试结束")
+			return
+		case <-ticker.C:
+			results := GetLatestResults()
+			fmt.Println("最新探测结果：")
+			for target, r := range results {
+				fmt.Printf("Target: %s, Attempts: %d, Failures: %d, LossRate: %.2f%%, AvgRTT: %v\n",
+					target, r.Attempts, r.Failures, r.LossRate*100, r.AvgRTT)
+			}
+			fmt.Println("-----")
+		}
 	}
 }

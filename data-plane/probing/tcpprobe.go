@@ -128,7 +128,7 @@ func doProbeLossRTT(targets []string, cfg Config, logger *slog.Logger) {
 
 				for a := 0; a < cfg.Attempts; a++ {
 					start := time.Now()
-					conn, err := net.DialTimeout("tcp", target, cfg.Timeout)
+					conn, err := net.DialTimeout("tcp", target+":8081", cfg.Timeout)
 					rtt := time.Since(start)
 
 					if err != nil {
