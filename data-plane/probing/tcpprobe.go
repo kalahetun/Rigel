@@ -94,6 +94,7 @@ func StartProbePeriodically(ctx context.Context, controlHost string, cfg Config,
 				time.Sleep(time.Second) // 防止死循环快速重试
 				continue
 			}
+			logger.Info("get probing tasks", targets)
 
 			// 执行一轮探测
 			doProbeLossRTT(targets, cfg, logger)
@@ -128,7 +129,7 @@ func doProbeLossRTT(targets []string, cfg Config, logger *slog.Logger) {
 
 				for a := 0; a < cfg.Attempts; a++ {
 					start := time.Now()
-					conn, err := net.DialTimeout("tcp", target+":8081", cfg.Timeout)
+					conn, err := net.DialTimeout("tcp", target, cfg.Timeout)
 					rtt := time.Since(start)
 
 					if err != nil {

@@ -58,7 +58,7 @@ func (h *NodeProbeAPIHandler) GetProbeTasks(c *gin.Context) {
 			h.logger.Warn("解析节点JSON失败，跳过", slog.String("ip", k), slog.Any("error", err))
 			continue
 		}
-		tasks = append(tasks, telemetry.PublicIP)
+		tasks = append(tasks, telemetry.PublicIP+":8081")
 	}
 
 	// 3. 返回JSON
