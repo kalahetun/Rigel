@@ -11,11 +11,11 @@ import (
 // 测试动态 EdgeWeight 和 Dijkstra
 func TestDijkstraDynamic(t *testing.T) {
 	edges := []*Edge{
-		{Source: "A", Destination: "B", EdgeWeight: 1, Latency: 10, CacheUsageRatio: 0.2},
-		{Source: "B", Destination: "C", EdgeWeight: 2, Latency: 5, CacheUsageRatio: 0.1},
-		{Source: "A", Destination: "C", EdgeWeight: 4, Latency: 20, CacheUsageRatio: 0.5},
-		{Source: "C", Destination: "D", EdgeWeight: 1, Latency: 8, CacheUsageRatio: 0.3},
-		{Source: "B", Destination: "D", EdgeWeight: 5, Latency: 15, CacheUsageRatio: 0.4},
+		{SourceIp: "A", DestinationIp: "B", EdgeWeight: 1},
+		{SourceIp: "B", DestinationIp: "C", EdgeWeight: 2},
+		{SourceIp: "A", DestinationIp: "C", EdgeWeight: 4},
+		{SourceIp: "C", DestinationIp: "D", EdgeWeight: 1},
+		{SourceIp: "B", DestinationIp: "D", EdgeWeight: 5},
 	}
 
 	// 后台更新 EdgeWeight
@@ -24,7 +24,7 @@ func TestDijkstraDynamic(t *testing.T) {
 		e.mu.RLock()
 		defer e.mu.RUnlock()
 		randomFactor := 0.9 + 0.2*rand.Float64() // 0.9~1.1
-		return e.EdgeWeight * (1 + e.CacheUsageRatio) * randomFactor
+		return e.EdgeWeight * randomFactor
 	}, time.Second)
 
 	// 等待第一次更新
