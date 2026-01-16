@@ -6,11 +6,10 @@ import (
 	"control-plane/util"
 	model "control-plane/vm_info"
 	"encoding/json"
-	"log/slog"
-	"net/http"
-
 	"github.com/gin-gonic/gin"
 	clientv3 "go.etcd.io/etcd/client/v3"
+	"log/slog"
+	"net/http"
 )
 
 // NodeProbeAPIHandler 提供获取节点探测任务的接口

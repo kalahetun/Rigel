@@ -4,8 +4,10 @@ import (
 	"control-plane/etcd_client"
 	"control-plane/etcd_server"
 	"control-plane/pkg/api"
+	"control-plane/routing"
 	"control-plane/storage"
 	"control-plane/util"
+	"encoding/json"
 	"github.com/gin-gonic/gin"
 	"log/slog"
 	"net/http"
@@ -74,17 +76,34 @@ func main() {
 	defer cli.Close()
 
 	//获取全量前缀信息 然后初始化 routing map
-	etcd_client.GetPrefixAll(cli, "/routing/", logger)
+	r := routing.NewGraphManager(logger)
+	nodeMap, _ := etcd_client.GetPrefixAll(cli, "/routing/", logger)
+	for k, nodeJson := range nodeMap {
+		var tel storage.NetworkTelemetry
+		if err := json.Unmarshal([]byte(nodeJson), &tel); err != nil {
+			logger.Warn("解析节点JSON失败，跳过", slog.String("ip", k), slog.Any("error", err))
+			continue
+		}
+		r.AddNode(&tel)
+	}
 
 	// 监听 /routing/ 前缀 更新routing map
 	etcd_client.WatchPrefix(cli, "/routing/", func(eventType, key, val string, logger *slog.Logger) {
 		logger.Info("[WATCH] %s %s = %s", eventType, key, val, logger)
-		switch eventType {
-		case "CREATE":
-		case "UPDATE":
-		case "DELETE":
-		default:
-			logger.Warn("[WATCH] UNKNOWN eventType %s for %s", eventType, key)
+		var tel storage.NetworkTelemetry
+		if err := json.Unmarshal([]byte(val), &tel); err != nil {
+			logger.Warn("解析节点JSON失败，跳过", slog.String("ip", key), slog.Any("error", err))
+		} else {
+			switch eventType {
+			case "CREATE":
+				r.AddNode(&tel)
+			case "UPDATE":
+				r.AddNode(&tel)
+			case "DELETE":
+				r.RemoveNode(tel.PublicIP)
+			default:
+				logger.Warn("[WATCH] UNKNOWN eventType %s for %s", eventType, key)
+			}
 		}
 	}, logger)
 
@@ -98,8 +117,8 @@ func main() {
 	router := gin.Default()
 	router.GET("/health", func(c *gin.Context) { c.JSON(http.StatusOK, "success") })
 	api.InitVmReportAPIRouter(router, s, logger)
-	api.InitEnvoyAPIRouter(router, logger, logger1) // 注册Envoy端口API（已适配matth目录）
-	logger.Info("Envoy端口管理API启动", "addr", ":8081")  // 启动API服务
+	api.InitEnvoyAPIRouter(router, logger, logger1)      // 注册Envoy端口API（已适配matth目录）
+	logger.Info("Envoy端口管理API启动", "addr", ":8081") // 启动API服务
 	if err := router.Run(":8081"); err != nil {
 		logger.Error("API服务启动失败", "error", err)
 		os.Exit(1)

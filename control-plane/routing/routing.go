@@ -3,107 +3,7 @@ package routing
 import (
 	"container/heap"
 	"math"
-	"sync"
 )
-
-// ----------------------- Edge -----------------------
-// Edge 表示两个节点之间的边（逻辑或物理）
-type Edge struct {
-	Source      string `json:"source"`      // A 节点名/ID
-	Destination string `json:"destination"` // B 节点名/ID
-
-	// 节点额外信息
-	SourceProvider       string `json:"source_provider"`       // A 节点云服务商
-	SourceContinent      string `json:"source_continent"`      // A 节点大区
-	DestinationProvider  string `json:"destination_provider"`  // B 节点云服务商
-	DestinationContinent string `json:"destination_continent"` // B 节点大区
-
-	// 网络/缓存信息
-	BandwidthPrice  float64 `json:"bandwidth_price"`   // A 节点出口带宽价格 ($/GB)
-	Latency         float64 `json:"latency_ms"`        // A->B 时延
-	CacheUsageRatio float64 `json:"cache_usage_ratio"` // 缓存占用比例 [0,1]
-	EdgeWeight      float64 `json:"edge_weight"`       // 综合权重，用于最短路径计算
-
-	mu sync.RWMutex // 保护动态字段（BandwidthPrice, Latency, CacheUsageRatio, EdgeWeight）
-}
-
-// UpdateWeight 安全更新 EdgeWeight
-func (e *Edge) UpdateWeight(newWeight float64) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	e.EdgeWeight = newWeight
-}
-
-// Weight 安全读取 EdgeWeight
-func (e *Edge) Weight() float64 {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
-	return e.EdgeWeight
-}
-
-// ----------------------- GraphManager -----------------------
-// 全局图管理器，维护 edges 和节点
-type GraphManager struct {
-	mu    sync.RWMutex
-	edges map[string]*Edge    // key: "source->destination"
-	nodes map[string]struct{} // 所有节点
-}
-
-// NewGraphManager 初始化
-func NewGraphManager() *GraphManager {
-	return &GraphManager{
-		edges: make(map[string]*Edge),
-		nodes: make(map[string]struct{}),
-	}
-}
-
-// AddEdge 添加或更新边
-func (g *GraphManager) AddEdge(e *Edge) {
-	key := e.Source + "->" + e.Destination
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	g.edges[key] = e
-	g.nodes[e.Source] = struct{}{}
-	g.nodes[e.Destination] = struct{}{}
-}
-
-// RemoveEdge 删除边
-func (g *GraphManager) RemoveEdge(source, dest string) {
-	key := source + "->" + dest
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	delete(g.edges, key)
-}
-
-// GetEdges 返回当前所有 edges
-func (g *GraphManager) GetEdges() []*Edge {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-	list := make([]*Edge, 0, len(g.edges))
-	for _, e := range g.edges {
-		list = append(list, e)
-	}
-	return list
-}
-
-// UpdateEdgeWeight 更新指定边的权重
-func (g *GraphManager) UpdateEdgeWeight(source, dest string, weight float64) {
-	key := source + "->" + dest
-	g.mu.RLock()
-	e, ok := g.edges[key]
-	g.mu.RUnlock()
-	if ok {
-		e.UpdateWeight(weight)
-	}
-}
-
-// NodeExists 检查节点是否存在
-func (g *GraphManager) NodeExists(node string) bool {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-	_, ok := g.nodes[node]
-	return ok
-}
 
 // ----------------------- 优先队列 -----------------------
 type PQNode struct {
@@ -144,9 +44,9 @@ func Dijkstra(edges []*Edge, start, end string, hopPenalty float64) ([]string, f
 	graph := make(map[string][]*Edge)
 	nodes := make(map[string]struct{})
 	for _, e := range edges {
-		graph[e.Source] = append(graph[e.Source], e)
-		nodes[e.Source] = struct{}{}
-		nodes[e.Destination] = struct{}{}
+		graph[e.SourceIp] = append(graph[e.SourceIp], e)
+		nodes[e.SourceIp] = struct{}{}
+		nodes[e.DestinationIp] = struct{}{}
 	}
 
 	// 检查 start/end 是否存在
@@ -180,10 +80,10 @@ func Dijkstra(edges []*Edge, start, end string, hopPenalty float64) ([]string, f
 
 		for _, e := range graph[u.node] {
 			alt := dist[u.node] + e.Weight() + hopPenalty
-			if alt < dist[e.Destination] {
-				dist[e.Destination] = alt
-				prev[e.Destination] = u.node
-				heap.Push(pq, &PQNode{node: e.Destination, distance: alt})
+			if alt < dist[e.DestinationIp] {
+				dist[e.DestinationIp] = alt
+				prev[e.DestinationIp] = u.node
+				heap.Push(pq, &PQNode{node: e.DestinationIp, distance: alt})
 			}
 		}
 	}
@@ -203,26 +103,3 @@ func Dijkstra(edges []*Edge, start, end string, hopPenalty float64) ([]string, f
 
 	return path, dist[end]
 }
-
-//// ----------------------- 动态更新 EdgeWeight -----------------------
-//// computeWeight: 自定义函数根据 Edge 返回最新权重
-//func UpdateEdges(edges []*Edge, computeWeight func(*Edge) float64, interval time.Duration) {
-//	go func() {
-//		for {
-//			for _, e := range edges {
-//				newWeight := computeWeight(e)
-//				e.UpdateWeight(newWeight)
-//			}
-//			time.Sleep(interval)
-//		}
-//	}()
-//}
-//
-//// ----------------------- 示例 computeWeight -----------------------
-//// 可以根据 CacheUsageRatio、Latency、CPU、BandwidthPrice 等动态调整权重
-//func ExampleComputeWeight(e *Edge) float64 {
-//	e.mu.RLock()
-//	defer e.mu.RUnlock()
-//	// 示例逻辑：EdgeWeight = 原始 EdgeWeight * (1 + CacheUsageRatio)
-//	return e.EdgeWeight * (1 + e.CacheUsageRatio)
-//}
