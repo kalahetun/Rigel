@@ -32,7 +32,7 @@ func TestDijkstraDynamic(t *testing.T) {
 
 	// 每秒计算一次最短路径，循环3次
 	for i := 0; i < 3; i++ {
-		path, total := Dijkstra(edges, "A", "D")
+		path, total := Dijkstra(edges, "A", "D", 0)
 		if path == nil {
 			fmt.Println("Path from A to D does not exist")
 		} else {
@@ -43,7 +43,7 @@ func TestDijkstraDynamic(t *testing.T) {
 	}
 
 	// 测试 start 不存在
-	path, total := Dijkstra(edges, "X", "D")
+	path, total := Dijkstra(edges, "X", "D", 0)
 	if path != nil || total != 1/math.Inf(1) {
 		fmt.Println("Start node X does not exist test passed, path:", path, "total:", total)
 	} else {
@@ -51,7 +51,7 @@ func TestDijkstraDynamic(t *testing.T) {
 	}
 
 	// 测试 end 不存在
-	path, total = Dijkstra(edges, "A", "Y")
+	path, total = Dijkstra(edges, "A", "Y", 0)
 	if path != nil || total != 1/math.Inf(1) {
 		fmt.Println("End node Y does not exist test passed, path:", path, "total:", total)
 	} else {

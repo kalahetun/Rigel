@@ -139,7 +139,7 @@ func (pq *PriorityQueue) Pop() interface{} {
 // ----------------------- Dijkstra 算法 -----------------------
 // 使用 EdgeWeight 计算最短路径，并提前终止
 // 如果 start/end 不存在或不可达，返回 nil 路径和 Inf
-func Dijkstra(edges []*Edge, start, end string) ([]string, float64) {
+func Dijkstra(edges []*Edge, start, end string, hopPenalty float64) ([]string, float64) {
 	// 构建邻接表和节点集合
 	graph := make(map[string][]*Edge)
 	nodes := make(map[string]struct{})
@@ -179,7 +179,7 @@ func Dijkstra(edges []*Edge, start, end string) ([]string, float64) {
 		}
 
 		for _, e := range graph[u.node] {
-			alt := dist[u.node] + e.Weight()
+			alt := dist[u.node] + e.Weight() + hopPenalty
 			if alt < dist[e.Destination] {
 				dist[e.Destination] = alt
 				prev[e.Destination] = u.node
