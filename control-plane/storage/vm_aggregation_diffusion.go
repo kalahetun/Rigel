@@ -26,7 +26,7 @@ import (
 
 // 节点拥塞指标
 type NodeCongestionInfo struct {
-	WeightedAvg        float64   `json:"weighted_avg"`         // 节点加权平均拥塞指标
+	AvgWeightedCache   float64   `json:"avg_weighted_cache"`   // 节点加权平均拥塞指标
 	TotalWeightedCache float64   `json:"total_weighted_cache"` // 节点总加权缓存
 	TotalActiveConns   float64   `json:"total_active_conns"`   // 节点总活跃连接数
 	VMCount            int       `json:"vm_count"`             // 节点 VM 数量
@@ -44,11 +44,11 @@ type LinkCongestionInfo struct {
 
 // 节点遥测数据
 type NetworkTelemetry struct {
-	NodeCongestion  NodeCongestionInfo   `json:"node_congestion"`  // 节点拥塞指标
-	PublicIP        string               `json:"public_ip"`        // 节点公网 IP
-	Provider        string               `json:"provider"`         // 云厂商
-	Continent       string               `json:"continent"`        // 所属大洲
-	LinksCongestion []LinkCongestionInfo `json:"links_congestion"` // 节点到其他节点的链路拥塞信息
+	NodeCongestion  NodeCongestionInfo            `json:"node_congestion"`  // 节点拥塞指标
+	PublicIP        string                        `json:"public_ip"`        // 节点公网 IP
+	Provider        string                        `json:"provider"`         // 云厂商
+	Continent       string                        `json:"continent"`        // 所属大洲
+	LinksCongestion map[string]LinkCongestionInfo `json:"links_congestion"` // 节点到其他节点的链路拥塞信息
 }
 
 //1、定时器 读storage文件 汇聚group信息 到etcd 并且 加入一个全局的 queue供 elastic scaling使用
@@ -97,15 +97,15 @@ func CalcWeightedAvgWithTimer(fs *FileStorage, interval time.Duration,
 		}
 
 		// 7. 避免除以0，输出计算结果
-		var weightedAvg float64 = 0
+		var avgWeightedCache float64 = 0
 		if totalActiveConns <= 0 {
 			logger.Info("本次计算：总活跃连接数为0，无需计算平均值")
 			totalWeightedCache = 0
 		} else {
-			weightedAvg = totalWeightedCache / totalActiveConns
+			avgWeightedCache = totalWeightedCache / totalActiveConns
 		}
 
-		var links []LinkCongestionInfo
+		linkMap := make(map[string]LinkCongestionInfo)
 		for k, vs := range totalLinksCong {
 			var avg float64 = 0
 			for _, v := range vs {
@@ -114,19 +114,19 @@ func CalcWeightedAvgWithTimer(fs *FileStorage, interval time.Duration,
 			if avg != 0 && len(vs) > 0 {
 				avg = avg / float64(len(vs))
 			}
-			links = append(links, LinkCongestionInfo{TargetIP: k, PacketLoss: avg})
+			linkMap[k] = LinkCongestionInfo{TargetIP: k, PacketLoss: avg}
 		}
 
 		// 填充结果结构体
 		result := NetworkTelemetry{
 			NodeCongestion: NodeCongestionInfo{
-				WeightedAvg:        weightedAvg,
+				AvgWeightedCache:   avgWeightedCache,
 				TotalWeightedCache: totalWeightedCache,
 				TotalActiveConns:   totalActiveConns,
 				VMCount:            len(allReports),
 				CalculateTime:      time.Now(),
 			},
-			LinksCongestion: links,
+			LinksCongestion: linkMap,
 			PublicIP:        util.Config_.Node.IP.Public,
 			Provider:        util.Config_.Node.Provider,
 			Continent:       util.Config_.Node.Continent,

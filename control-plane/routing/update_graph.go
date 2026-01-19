@@ -2,7 +2,9 @@ package routing
 
 import (
 	"control-plane/storage"
+	"control-plane/util"
 	"log/slog"
+	"math"
 	"sync"
 )
 
@@ -60,6 +62,14 @@ func NewGraphManager(logger *slog.Logger) *GraphManager {
 		nodes: make(map[string]*storage.NetworkTelemetry),
 		l:     logger,
 	}
+}
+
+func (g *GraphManager) GetNode(id string) (*storage.NetworkTelemetry, bool) {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	node, ok := g.nodes[id]
+	return node, ok
 }
 
 // RemoveNode 删除节点及其相关的所有边
@@ -124,6 +134,7 @@ func (g *GraphManager) AddNode(node *storage.NetworkTelemetry) {
 		DestinationIp:   out,
 		SourceProvider:  node.Provider,
 		SourceContinent: node.Continent,
+		EdgeWeight:      EdgeRisk(node.NodeCongestion.AvgWeightedCache, 0, 0),
 	}
 
 	// 3. 添加 inter-node 边：当前节点的 out -> 其他节点的 in
@@ -131,21 +142,86 @@ func (g *GraphManager) AddNode(node *storage.NetworkTelemetry) {
 		if id == node.PublicIP {
 			continue
 		}
+		pp, _ := util.GetBandwidthPrice(node.Provider, node.Continent, other.Continent, g.l)
+		var ll float64 = 0
+		if val, ok := node.LinksCongestion[id]; ok && val.PacketLoss > 0 {
+			ll = val.PacketLoss
+		}
 		// 新节点 out -> 老节点 in
 		g.edges[out+"->"+InNode(id)] = &Edge{
 			SourceIp:        out,
 			DestinationIp:   InNode(id),
 			SourceProvider:  node.Provider,
 			SourceContinent: node.Continent,
+			EdgeWeight:      EdgeRisk(0, pp, ll),
 		}
+
+		pp_, _ := util.GetBandwidthPrice(other.Provider, other.Continent, node.Continent, g.l)
+		//var ll_ float64 = 0
+		//if val, ok := node.LinksCongestion[id]; ok && val.PacketLoss > 0 {
+		//	ll_ = val.PacketLoss
+		//}
 		// 老节点 out -> 新节点 in
 		g.edges[OutNode(id)+"->"+in] = &Edge{
 			SourceIp:        OutNode(id),
 			DestinationIp:   in,
 			SourceProvider:  other.Provider,
 			SourceContinent: other.Continent,
+			EdgeWeight:      EdgeRisk(0, pp_, ll),
 		}
 	}
 }
 
-//写一个计算EdgeWeight的函数
+// EdgeRisk computes the unified risk score for both virtual and physical edges.
+//
+// Inputs:
+//
+//	cacheUtil - average cache utilization (0~1), only meaningful for virtual edges
+//	cost      - monetary / bandwidth cost, only meaningful for physical edges
+//	lossRate  - packet loss rate (0~1), only meaningful for physical edges
+//
+// Convention:
+//   - For virtual edges: cost = 0, lossRate = 0
+//   - For physical edges: cacheUtil = 0
+//
+// Output:
+//
+//	A non-negative additive risk score (lower is better).
+func EdgeRisk(cacheUtil, cost, lossRate float64) float64 {
+	// -----------------------------
+	// Policy constants (system values)
+	// -----------------------------
+	const (
+		// Cache policy
+		cacheThreshold = 0.6
+		cacheScale     = 0.4
+
+		// Cost policy
+		costBaseline = 0.2
+
+		// Weights (value priorities)
+		wCache = 0.5
+		wCost  = 0.4
+		wLoss  = 0.1
+	)
+
+	var cacheRisk float64
+	if cacheUtil > cacheThreshold {
+		cacheRisk = math.Log(1 + (cacheUtil-cacheThreshold)/cacheScale)
+	}
+
+	var costRisk float64
+	if cost > 0 {
+		costRisk = math.Log(1 + cost/costBaseline)
+	}
+
+	var lossRisk float64
+	if lossRate > 0 {
+		if lossRate >= 1.0 {
+			return math.Inf(1)
+		}
+		lossRisk = -math.Log(1 - lossRate)
+	}
+
+	return wCache*cacheRisk + wCost*costRisk + wLoss*lossRisk
+}
