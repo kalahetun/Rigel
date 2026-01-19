@@ -2,42 +2,59 @@ package routing
 
 import (
 	"container/heap"
+	"control-plane/storage"
+	"fmt"
+	"log/slog"
 	"math"
+	"strings"
 )
 
 // ----------------------- Priority Queue -----------------------
+// 原PQNode结构（保留，用于优先级队列）
 type PQNode struct {
-	path  []string
-	cost  float64
+	node string  // 仅存储当前节点，而非完整路径，优化内存
+	cost float64 // 当前节点到起点的成本
+	// 为了优先级队列排序，补充索引字段（container/heap要求）
 	index int
 }
 
+// 原PriorityQueue结构（补充完整，保证container/heap可正常工作）
 type PriorityQueue []*PQNode
 
 func (pq PriorityQueue) Len() int           { return len(pq) }
-func (pq PriorityQueue) Less(i, j int) bool { return pq[i].cost < pq[j].cost }
+func (pq PriorityQueue) Less(i, j int) bool { return pq[i].cost < pq[j].cost } // 最小堆，按成本升序排序
 func (pq PriorityQueue) Swap(i, j int) {
 	pq[i], pq[j] = pq[j], pq[i]
-	pq[i].index = i
-	pq[j].index = j
+	pq[i].index, pq[j].index = i, j
 }
+
 func (pq *PriorityQueue) Push(x interface{}) {
 	n := len(*pq)
-	node := x.(*PQNode)
-	node.index = n
-	*pq = append(*pq, node)
+	item := x.(*PQNode)
+	item.index = n
+	*pq = append(*pq, item)
 }
+
 func (pq *PriorityQueue) Pop() interface{} {
 	old := *pq
 	n := len(old)
-	node := old[n-1]
-	node.index = -1
+	item := old[n-1]
+	old[n-1] = nil  // 避免内存泄漏
+	item.index = -1 // 标记为已弹出
 	*pq = old[0 : n-1]
-	return node
+	return item
 }
 
 // ----------------------- Dijkstra -----------------------
-func Dijkstra(edges []*Edge, start, end string, hopPenalty float64) ([]string, float64) {
+func (g *GraphManager) Dijkstra(start, end string) ([]string, float64) {
+
+	const (
+		alpha = 1.2
+	)
+
+	edges := g.GetEdges()
+
+	// 1. 构建图和节点集合（原逻辑保留，无问题）
 	graph := make(map[string][]*Edge)
 	nodes := make(map[string]struct{})
 	for _, e := range edges {
@@ -46,6 +63,7 @@ func Dijkstra(edges []*Edge, start, end string, hopPenalty float64) ([]string, f
 		nodes[e.DestinationIp] = struct{}{}
 	}
 
+	// 2. 校验起点和终点是否存在（原逻辑保留，无问题）
 	if _, ok := nodes[start]; !ok {
 		return nil, math.Inf(1)
 	}
@@ -53,6 +71,7 @@ func Dijkstra(edges []*Edge, start, end string, hopPenalty float64) ([]string, f
 		return nil, math.Inf(1)
 	}
 
+	// 3. 初始化距离映射和前驱节点映射（原逻辑保留，无问题）
 	dist := make(map[string]float64)
 	prev := make(map[string]string)
 	for node := range nodes {
@@ -60,129 +79,143 @@ func Dijkstra(edges []*Edge, start, end string, hopPenalty float64) ([]string, f
 	}
 	dist[start] = 0
 
+	// 4. 初始化优先级队列（优化：仅存储节点和成本，而非完整路径）
 	pq := &PriorityQueue{}
 	heap.Init(pq)
-	heap.Push(pq, &PQNode{path: []string{start}, cost: 0})
+	heap.Push(pq, &PQNode{
+		node: start,
+		cost: 0,
+	})
 
+	// 5. 处理优先级队列（核心修改：添加节点成本校验）
 	for pq.Len() > 0 {
+		// 弹出当前成本最低的节点
 		u := heap.Pop(pq).(*PQNode)
-		curr := u.path[len(u.path)-1]
+		currNode := u.node
 		currCost := u.cost
 
-		if curr == end {
-			return u.path, currCost
+		// 【核心修复】添加校验：如果当前弹出的成本大于已记录的最短距离，直接跳过该节点（已处理过更优路径）
+		if currCost > dist[currNode] {
+			continue
 		}
 
-		for _, e := range graph[curr] {
-			alt := currCost + e.EdgeWeight + hopPenalty
-			if alt < dist[e.DestinationIp] {
-				dist[e.DestinationIp] = alt
-				newPath := append([]string{}, u.path...)
-				newPath = append(newPath, e.DestinationIp)
-				heap.Push(pq, &PQNode{path: newPath, cost: alt})
-				prev[e.DestinationIp] = curr
+		// 到达终点，回溯路径并返回
+		if currNode == end {
+			// 通过prev映射回溯路径
+			path := []string{}
+			for node := end; node != ""; node = prev[node] {
+				path = append([]string{node}, path...)
+			}
+			return path, currCost
+		}
+
+		// 遍历当前节点的邻接边，更新最短路径
+		for _, e := range graph[currNode] {
+			nextNode := e.DestinationIp
+			// 计算新路径成本
+			newCost := currCost + e.EdgeWeight*alpha
+
+			// 如果新路径更优，更新距离并推入优先级队列
+			if newCost < dist[nextNode] {
+				dist[nextNode] = newCost
+				prev[nextNode] = currNode // 记录前驱节点
+				heap.Push(pq, &PQNode{
+					node: nextNode,
+					cost: newCost,
+				})
 			}
 		}
 	}
+
+	// 无法到达终点
 	return nil, math.Inf(1)
 }
 
-// ----------------------- Yen K-Shortest Paths -----------------------
-func YenKShortestPaths(edges []*Edge, start, end string, k int, hopPenalty float64) [][]string {
-	var paths [][]string
+type PathInfo struct {
+	Hops string `json:"hops"`
+	Rate int64  `json:"rate"`
+	//Weight int64  `json:"weight"`
+}
 
-	// 1. 找到最短路径
-	sp, _ := Dijkstra(edges, start, end, hopPenalty)
-	if sp == nil {
-		return paths
+type RoutingInfo struct {
+	Routing []PathInfo `json:"routing"`
+}
+
+// 输入是client区域和cloud storage 区域
+func (g *GraphManager) Routing(startC, endC string, logger *slog.Logger) RoutingInfo {
+	logger.Info("Routing start", "startC", startC, "endC", endC)
+
+	// 获取所有节点
+	allNodes := g.GetNodes()
+
+	// 根据大洲过滤 start 和 end 节点 && 展现寻找最优路径
+	var startNodes []*storage.NetworkTelemetry
+	var endNodes []*storage.NetworkTelemetry
+
+	for _, node := range allNodes {
+		if node.Continent == startC {
+			startNodes = append(startNodes, node)
+		}
+		if node.Continent == endC {
+			endNodes = append(endNodes, node)
+		}
 	}
-	paths = append(paths, sp)
 
-	candidates := &PriorityQueue{}
-	heap.Init(candidates)
+	if len(startNodes) == 0 || len(endNodes) == 0 {
+		logger.Warn("No nodes found for start or end continent", "startC", startC, "endC", endC)
+		return RoutingInfo{}
+	}
 
-	for i := 1; i < k; i++ {
-		lastPath := paths[i-1]
-		for j := 0; j < len(lastPath)-1; j++ {
-			rootPath := lastPath[:j+1]
-			spurNode := lastPath[j]
+	// 遍历 start × end 节点组合，寻找最短路径
+	var bestPath []string
+	type Path struct {
+		path []string
+		cost float64
+	}
+	var tempPaths []Path
+	minCost := math.Inf(1)
 
-			// 移除与 rootPath 冲突的边
-			var tempEdges []*Edge
-			for _, e := range edges {
-				conflict := false
-				for _, p := range paths {
-					if len(p) > j && equalSlices(p[:j+1], rootPath) && p[j+1] == e.DestinationIp && e.SourceIp == spurNode {
-						conflict = true
-						break
-					}
-				}
-				if !conflict {
-					tempEdges = append(tempEdges, e)
-				}
+	for _, sNode := range startNodes {
+		for _, eNode := range endNodes {
+
+			path, cost := g.Dijkstra(InNode(sNode.PublicIP), OutNode(eNode.PublicIP))
+
+			tempPaths = append(tempPaths, Path{path, cost})
+			if len(path) > 0 && cost < minCost {
+				minCost = cost
+				bestPath = path
 			}
-
-			// 计算 spurPath
-			spurPath, spurCost := Dijkstra(tempEdges, spurNode, end, hopPenalty)
-			if spurPath == nil {
-				continue
-			}
-
-			// 合并 rootPath 和 spurPath
-			totalPath := append(copyPath(rootPath[:len(rootPath)-1]), spurPath...)
-			// rootPath cost
-			rootCost := 0.0
-			for m := 0; m < len(rootPath)-1; m++ {
-				e := findEdge(edges, rootPath[m], rootPath[m+1])
-				if e != nil {
-					rootCost += e.EdgeWeight + hopPenalty
-				}
-			}
-			totalCost := rootCost + spurCost
-
-			heap.Push(candidates, &PQNode{
-				path: totalPath,
-				cost: totalCost,
-			})
-		}
-
-		if candidates.Len() == 0 {
-			break
-		}
-
-		next := heap.Pop(candidates).(*PQNode)
-		paths = append(paths, next.path)
-	}
-
-	return paths
-}
-
-// ----------------------- 工具函数 -----------------------
-func copyPath(p []string) []string {
-	newP := make([]string, len(p))
-	copy(newP, p)
-	return newP
-}
-
-func equalSlices(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
 		}
 	}
-	return true
-}
 
-func findEdge(edges []*Edge, src, dst string) *Edge {
-	for _, e := range edges {
-		if e.SourceIp == src && e.DestinationIp == dst {
-			return e
+	logger.Info("All candidate paths", "paths", fmt.Sprintf("%+v", tempPaths))
+
+	// 输出结果
+	if len(bestPath) == 0 {
+		logger.Warn("No path found between continents", "startC", startC, "endC", endC)
+	} else {
+		logger.Info("Shortest path found",
+			"startC", startC,
+			"endC", endC,
+			"path", bestPath,
+			"totalRisk", minCost)
+	}
+
+	hops := []string{}
+	hopMap := make(map[string]string)
+	for _, h := range bestPath {
+		tempIP := strings.Split(h, "-")[0]
+		if _, ok := hopMap[tempIP]; !ok {
+			hops = append(hops, tempIP)
 		}
 	}
-	return nil
+	hops_ := []string{}
+	for _, h := range hops {
+		hops_ = append(hops_, h+":8095")
+	}
+	merged := strings.Join(hops_, ",")
+
+	return RoutingInfo{[]PathInfo{PathInfo{merged, 10485760}}}
 }
 
-//todo 包装最短路径算法
+//todo 计算限流

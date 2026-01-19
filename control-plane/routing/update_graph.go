@@ -51,7 +51,7 @@ func (e *Edge) Weight() float64 {
 type GraphManager struct {
 	mu    sync.RWMutex
 	edges map[string]*Edge                     // key: "source->destination"
-	nodes map[string]*storage.NetworkTelemetry // 所有节点
+	nodes map[string]*storage.NetworkTelemetry // storage.NetworkTelemetry
 	l     *slog.Logger
 }
 
@@ -70,6 +70,19 @@ func (g *GraphManager) GetNode(id string) (*storage.NetworkTelemetry, bool) {
 
 	node, ok := g.nodes[id]
 	return node, ok
+}
+
+// GetNodes 返回图中所有节点的指针切片
+func (g *GraphManager) GetNodes() []*storage.NetworkTelemetry {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	nodes := make([]*storage.NetworkTelemetry, 0, len(g.nodes))
+	for _, node := range g.nodes {
+		nodes = append(nodes, node)
+	}
+
+	return nodes
 }
 
 // RemoveNode 删除节点及其相关的所有边
