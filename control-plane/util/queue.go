@@ -77,3 +77,15 @@ func (q *FixedQueue) Print() {
 	}
 	fmt.Println()
 }
+
+// SnapshotLatestFirst 返回队列中所有元素的切片（按最新到最老顺序）
+func (q *FixedQueue) SnapshotLatestFirst() []interface{} {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	arr := make([]interface{}, 0, q.list.Len())
+	for e := q.list.Back(); e != nil; e = e.Prev() {
+		arr = append(arr, e.Value)
+	}
+	return arr
+}

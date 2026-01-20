@@ -219,5 +219,3 @@ func (g *GraphManager) Routing(startC, endC string, logger *slog.Logger) Routing
 
 	return RoutingInfo{[]PathInfo{PathInfo{merged, int64(rate * 1024 * 1024)}}}
 }
-
-//todo 计算限流
