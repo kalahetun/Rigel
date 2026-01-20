@@ -267,6 +267,7 @@ func (s *Scaler) evaluateScaling() {
 			s.logger.Info("node is triggered, but retention time not reached")
 			return
 		}
+		//往下走就是已经超时
 	case Dormant, Permanent:
 		if now.Sub(s.node.RetainTime) < 0 {
 			s.logger.Info("node is dormant or permanent, but retention time not reached")
@@ -325,6 +326,11 @@ func (s *Scaler) evaluateScaling() {
 		node.State = Releasing
 		s.triggerRelease()
 		node.State = Inactive
+	case ScalingUp:
+		retain, _ := s.calculateRetention()
+		node.RetainTime = retain
+		node.State = Dormant
+		s.logger.Info("the state of node is chagned to dormant from scalingup")
 	}
 	node.LogStateSlog(s.logger) //打印 node
 	return
