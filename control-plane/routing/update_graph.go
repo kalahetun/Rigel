@@ -147,7 +147,7 @@ func (g *GraphManager) AddNode(node *storage.NetworkTelemetry) {
 		DestinationIp:   out,
 		SourceProvider:  node.Provider,
 		SourceContinent: node.Continent,
-		EdgeWeight:      EdgeRisk(node.NodeCongestion.AvgWeightedCache, 0, 0),
+		EdgeWeight:      EdgeRisk(node.NodeCongestion.AvgWeightedCache, 0, 0, g.l),
 	}
 
 	// 3. 添加 inter-node 边：当前节点的 out -> 其他节点的 in
@@ -166,7 +166,7 @@ func (g *GraphManager) AddNode(node *storage.NetworkTelemetry) {
 			DestinationIp:   InNode(id),
 			SourceProvider:  node.Provider,
 			SourceContinent: node.Continent,
-			EdgeWeight:      EdgeRisk(0, pp, ll),
+			EdgeWeight:      EdgeRisk(0, pp, ll, g.l),
 		}
 
 		pp_, _ := util.GetBandwidthPrice(other.Provider, other.Continent, node.Continent, g.l)
@@ -180,7 +180,7 @@ func (g *GraphManager) AddNode(node *storage.NetworkTelemetry) {
 			DestinationIp:   in,
 			SourceProvider:  other.Provider,
 			SourceContinent: other.Continent,
-			EdgeWeight:      EdgeRisk(0, pp_, ll),
+			EdgeWeight:      EdgeRisk(0, pp_, ll, g.l),
 		}
 	}
 }
@@ -200,10 +200,13 @@ func (g *GraphManager) AddNode(node *storage.NetworkTelemetry) {
 // Output:
 //
 //	A non-negative additive risk score (lower is better).
-func EdgeRisk(cacheUtil, cost, lossRate float64) float64 {
+func EdgeRisk(cacheUtil, cost, lossRate float64, l *slog.Logger) float64 {
 	// -----------------------------
 	// Policy constants (system values)
 	// -----------------------------
+
+	l.Info("EdgeRisk", "cacheUtil", cacheUtil, "cost", cost, "lossRate", lossRate)
+
 	const (
 		// Cache policy
 		cacheThreshold = 0.6
@@ -236,5 +239,10 @@ func EdgeRisk(cacheUtil, cost, lossRate float64) float64 {
 		lossRisk = -math.Log(1 - lossRate)
 	}
 
-	return wCache*cacheRisk + wCost*costRisk + wLoss*lossRisk
+	l.Info("EdgeRisk", "cacheRisk", cacheRisk, "costRisk", costRisk, "lossRisk", lossRisk)
+
+	r := wCache*cacheRisk + wCost*costRisk + wLoss*lossRisk
+	l.Info("EdgeRisk", "risk", r)
+
+	return r
 }

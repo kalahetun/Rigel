@@ -215,7 +215,9 @@ func (g *GraphManager) Routing(startC, endC string, logger *slog.Logger) Routing
 	}
 	merged := strings.Join(hops_, ",")
 
-	return RoutingInfo{[]PathInfo{PathInfo{merged, 10485760}}}
+	rate := ComputeAdmissionRate(Task{WeightU: 1, MinRate: 10, MaxRate: 20}, minCost, 1.0, 100, g.l)
+
+	return RoutingInfo{[]PathInfo{PathInfo{merged, int64(rate * 1024 * 1024)}}}
 }
 
 //todo 计算限流
