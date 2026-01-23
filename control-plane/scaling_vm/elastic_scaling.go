@@ -75,8 +75,9 @@ type NodeState struct {
 }
 
 type ScaleEvent struct {
-	Time   time.Time // 扩容触发时间
-	Amount int       // 扩容数量
+	Time     time.Time // 扩容触发时间
+	Amount   int       // 扩容数量
+	ScaledVM VM        // 扩容的 VM 信息
 }
 
 type VM struct {
@@ -301,10 +302,11 @@ func (s *Scaler) evaluateScaling() {
 		switch node.State {
 		case Inactive:
 			node.State = ScalingUp
-			if ok, vmIp, vmName := s.triggerScaling1(1, s.logger); ok {
+			if ok, vm := s.triggerScaling1(1, s.logger); ok {
 				node.State = Triggered
-				node.ScaleHistory = append(node.ScaleHistory, ScaleEvent{Time: time.Now(), Amount: 1})
-				node.ScaledVMs = append(node.ScaledVMs, VM{vmIp, vmName, time.Now()})
+				node.ScaleHistory = append(node.ScaleHistory, ScaleEvent{Time: time.Now(),
+					Amount: 1, ScaledVM: vm})
+				node.ScaledVMs = append(node.ScaledVMs, vm)
 				retain, state := s.calculateRetention()
 				node.RetainTime = retain
 				if state == Permanent {
@@ -351,7 +353,7 @@ func (s *Scaler) evaluateScaling() {
 }
 
 // triggerScaling 模拟扩容动作
-func (s *Scaler) triggerScaling1(n int, logger *slog.Logger) (bool, string, string) {
+func (s *Scaler) triggerScaling1(n int, logger *slog.Logger) (bool, VM) {
 
 	logger.Info("triggerScaling1", "n", n)
 
@@ -366,7 +368,7 @@ func (s *Scaler) triggerScaling1(n int, logger *slog.Logger) (bool, string, stri
 
 	if err != nil {
 		logger.Error("创建 VM 失败", "error", err)
-		return false, "", ""
+		return false, VM{}
 	}
 
 	// 在创建虚拟机后等待一定时间，确保 VM 启动完成
@@ -377,11 +379,11 @@ func (s *Scaler) triggerScaling1(n int, logger *slog.Logger) (bool, string, stri
 	ip, err := GetVMExternalIP(ctx, logger, gcp.ProjectID, gcp.Zone, vmName, gcp.CredFile)
 	if err != nil {
 		logger.Error("获取 VM 外部 IP 失败", "error", err)
-		return false, "", ""
+		return false, VM{}
 	}
 
 	logger.Info("Scaling node", gcp.Zone, vmName, ip)
-	return true, ip, vmName
+	return true, VM{ip, vmName, time.Now()}
 }
 
 func (s *Scaler) triggerScaling2() bool {
