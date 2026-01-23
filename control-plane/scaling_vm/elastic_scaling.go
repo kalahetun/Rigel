@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"net/http"
+	"net/url"
+	"os"
 	"sync"
 	"time"
 )
@@ -84,6 +87,7 @@ type VM struct {
 	PublicIP  string // VM 的 IP 地址
 	VMName    string
 	StartTime time.Time // VM 启动时间
+	Status    NodeStatus
 }
 
 // Scaler 弹性伸缩控制器
@@ -98,7 +102,7 @@ type Scaler struct {
 
 	logger *slog.Logger
 
-	// 锁，保护 node 状态并发访问
+	// 读写锁，保护 node 状态并发访问
 	mu sync.Mutex
 }
 
@@ -256,14 +260,37 @@ func (s *Scaler) calculateCost(node *NodeState) float64 {
 	}
 }
 
+// 尝试获取锁，如果获取不到则返回 false
+func (s *Scaler) tryLock(timeout time.Duration) bool {
+	// 设置一个通道，用于接收锁的获取结果
+	done := make(chan bool, 1)
+
+	// 启动一个 goroutine 来尝试获取锁
+	go func() {
+		s.mu.Lock()
+		done <- true
+	}()
+
+	// 等待锁或超时
+	select {
+	case <-done: // 如果成功获取到锁
+		return true
+	case <-time.After(timeout): // 如果超时
+		return false
+	}
+}
+
 // evaluateScaling 核心扩容判断逻辑
 // evaluateScaling 核心扩容判断与状态管理逻辑
 func (s *Scaler) evaluateScaling() {
 
-	s.mu.Lock()
+	// 尝试获取锁，若获取不到则直接返回
+	if !s.tryLock(5 * time.Second) {
+		fmt.Println("无法获取到锁，定时任务取消")
+		return
+	}
 	defer s.mu.Unlock()
 
-	now := time.Now()
 	node := s.node
 	node.LogStateSlog(s.logger) //打印 node
 
@@ -277,13 +304,13 @@ func (s *Scaler) evaluateScaling() {
 		s.logger.Info("node is releasing")
 		return
 	case Triggered:
-		if now.Sub(s.node.RetainTime) < 0 {
+		if time.Now().Sub(s.node.RetainTime) < 0 {
 			s.logger.Info("node is triggered, but retention time not reached")
 			return
 		}
 		//往下走就是已经超时
 	case Dormant, Permanent:
-		if now.Sub(s.node.RetainTime) < 0 {
+		if time.Now().Sub(s.node.RetainTime) < 0 {
 			s.logger.Info("node is dormant or permanent, but retention time not reached")
 			// 后面检验一下是不是需要扩容 如果扩容这个状态就会被change
 		} else {
@@ -319,7 +346,7 @@ func (s *Scaler) evaluateScaling() {
 			node.State = Triggered
 			if s.triggerScaling2() {
 				node.State = Triggered
-				node.ScaleHistory = append(node.ScaleHistory, ScaleEvent{Time: now, Amount: 1})
+				node.ScaleHistory = append(node.ScaleHistory, ScaleEvent{Time: time.Now(), Amount: 1})
 				retain, state := s.calculateRetention()
 				node.RetainTime = retain
 				if state == Permanent {
@@ -346,6 +373,7 @@ func (s *Scaler) evaluateScaling() {
 		retain, _ := s.calculateRetention()
 		node.RetainTime = retain
 		node.State = Dormant
+		s.triggerDormant()
 		s.logger.Info("the state of node is chagned to dormant from scalingup")
 	}
 	node.LogStateSlog(s.logger) //打印 node
@@ -383,20 +411,77 @@ func (s *Scaler) triggerScaling1(n int, logger *slog.Logger) (bool, VM) {
 	}
 
 	logger.Info("Scaling node", gcp.Zone, vmName, ip)
-	return true, VM{ip, vmName, time.Now()}
+
+	//安装环境 启动 触发envoy
+	err = deployBinaryToServer(username, ip, "22", localBinaryPath, remotePath)
+	if err != nil {
+		logger.Error("部署二进制文件失败", "error", err)
+		return false, VM{}
+	}
+
+	return true, VM{ip, vmName, time.Now(), Triggered}
 }
 
 func (s *Scaler) triggerScaling2() bool {
-	// TODO: 调用实际扩容 API 或更新内部状态
-	// 这里打印日志模拟
-	println("Scaling node", s.node.ID, "by", "VM(s)")
+
+	var ip, setState string
+	//找到睡眠的vm获取 ip
+	if len(s.node.ScaledVMs) <= 0 {
+		s.logger.Error("No scaled VMs found")
+		return false
+	}
+	vm := s.node.ScaledVMs[0]
+	ip = vm.PublicIP
+	setState = "on"
+
+	if b := setHealthState(ip, setState, s.logger); b == false {
+		return false
+	}
+	return true
+}
+
+func (s *Scaler) triggerDormant() bool {
+
+	var ip, setState string
+	//找到睡眠的vm获取 ip
+	if len(s.node.ScaledVMs) <= 0 {
+		s.logger.Error("No scaled VMs found")
+		return false
+	}
+	vm := s.node.ScaledVMs[0]
+	ip = vm.PublicIP
+	setState = "off"
+
+	if b := setHealthState(ip, setState, s.logger); b == false {
+		return false
+	}
 	return true
 }
 
 // triggerRelease 模拟释放动作
-func (s *Scaler) triggerRelease() {
-	// TODO: 调用实际释放 API
-	println("Releasing node", s.node.ID)
+func (s *Scaler) triggerRelease() bool {
+
+	s.logger.Info("triggerRelease")
+
+	//找到睡眠的vm获取 ip
+	if len(s.node.ScaledVMs) <= 0 {
+		s.logger.Error("No scaled VMs found")
+		return false
+	}
+	vm := s.node.ScaledVMs[0]
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
+	defer cancel() // 确保上下文最终被释放
+
+	gcp := util.Config_.GCP
+	err := DeleteVM(ctx, logger, gcp.ProjectID, gcp.Zone, vm.VMName, gcp.CredFile)
+	if err != nil {
+		s.logger.Error("删除 VM 失败", "error", err)
+	}
+
+	s.logger.Info("Releasing node", vm.VMName)
+	return true
 }
 
 // calculateRetention 计算节点的 Retain Time，返回绝对时间点
@@ -428,4 +513,36 @@ func (s *Scaler) calculateRetention() (time.Time, NodeStatus) {
 // 指数衰减函数
 func expDecay(delta time.Duration, tau time.Duration) float64 {
 	return math.Exp(-float64(delta) / float64(tau))
+}
+
+// setHealthState 用于向 API 发送请求，设置健康状态
+// 参数 apiHost 是主机地址，setState 是健康状态（可以是 "on" 或 "off"）
+func setHealthState(apiHost, setState string, logger *slog.Logger) bool {
+	// 创建 URL 和查询参数
+	apiURL := fmt.Sprintf("http://%s:8095/healthStateChange", apiHost) // 使用传入的 apiHost
+	params := url.Values{}
+	params.Add("set", setState)
+
+	// 构建完整的请求 URL
+	reqURL := fmt.Sprintf("%s?%s", apiURL, params.Encode())
+
+	// 调用 API 并设置健康状态
+	resp, err := http.Get(reqURL)
+	if err != nil {
+		logger.Error("请求失败: %v", err)
+		return false
+	}
+	defer resp.Body.Close()
+
+	// 输出响应状态
+	logger.Info("响应状态码: %d\n", resp.StatusCode)
+
+	// 根据响应状态码处理结果
+	if resp.StatusCode == http.StatusOK {
+		logger.Info("健康状态已成功设置为: %s\n", setState)
+	} else {
+		logger.Error("健康状态设置失败，状态码: %d", resp.StatusCode)
+		return false
+	}
+	return true
 }
