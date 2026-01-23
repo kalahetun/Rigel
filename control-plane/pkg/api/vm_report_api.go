@@ -142,13 +142,13 @@ func InitVmReportAPIRouter(router *gin.Engine, s *storage.FileStorage, logger *s
 	r := router
 
 	// 健康检查
-	r.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, model.ApiResponse{
-			Code: 200,
-			Msg:  "success",
-			Data: gin.H{"time": time.Now().UTC().Format(time.RFC3339)},
-		})
-	})
+	//r.GET("/health", func(c *gin.Context) {
+	//	c.JSON(http.StatusOK, model.ApiResponse{
+	//		Code: 200,
+	//		Msg:  "success",
+	//		Data: gin.H{"time": time.Now().UTC().Format(time.RFC3339)},
+	//	})
+	//})
 	// 上报接口
 	apiV1 := r.Group("/api/v1")
 	{

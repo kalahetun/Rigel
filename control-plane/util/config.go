@@ -4,21 +4,27 @@ import (
 	"fmt"
 	"gopkg.in/yaml.v3"
 	"log/slog"
+	"math/rand"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 var Config_ *Config
 
-// Config 一级结构体，对应yaml平级配置
+// Config 代表整个配置文件的结构
 type Config struct {
 	EnvoyPath  string   `yaml:"envoy_path"`  // Envoy 可执行文件路径
 	ServerList []string `yaml:"server_list"` // Etcd 集群所有节点的地址
 	ServerIP   string   `yaml:"server_ip"`   // 当前节点 IP
 	DataDir    string   `yaml:"data_dir"`    // Etcd 数据目录
 	//Name       string   `yaml:"name"`         // 当前节点名字
+
 	// Node 配置
 	Node NodeConfig `yaml:"node"`
+
+	// GCP 配置
+	GCP GCPConfig `yaml:"gcp"`
 }
 
 // NodeConfig 对应 node 配置
@@ -35,6 +41,14 @@ type NodeConfig struct {
 type NodeIP struct {
 	Private string `yaml:"private"` // 内网 IP
 	Public  string `yaml:"public"`  // 公网 IP（可选）
+}
+
+// GCPConfig 对应 GCP 配置
+type GCPConfig struct {
+	ProjectID string `yaml:"projectID"` // GCP 项目 ID
+	Zone      string `yaml:"zone"`      // 机房
+	VMPrefix  string `yaml:"vmPrefix"`  // VM 名称前缀（不是具体名字）
+	CredFile  string `yaml:"credFile"`  // GCP 凭证文件路径
 }
 
 // ReadYamlConfig 读取同层级的config.yaml配置
@@ -65,4 +79,14 @@ func ReadYamlConfig(logger *slog.Logger) (*Config, error) {
 	}
 
 	return &config, nil
+}
+
+func GenerateRandomLetters(length int) string {
+	rand.Seed(time.Now().UnixNano())                                  // 使用当前时间戳作为随机数种子
+	letters := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ" // 字母范围（大小写）
+	var result string
+	for i := 0; i < length; i++ {
+		result += string(letters[rand.Intn(len(letters))]) // 随机选择一个字母
+	}
+	return result
 }

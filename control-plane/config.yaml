@@ -17,3 +17,11 @@ node:
   ip:
     private: "10.0.0.1"  # 内网 IP
     public: "34.92.18.7" # 公网 IP 作为hostname
+
+  # 节点相关配置结束
+
+gcp:
+  projectID: "civil-honor-480405-e0"      # 替换为你的 GCP 项目 ID
+  zone: "us-central1-a"                   # 机房
+  vmPrefix: "scaling-vm-"                     # VM 名称前缀（不是具体名字）
+  credFile: "/home/matth/civil-honor-480405-e0-bdec4345bdd7.json"  # GCP 凭证文件路径

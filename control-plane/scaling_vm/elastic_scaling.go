@@ -1,6 +1,7 @@
 package scaling_vm
 
 import (
+	"context"
 	"control-plane/util"
 	"fmt"
 	"log/slog"
@@ -8,6 +9,8 @@ import (
 	"sync"
 	"time"
 )
+
+//维护vm信息;扩容&缩容&安装环境以及二进制;开启&关闭健康检查; 这些都是elastic scaling的approach
 
 type NodeStatus int
 
@@ -62,6 +65,8 @@ type NodeState struct {
 	// 新增：最近扩容事件记录
 	ScaleHistory []ScaleEvent
 
+	ScaledVMs []VM // 扩容触发时间，用于保留机制计算
+
 	// 最近触发时间，用于保留机制计算
 	RetainTime time.Time //类似于 i 时间
 
@@ -72,6 +77,12 @@ type NodeState struct {
 type ScaleEvent struct {
 	Time   time.Time // 扩容触发时间
 	Amount int       // 扩容数量
+}
+
+type VM struct {
+	PublicIP  string // VM 的 IP 地址
+	VMName    string
+	StartTime time.Time // VM 启动时间
 }
 
 // Scaler 弹性伸缩控制器
@@ -143,6 +154,8 @@ func NewNodeState(id string, queue *util.FixedQueue) *NodeState {
 		VolatilityQueue: queue,
 		Z:               0,
 		State:           Inactive,
+		ScaleHistory:    []ScaleEvent{},
+		ScaledVMs:       []VM{},
 		RetainTime:      time.Time{}, // 保持时间
 		P:               0,
 	}
@@ -288,9 +301,10 @@ func (s *Scaler) evaluateScaling() {
 		switch node.State {
 		case Inactive:
 			node.State = ScalingUp
-			if s.triggerScaling1(1) {
+			if ok, vmIp, vmName := s.triggerScaling1(1, s.logger); ok {
 				node.State = Triggered
-				node.ScaleHistory = append(node.ScaleHistory, ScaleEvent{Time: now, Amount: 1})
+				node.ScaleHistory = append(node.ScaleHistory, ScaleEvent{Time: time.Now(), Amount: 1})
+				node.ScaledVMs = append(node.ScaledVMs, VM{vmIp, vmName, time.Now()})
 				retain, state := s.calculateRetention()
 				node.RetainTime = retain
 				if state == Permanent {
@@ -337,11 +351,37 @@ func (s *Scaler) evaluateScaling() {
 }
 
 // triggerScaling 模拟扩容动作
-func (s *Scaler) triggerScaling1(n int) bool {
-	// TODO: 调用实际扩容 API 或更新内部状态
-	// 这里打印日志模拟
-	println("Scaling node", s.node.ID, "by", n, "VM(s)")
-	return true
+func (s *Scaler) triggerScaling1(n int, logger *slog.Logger) (bool, string, string) {
+
+	logger.Info("triggerScaling1", "n", n)
+
+	//获取本节点配置信息
+	//扩容
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
+	defer cancel() // 确保上下文最终被释放
+
+	gcp := util.Config_.GCP
+	vmName := gcp.VMPrefix + util.GenerateRandomLetters(4)
+	err := CreateVM(ctx, logger, gcp.ProjectID, gcp.Zone, vmName, gcp.CredFile)
+
+	if err != nil {
+		logger.Error("创建 VM 失败", "error", err)
+		return false, "", ""
+	}
+
+	// 在创建虚拟机后等待一定时间，确保 VM 启动完成
+	logger.Info("Waiting for VM to start...", "vmName", vmName)
+	time.Sleep(10 * time.Minute) // 等待 10 分钟
+
+	//获取ip等信息用于管理
+	ip, err := GetVMExternalIP(ctx, logger, gcp.ProjectID, gcp.Zone, vmName, gcp.CredFile)
+	if err != nil {
+		logger.Error("获取 VM 外部 IP 失败", "error", err)
+		return false, "", ""
+	}
+
+	logger.Info("Scaling node", gcp.Zone, vmName, ip)
+	return true, ip, vmName
 }
 
 func (s *Scaler) triggerScaling2() bool {
