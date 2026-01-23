@@ -7,9 +7,6 @@ import (
 	"net/http"
 )
 
-// Envoy配置文件路径常量
-const envoyConfigPath = "/home/matth/envoy-mini.yaml"
-
 // EnvoyPortAPIHandler Envoy端口API处理器
 type EnvoyPortAPIHandler struct {
 	operator *envoymanager2.EnvoyOperator
@@ -151,19 +148,7 @@ func (o *EnvoyPortAPIHandler) GetPortBandwidthConfigHandler(c *gin.Context) {
 }
 
 // InitEnvoyAPIRouter 初始化Envoy端口API路由（已固化matth目录路径）
-func InitEnvoyAPIRouter(router *gin.Engine, logger, logger1 *slog.Logger) {
-	// 1. 固定配置文件路径（matth目录）
-	configPath := envoyConfigPath
-
-	// 2. 创建Envoy操作器（固定管理地址+matth配置路径）
-	operator := envoymanager2.NewEnvoyOperator("http://127.0.0.1:9901", configPath)
-	// 初始化全局配置（管理端口9901）
-	operator.InitEnvoyGlobalConfig(9901)
-
-	err := operator.StartFirstEnvoy(logger, logger1)
-	if err != nil {
-		logger.Error("启动第一个Envoy失败", "error", err)
-	}
+func InitEnvoyAPIRouter(router *gin.Engine, operator *envoymanager2.EnvoyOperator, logger, logger1 *slog.Logger) {
 
 	// 3. 创建API处理器
 	handler := NewEnvoyPortAPIHandler(operator, logger)
@@ -176,7 +161,7 @@ func InitEnvoyAPIRouter(router *gin.Engine, logger, logger1 *slog.Logger) {
 	}
 	envoyGroup1 := router.Group("/envoy/cfg")
 	{
-		envoyGroup1.GET("/setTargetIps", handler.HandleEnvoyCfgQuery)
+		envoyGroup1.GET("/setTargetIps", handler.UpdateGlobalTargetAddrsHandler)
 		envoyGroup1.GET("/query", handler.HandleEnvoyCfgQuery)
 	}
 	envoyGroup2 := router.Group("/config")

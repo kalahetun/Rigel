@@ -1,8 +1,11 @@
 package scaling_vm
 
 import (
+	"bytes"
 	"context"
+	"control-plane/pkg/envoy_manager"
 	"control-plane/util"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"math"
@@ -419,6 +422,13 @@ func (s *Scaler) triggerScaling1(n int, logger *slog.Logger) (bool, VM) {
 		return false, VM{}
 	}
 
+	//关联到envoy
+	_, err = sendAddTargetIpsRequest([]envoy_manager.EnvoyTargetAddr{envoy_manager.EnvoyTargetAddr{ip, 8095}})
+	if err != nil {
+		logger.Error("关联到envoy失败", "error", err)
+		return false, VM{}
+	}
+
 	return true, VM{ip, vmName, time.Now(), Triggered}
 }
 
@@ -545,4 +555,30 @@ func setHealthState(apiHost, setState string, logger *slog.Logger) bool {
 		return false
 	}
 	return true
+}
+
+// sendRequest 向指定的 API 路由发送请求
+func sendAddTargetIpsRequest(targetIps []envoy_manager.EnvoyTargetAddr) (*envoy_manager.APICommonResp, error) {
+	// 构建请求体
+	url := "http://127.0.0.1:8081/setTargetIps" // API URL
+	body, err := json.Marshal(targetIps)        // 将目标地址数据编码为 JSON
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request body: %v", err)
+	}
+
+	// 发送 POST 请求
+	resp, err := http.Post(url, "application/json", bytes.NewBuffer(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// 解析响应体
+	var response envoy_manager.APICommonResp
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %v", err)
+	}
+
+	// 返回响应
+	return &response, nil
 }

@@ -4,6 +4,7 @@ import (
 	"control-plane/etcd_client"
 	"control-plane/etcd_server"
 	"control-plane/pkg/api"
+	envoymanager2 "control-plane/pkg/envoy_manager"
 	"control-plane/routing"
 	"control-plane/storage"
 	"control-plane/util"
@@ -15,6 +16,11 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+)
+
+const (
+	// Envoy配置文件路径常量
+	envoyConfigPath = "/home/matth/envoy-mini.yaml"
 )
 
 func main() {
@@ -113,11 +119,23 @@ func main() {
 	queue := util.NewFixedQueue(10)
 	storage.CalcWeightedAvgWithTimer(s, 30*time.Second, cli, queue, logger)
 
+	//启动envoy
+	// 1. 固定配置文件路径（matth目录）
+	configPath := envoyConfigPath
+	// 2. 创建Envoy操作器（固定管理地址+matth配置路径）
+	operator := envoymanager2.NewEnvoyOperator("http://127.0.0.1:9901", configPath)
+	// 初始化全局配置（管理端口9901）
+	operator.InitEnvoyGlobalConfig(9901)
+	err = operator.StartFirstEnvoy(logger, logger1)
+	if err != nil {
+		logger.Error("启动第一个Envoy失败", "error", err)
+	}
+
 	// 初始化Gin路由
 	router := gin.Default()
 	router.GET("/health", func(c *gin.Context) { c.JSON(http.StatusOK, "success") })
 	api.InitVmReportAPIRouter(router, s, logger)
-	api.InitEnvoyAPIRouter(router, logger, logger1) // 注册Envoy端口API（已适配matth目录）
+	api.InitEnvoyAPIRouter(router, operator, logger, logger1) // 注册Envoy端口API（已适配matth目录）
 	api.InitNodeProbeRouter(router, cli, logger)
 	api.InitUserRoutingRouter(router, r, logger)
 	logger.Info("Envoy端口管理API启动", "addr", ":8081") // 启动API服务

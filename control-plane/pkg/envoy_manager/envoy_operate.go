@@ -261,7 +261,7 @@ func (o *EnvoyOperator) UpdateGlobalTargetAddrs(targetAddrs []EnvoyTargetAddr, l
 	logger.Info("UpdateGlobalTargetAddrs", "targetAddrs", targetAddrs)
 
 	// 更新后端地址
-	o.GlobalCfg.TargetAddrs = targetAddrs
+	o.GlobalCfg.TargetAddrs = append(o.GlobalCfg.TargetAddrs, targetAddrs...)
 
 	// 渲染配置
 	if err := RenderEnvoyYamlConfig(o.GlobalCfg, o.ConfigPath); err != nil {
