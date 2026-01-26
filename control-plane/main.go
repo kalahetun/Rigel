@@ -51,16 +51,24 @@ func main() {
 	// 读取配置文件
 	util.Config_, _ = util.ReadYamlConfig(logger)
 	uu := util.Config_
-	logger.Info("读取配置文件成功", "config", uu)
+	b, _ := json.Marshal(uu)
+	logger.Info("读取配置文件成功", "config", b)
 
 	//初始化 bandwidth cost信息
-	_ = util.LoadBandwidthCost(logger)
+	err = util.LoadBandwidthCost(logger)
+	if err != nil {
+		logger.Error("Failed to load bandwidth cost: ", err.Error())
+		return
+	}
 
 	// 启动 etcd server端
 	if uu.ServerIP != "" {
-		nodeName := "etcd-" + strings.ReplaceAll(uu.ServerIP, ".", "-")                                            // 节点名用 IP 做后缀，保证唯一
-		_ = os.RemoveAll(uu.DataDir)                                                                               // 清理残留数据
-		etcdServer, err := etcd_server.StartEmbeddedEtcd(uu.ServerList, uu.ServerIP, uu.DataDir, nodeName, logger) // 启动嵌入式 etcd
+		// 节点名用 IP 做后缀，保证唯一
+		nodeName := "etcd-" + strings.ReplaceAll(uu.ServerIP, ".", "-")
+		// 清理残留数据
+		_ = os.RemoveAll(uu.DataDir)
+		// 启动 etcd server
+		etcdServer, err := etcd_server.StartEmbeddedEtcd(uu.ServerList, uu.ServerIP, uu.DataDir, nodeName, logger)
 		if err != nil {
 			logger.Error("Failed to start embedded etcd: %v", err)
 		}
@@ -78,12 +86,14 @@ func main() {
 	cli, err := etcd_client.NewEtcdClient(serverIps, 5*time.Second)
 	if err != nil {
 		logger.Error("Failed to connect to etcd:", err)
+		return
 	}
 	defer cli.Close()
 
 	//获取全量前缀信息 然后初始化 routing map
 	r := routing.NewGraphManager(logger)
 	nodeMap, _ := etcd_client.GetPrefixAll(cli, "/routing/", logger)
+	logger.Info("获取全量前缀信息成功", "nodeMap", nodeMap)
 	for k, nodeJson := range nodeMap {
 		var tel storage.NetworkTelemetry
 		if err := json.Unmarshal([]byte(nodeJson), &tel); err != nil {
@@ -94,30 +104,36 @@ func main() {
 	}
 
 	// 监听 /routing/ 前缀 更新routing map
-	etcd_client.WatchPrefix(cli, "/routing/", func(eventType, key, val string, logger *slog.Logger) {
-		logger.Info("[WATCH] %s %s = %s", eventType, key, val, logger)
-		var tel storage.NetworkTelemetry
-		if err := json.Unmarshal([]byte(val), &tel); err != nil {
-			logger.Warn("解析节点JSON失败，跳过", slog.String("ip", key), slog.Any("error", err))
-		} else {
-			switch eventType {
-			case "CREATE":
-				r.AddNode(&tel)
-			case "UPDATE":
-				r.AddNode(&tel)
-			case "DELETE":
-				r.RemoveNode(tel.PublicIP)
-			default:
-				logger.Warn("[WATCH] UNKNOWN eventType %s for %s", eventType, key)
+	etcd_client.WatchPrefix(
+		cli, "/routing/",
+		func(eventType, key, val string, logger *slog.Logger) {
+			logger.Info("[WATCH] %s %s = %s", eventType, key, val)
+			var tel storage.NetworkTelemetry
+			if err := json.Unmarshal([]byte(val), &tel); err != nil {
+				logger.Warn("解析节点JSON失败，跳过", slog.String("ip", key), slog.Any("error", err))
+			} else {
+				switch eventType {
+				case "CREATE":
+					r.AddNode(&tel)
+				case "UPDATE":
+					r.AddNode(&tel)
+				case "DELETE":
+					r.RemoveNode(tel.PublicIP)
+				default:
+					logger.Warn("[WATCH] UNKNOWN eventType %s for %s", eventType, key)
+				}
 			}
-		}
-	}, logger)
+		}, logger,
+	)
 
 	//启动virtual queue逻辑
-	storDir := filepath.Join(".", "vm_local_info_storage")
-	s, _ := storage.NewFileStorage(storDir, 0, logger)
+	exe, _ := os.Executable()
+	baseDir := filepath.Dir(exe)
+	storageDir := filepath.Join(baseDir, "vm_local_info_storage")
+	//storageDir := filepath.Join(".", "vm_local_info_storage")
+	s, _ := storage.NewFileStorage(storageDir, 0, logger)
 	queue := util.NewFixedQueue(10)
-	storage.CalcWeightedAvgWithTimer(s, 30*time.Second, cli, queue, logger)
+	storage.CalcClusterWeightedAvg(s, 30*time.Second, cli, queue, logger)
 
 	//启动envoy
 	// 1. 固定配置文件路径（matth目录）
@@ -125,18 +141,23 @@ func main() {
 	// 2. 创建Envoy操作器（固定管理地址+matth配置路径）
 	operator := envoymanager2.NewEnvoyOperator("http://127.0.0.1:9901", configPath)
 	// 初始化全局配置（管理端口9901）
-	operator.InitEnvoyGlobalConfig(9901)
+	_ = operator.InitEnvoyGlobalConfig(uu, 9901)
 	err = operator.StartFirstEnvoy(logger, logger1)
 	if err != nil {
 		logger.Error("启动第一个Envoy失败", "error", err)
+		return
 	}
 
 	// 初始化Gin路由
 	router := gin.Default()
 	router.GET("/health", func(c *gin.Context) { c.JSON(http.StatusOK, "success") })
+	//收集上报的代理节点信息
 	api.InitVmReportAPIRouter(router, s, logger)
-	api.InitEnvoyAPIRouter(router, operator, logger, logger1) // 注册Envoy端口API（已适配matth目录）
+	//更改envoy的配置信息
+	api.InitEnvoyAPIRouter(router, operator, logger, logger1)
+	//下发探测任务 & 探测结果从 vm上报接口走
 	api.InitNodeProbeRouter(router, cli, logger)
+	//client获取 bulk transfer path信息的接口
 	api.InitUserRoutingRouter(router, r, logger)
 	logger.Info("Envoy端口管理API启动", "addr", ":8081") // 启动API服务
 	if err := router.Run(":8081"); err != nil {

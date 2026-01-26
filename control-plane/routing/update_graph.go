@@ -142,13 +142,15 @@ func (g *GraphManager) AddNode(node *storage.NetworkTelemetry) {
 	// 2. 添加虚拟边（in->out）
 	in := InNode(node.PublicIP)
 	out := OutNode(node.PublicIP)
+	r := EdgeRisk(node.NodeCongestion.AvgWeightedCache, 0, 0, g.l)
 	g.edges[in+"->"+out] = &Edge{
 		SourceIp:        in,
 		DestinationIp:   out,
 		SourceProvider:  node.Provider,
 		SourceContinent: node.Continent,
-		EdgeWeight:      EdgeRisk(node.NodeCongestion.AvgWeightedCache, 0, 0, g.l),
+		EdgeWeight:      r,
 	}
+	g.l.Info("EdgeRisk", in+"->"+out, r)
 
 	// 3. 添加 inter-node 边：当前节点的 out -> 其他节点的 in
 	for id, other := range g.nodes {
@@ -161,13 +163,15 @@ func (g *GraphManager) AddNode(node *storage.NetworkTelemetry) {
 			ll = val.PacketLoss
 		}
 		// 新节点 out -> 老节点 in
+		r = EdgeRisk(0, pp, ll, g.l)
 		g.edges[out+"->"+InNode(id)] = &Edge{
 			SourceIp:        out,
 			DestinationIp:   InNode(id),
 			SourceProvider:  node.Provider,
 			SourceContinent: node.Continent,
-			EdgeWeight:      EdgeRisk(0, pp, ll, g.l),
+			EdgeWeight:      r,
 		}
+		g.l.Info("EdgeRisk", out+"->"+InNode(id), r)
 
 		pp_, _ := util.GetBandwidthPrice(other.Provider, other.Continent, node.Continent, g.l)
 		//var ll_ float64 = 0
@@ -175,14 +179,18 @@ func (g *GraphManager) AddNode(node *storage.NetworkTelemetry) {
 		//	ll_ = val.PacketLoss
 		//}
 		// 老节点 out -> 新节点 in
+		r = EdgeRisk(0, pp_, ll, g.l)
 		g.edges[OutNode(id)+"->"+in] = &Edge{
 			SourceIp:        OutNode(id),
 			DestinationIp:   in,
 			SourceProvider:  other.Provider,
 			SourceContinent: other.Continent,
-			EdgeWeight:      EdgeRisk(0, pp_, ll, g.l),
+			EdgeWeight:      r,
 		}
+		g.l.Info("EdgeRisk", OutNode(id)+"->"+in, r)
 	}
+
+	return
 }
 
 // EdgeRisk computes the unified risk score for both virtual and physical edges.

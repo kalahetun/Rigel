@@ -53,7 +53,7 @@ type NetworkTelemetry struct {
 
 //1、定时器 读storage文件 汇聚group信息 到etcd 并且 加入一个全局的 queue供 elastic scaling使用
 
-func CalcWeightedAvgWithTimer(fs *FileStorage, interval time.Duration,
+func CalcClusterWeightedAvg(fs *FileStorage, interval time.Duration,
 	etcdClient *clientv3.Client, queue *util.FixedQueue, logger *slog.Logger) {
 	// 1. 内嵌定时器，直接创建
 	ticker := time.NewTicker(interval)

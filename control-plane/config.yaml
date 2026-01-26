@@ -20,6 +20,12 @@ node:
 
   # 节点相关配置结束
 
+proxy:
+  ips:
+    - "10.0.1.10"
+    - "10.0.1.11"
+    - "10.0.1.12"
+
 gcp:
   projectID: "civil-honor-480405-e0"      # 替换为你的 GCP 项目 ID
   zone: "us-central1-a"                   # 机房

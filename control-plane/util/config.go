@@ -23,8 +23,14 @@ type Config struct {
 	// Node 配置
 	Node NodeConfig `yaml:"node"`
 
+	Proxy ProxyConfig `yaml:"proxy"`
+
 	// GCP 配置
 	GCP GCPConfig `yaml:"gcp"`
+}
+
+type ProxyConfig struct {
+	IPs []string `yaml:"ips"`
 }
 
 // NodeConfig 对应 node 配置

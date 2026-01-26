@@ -3,6 +3,7 @@ package envoy_manager
 import (
 	"bufio"
 	"context"
+	"control-plane/util"
 	"errors"
 	"fmt"
 	"io"
@@ -142,26 +143,27 @@ func NewEnvoyOperator(adminAddr, configPath string) *EnvoyOperator {
 }
 
 // InitEnvoyGlobalConfig 初始化Envoy全局配置
-func (o *EnvoyOperator) InitEnvoyGlobalConfig(adminPort int) error {
+func (o *EnvoyOperator) InitEnvoyGlobalConfig(uu *util.Config, adminPort int) error {
 
 	o.mu.Lock()
 	defer o.mu.Unlock()
 
-	//8090-8094 默认端口
+	//8090 默认端口
 	ports := make([]EnvoyPortConfig, 0)
 	for i := 8090; i <= 8090; i++ {
-		ports = append(ports, EnvoyPortConfig{Port: int(i), Enabled: true, RateLimit: PortRateLimitConfig{Bandwidth: 0}})
+		ports = append(ports, EnvoyPortConfig{Port: i, Enabled: true, RateLimit: PortRateLimitConfig{Bandwidth: 0}})
 	}
 
 	//数据面转发端口8083
-	targetAddrs := make([]EnvoyTargetAddr, 0)
-	//todo 临时手动填充
-	targetAddrs = append(targetAddrs, EnvoyTargetAddr{IP: "34.174.125.203", Port: 8095}) //34.174.125.203
+	targetAddresses := make([]EnvoyTargetAddr, 0)
+	for _, ip := range uu.Proxy.IPs {
+		targetAddresses = append(targetAddresses, EnvoyTargetAddr{IP: ip, Port: 8095}) //34.174.125.203
+	}
 
 	o.GlobalCfg = &EnvoyGlobalConfig{
 		AdminPort:   adminPort,
 		Ports:       ports,
-		TargetAddrs: targetAddrs,
+		TargetAddrs: targetAddresses,
 	}
 	return nil
 }
