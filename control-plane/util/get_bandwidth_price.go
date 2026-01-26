@@ -69,6 +69,9 @@ func GetBandwidthPrice(provider, srcContinent, dstContinent string, logger *slog
 			if !found {
 				key = fmt.Sprintf("Any->%s", dstContinent)
 				price, found = providerMap[key]
+				if !found {
+					price, found = providerMap["Any->Any"]
+				}
 			}
 		case "aws", "digitalocean":
 			price, found = providerMap["Any->Any"]
@@ -81,6 +84,9 @@ func GetBandwidthPrice(provider, srcContinent, dstContinent string, logger *slog
 		case "vultr":
 			key := fmt.Sprintf("%s->Any", srcContinent)
 			price, found = providerMap[key]
+			if !found {
+				price, found = providerMap["Any->Any"]
+			}
 		default:
 			logger.Error("不支持的 provider", "provider", provider)
 			return 0, fmt.Errorf("不支持的 provider: %s", provider)
@@ -88,7 +94,8 @@ func GetBandwidthPrice(provider, srcContinent, dstContinent string, logger *slog
 
 		if !found {
 			logger.Error("未找到匹配价格", "provider", provider, "src", srcContinent, "dst", dstContinent)
-			return 0, fmt.Errorf("未找到匹配价格: %s %s->%s", provider, srcContinent, dstContinent)
+			//给一个高价
+			return 0.2, fmt.Errorf("未找到匹配价格: %s %s->%s", provider, srcContinent, dstContinent)
 		}
 
 		logger.Info("获取带宽价格", "provider", provider, "src", srcContinent, "dst", dstContinent, "price", price)
@@ -96,5 +103,5 @@ func GetBandwidthPrice(provider, srcContinent, dstContinent string, logger *slog
 	}
 
 	logger.Error("provider 不存在", "provider", provider)
-	return 0, fmt.Errorf("provider 不存在: %s", provider)
+	return 0.2, fmt.Errorf("provider 不存在: %s", provider)
 }

@@ -28,7 +28,7 @@ import (
 type NodeCongestionInfo struct {
 	AvgWeightedCache   float64   `json:"avg_weighted_cache"`   // 节点加权平均拥塞指标
 	TotalWeightedCache float64   `json:"total_weighted_cache"` // 节点总加权缓存
-	TotalActiveConns   float64   `json:"total_active_conns"`   // 节点总活跃连接数
+	TotalActiveConn    float64   `json:"total_active_conn"`    // 节点总活跃连接数
 	VMCount            int       `json:"vm_count"`             // 节点 VM 数量
 	CalculateTime      time.Time `json:"calculate_time"`       // 计算时间
 }
@@ -77,34 +77,34 @@ func CalcClusterWeightedAvg(fs *FileStorage, interval time.Duration,
 		// 5. 初始化统计变量，执行核心计算
 		var (
 			totalWeightedCache float64 // 总加权缓存：Σ(ActiveConnections*AvgCachePerConn)
-			totalActiveConns   float64 // 总活跃连接数：Σ(ActiveConnections)
+			totalActiveConn    float64 // 总活跃连接数：Σ(ActiveConnections)
 			totalLinksCong     map[string][]float64
 		)
 		totalLinksCong = make(map[string][]float64)
 
 		// 6. 遍历GetAll()结果，累加统计值
 		for _, report := range allReports {
-			activeConns := float64(report.Congestion.ActiveConnections)
+			activeConn := float64(report.Congestion.ActiveConnections)
 			avgCache := report.Congestion.AvgCachePerConn
-			totalWeightedCache += activeConns * avgCache
-			totalActiveConns += activeConns
+			totalWeightedCache += activeConn * avgCache
+			totalActiveConn += activeConn
 
 			//处理链路
 			for _, v := range report.LinksCongestion {
-				totalLinksCong[report.Network.PublicIP] =
-					append(totalLinksCong[v.TargetIP], v.PacketLoss)
+				totalLinksCong[v.TargetIP] = append(totalLinksCong[v.TargetIP], v.PacketLoss)
 			}
 		}
 
 		// 7. 避免除以0，输出计算结果
 		var avgWeightedCache float64 = 0
-		if totalActiveConns <= 0 {
+		if totalActiveConn <= 0 {
 			logger.Info("本次计算：总活跃连接数为0，无需计算平均值")
 			totalWeightedCache = 0
 		} else {
-			avgWeightedCache = totalWeightedCache / totalActiveConns
+			avgWeightedCache = totalWeightedCache / totalActiveConn
 		}
 
+		//简单求均值
 		linkMap := make(map[string]LinkCongestionInfo)
 		for k, vs := range totalLinksCong {
 			var avg float64 = 0
@@ -122,7 +122,7 @@ func CalcClusterWeightedAvg(fs *FileStorage, interval time.Duration,
 			NodeCongestion: NodeCongestionInfo{
 				AvgWeightedCache:   avgWeightedCache,
 				TotalWeightedCache: totalWeightedCache,
-				TotalActiveConns:   totalActiveConns,
+				TotalActiveConn:    totalActiveConn,
 				VMCount:            len(allReports),
 				CalculateTime:      time.Now(),
 			},
@@ -144,9 +144,10 @@ func CalcClusterWeightedAvg(fs *FileStorage, interval time.Duration,
 		key := fmt.Sprintf("/routing/%s", ip)
 		etcd_client.PutKey(etcdClient, key, string(jsonData), logger)
 		_ = etcd_client.PutKeyWithLease(etcdClient, key, string(jsonData), int64(60*expireTime), logger)
+
 		//放入queue 为自动化扩缩容做准备
 		queue.Push(result)
-
-		logger.Info("定时计算完成", result)
+		
+		logger.Info("定时计算完成", string(jsonData))
 	}
 }

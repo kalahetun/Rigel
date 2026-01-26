@@ -209,6 +209,7 @@ func (s *Scaler) StopTicker() {
 // 计算当前扰动量 \widetilde P_i(t)
 func (s *Scaler) calculateP() float64 {
 
+	//todo  这里面放着的是结构体不是数字
 	var queue []interface{}
 	queue = s.node.VolatilityQueue.SnapshotLatestFirst()
 

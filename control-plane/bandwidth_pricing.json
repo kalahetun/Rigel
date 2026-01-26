@@ -33,7 +33,9 @@
 
       "Any->SouthAmerica": 0.14,
       "Any->Africa": 0.11,
-      "Any->MiddleEast": 0.11
+      "Any->MiddleEast": 0.11,
+
+      "Any->Any": 0.15
     },
 
     "aws": {
@@ -49,7 +51,8 @@
       "NorthAmerica->Any": 0.01,
       "Europe->Any": 0.01,
       "Asia->Any": 0.025,
-      "Oceania->Any": 0.05
+      "Oceania->Any": 0.05,
+      "Any->Any": 0.025
     },
 
     "digitalocean": {

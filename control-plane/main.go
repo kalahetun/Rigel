@@ -87,6 +87,8 @@ func main() {
 	if err != nil {
 		logger.Error("Failed to connect to etcd:", err)
 		return
+	} else {
+		logger.Info("Etcd Client connected", "serverIps", serverIps)
 	}
 	defer cli.Close()
 
@@ -128,11 +130,10 @@ func main() {
 
 	//启动virtual queue逻辑
 	exe, _ := os.Executable()
-	baseDir := filepath.Dir(exe)
-	storageDir := filepath.Join(baseDir, "vm_local_info_storage")
+	storageDir := filepath.Join(filepath.Dir(exe), "vm_local_info_storage")
 	//storageDir := filepath.Join(".", "vm_local_info_storage")
 	s, _ := storage.NewFileStorage(storageDir, 0, logger)
-	queue := util.NewFixedQueue(10)
+	queue := util.NewFixedQueue(20)
 	storage.CalcClusterWeightedAvg(s, 30*time.Second, cli, queue, logger)
 
 	//启动envoy
@@ -162,6 +163,7 @@ func main() {
 	logger.Info("Envoy端口管理API启动", "addr", ":8081") // 启动API服务
 	if err := router.Run(":8081"); err != nil {
 		logger.Error("API服务启动失败", "error", err)
-		os.Exit(1)
+		//os.Exit(1)
+		return
 	}
 }
