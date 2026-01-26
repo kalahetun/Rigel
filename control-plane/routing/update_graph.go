@@ -10,7 +10,6 @@ import (
 
 //定时器维护 更新 路由map 供选路使用
 
-// ----------------------- Edge -----------------------
 // Edge 表示两个节点之间的边（逻辑或物理）
 type Edge struct {
 	SourceIp      string `json:"source_ip"`      // A 节点名/ID

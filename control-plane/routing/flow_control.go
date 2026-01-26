@@ -44,7 +44,7 @@ func ComputeAdmissionRate(
 
 	l.Info("ComputeAdmissionRate", "rawRate", rawRate)
 
-	// Step 3: projection to feasible region
+	// Step 3: projection to a feasible region
 	if rawRate < task.MinRate {
 		return task.MinRate
 	}
