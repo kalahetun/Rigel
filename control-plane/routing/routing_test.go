@@ -129,7 +129,7 @@ func TestRouting(t *testing.T) {
 	}))
 
 	// 测试用例1：有效大洲路由
-	routingInfo := gm.Routing("Asia", "America", logger)
+	routingInfo := gm.Routing("Asia", "America", "", logger)
 	t.Logf("有效大洲路由测试 - 结果: %+v", routingInfo)
 
 	// 验证路由结果非空
@@ -150,7 +150,7 @@ func TestRouting(t *testing.T) {
 	}
 
 	// 测试用例2：起点大洲无节点
-	routingInfo = gm.Routing("Africa", "America", logger)
+	routingInfo = gm.Routing("Africa", "America", "", logger)
 	if len(routingInfo.Routing) != 0 {
 		t.Error("无效起点大洲测试失败：期望空RoutingInfo")
 	}
@@ -166,7 +166,7 @@ func TestRouting(t *testing.T) {
 			{SourceIp: InNode("192.168.1.1"), DestinationIp: OutNode("192.168.2.1"), EdgeWeight: 5},
 		}),
 	}
-	routingInfo = gmNoPath.Routing("Asia", "America", logger)
+	routingInfo = gmNoPath.Routing("Asia", "America", "", logger)
 	if len(routingInfo.Routing) != 0 {
 		t.Error("无路径测试失败：期望空RoutingInfo")
 	}

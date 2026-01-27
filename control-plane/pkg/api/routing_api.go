@@ -83,7 +83,7 @@ func (h *UserRoutingAPIHandler) GetUserRoute(c *gin.Context) {
 
 	// 3️⃣ 调用 GraphManager 获取最优路径
 	// 可以把 GetBestPath 改成支持从客户端到服务器
-	paths := h.GM.Routing(req.ClientCont, req.ServerCont, h.Logger)
+	paths := h.GM.Routing(req.ClientCont, req.ServerCont, req.ServerIP, h.Logger)
 
 	resp.Code = 200
 	resp.Msg = "成功获取路径"

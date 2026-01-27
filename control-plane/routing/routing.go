@@ -19,7 +19,7 @@ type RoutingInfo struct {
 }
 
 // 输入是client区域和cloud storage 区域
-func (g *GraphManager) Routing(startContinent, endContinent string, logger *slog.Logger) RoutingInfo {
+func (g *GraphManager) Routing(startContinent, endContinent, serverIP string, logger *slog.Logger) RoutingInfo {
 
 	logger.Info("Routing start", "startContinent", startContinent, "endContinent", endContinent)
 
@@ -93,9 +93,10 @@ func (g *GraphManager) Routing(startContinent, endContinent string, logger *slog
 		hops_ = append(hops_, h+":8090") //gateway port
 	}
 	merged := strings.Join(hops_, ",")
+	merged += "," + serverIP
 
 	//计算速率
 	rate := ComputeAdmissionRate(Task{WeightU: 1, MinRate: 10, MaxRate: 20}, minCost, 1.0, 100, g.l)
 
-	return RoutingInfo{[]PathInfo{PathInfo{merged, int64(rate * 1024 * 1024)}}}
+	return RoutingInfo{[]PathInfo{PathInfo{merged, int64(rate)}}}
 }

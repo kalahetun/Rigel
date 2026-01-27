@@ -130,19 +130,29 @@ func RedirectV2Handler(logger *slog.Logger) gin.HandlerFunc {
 			return
 		}
 
-		if len(routingInfo.Routing) == 0 {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": "routing info is empty",
-			})
-			return
-		}
-
 		fileName := c.GetHeader(HeaderFileName)
 		if fileName == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Missing X-File-Name header"})
 			return
 		}
 		localFilePath := localBaseDir + fileName
+
+		//没有路径直传
+		if len(routingInfo.Routing) == 0 {
+			ctx := context.Background()
+			if err := upload.UploadToGCSbyClient(ctx, localFilePath, bucketName, fileName, credFile, logger); err != nil {
+				logger.Error("Upload failed: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{
+				"message":    "upload success",
+				"file_name":  fileName,
+				"bucket":     bucketName,
+				"objectName": fileName,
+			})
+			return
+		}
 
 		uploadInfo := upload.UploadFileInfo{
 			LocalFilePath: localFilePath,
