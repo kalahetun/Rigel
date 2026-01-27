@@ -6,6 +6,7 @@ import (
 	"control-plane/pkg/api"
 	envoymanager2 "control-plane/pkg/envoy_manager"
 	"control-plane/routing"
+	"control-plane/scaling_vm"
 	"control-plane/storage"
 	"control-plane/util"
 	"encoding/json"
@@ -149,6 +150,10 @@ func main() {
 		return
 	}
 
+	//elastic scaling
+	es := scaling_vm.NewScaler("", nil, queue, logger)
+	es.StartTicker()
+
 	// 初始化Gin路由
 	router := gin.Default()
 	router.GET("/health", func(c *gin.Context) { c.JSON(http.StatusOK, "success") })
@@ -166,4 +171,6 @@ func main() {
 		//os.Exit(1)
 		return
 	}
+
+	return
 }

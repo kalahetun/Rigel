@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"control-plane/pkg/envoy_manager"
+	"control-plane/storage"
 	"control-plane/util"
 	"encoding/json"
 	"fmt"
@@ -12,180 +13,14 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"sync"
 	"time"
 )
 
 //维护vm信息;扩容&缩容&安装环境以及二进制;开启&关闭健康检查; 这些都是elastic scaling的approach
 
-type NodeStatus int
-
-const (
-	Inactive NodeStatus = iota
-	Dormant
-	Triggered
-	ScalingUp
-	Releasing
-	Permanent
-	End
-)
-
-// ScaleConfig 定义弹性伸缩相关参数
-type ScaleConfig struct {
-	// 队列与波动相关
-	VolatilityWeight    float64 // w^V_i 默认为 1
-	QueueWeight         float64 // w^S_i 默认为 1
-	DecayFactor         float64 // γ_i
-	VolatilityThreshold float64 // C^V，扰动阈值，小波动会被忽略
-
-	// DPP 控制参数
-	CostWeight float64 // V_i^S，控制成本敏感度，默认可设为 1
-
-	// 成本相关
-	ScalingCostFixed    float64 // C_fc
-	ScalingCostVariable float64 // β_i
-	ScalingRatio        float64 // α 设定为 0.1 大多数情况下都是扩容 1台机器
-
-	// 保留机制
-	BaseRetentionTime  time.Duration // T0
-	RetentionAmplifier float64       // λ
-	RetentionDecay     time.Duration // τ
-	PermanentThreshold time.Duration // T_threshold
-	PermanentDuration  time.Duration // T_permanent
-
-	// 定时任务
-	TickerInterval time.Duration // 定时检查间隔
-}
-
-// NodeState 表示每个节点的弹性伸缩状态
-type NodeState struct {
-	ID string
-
-	// 波动队列（累积短期扰动）
-	VolatilityQueue *util.FixedQueue // 可用 Snapshot() 获取历史扰动
-	Z               float64          // 当前 Volatility Queue 值，即 \widetilde Z_i(t)
-
-	// 节点资源状态（UNSCALED / SCALED + 子状态）
-	State NodeStatus // e.g., "Inactive", "Dormant", "Triggered", "Permanent"
-
-	// 新增：最近扩容事件记录
-	ScaleHistory []ScaleEvent
-
-	ScaledVMs []VM // 扩容触发时间，用于保留机制计算
-
-	// 最近触发时间，用于保留机制计算
-	RetainTime time.Time //类似于 i 时间
-
-	// 其他统计/控制量，可选
-	P float64 // 当前扰动 \widetilde P_i(t)
-}
-
-type ScaleEvent struct {
-	Time     time.Time // 扩容触发时间
-	Amount   int       // 扩容数量
-	ScaledVM VM        // 扩容的 VM 信息
-}
-
-type VM struct {
-	PublicIP  string // VM 的 IP 地址
-	VMName    string
-	StartTime time.Time // VM 启动时间
-	Status    NodeStatus
-}
-
-// Scaler 弹性伸缩控制器
-type Scaler struct {
-	config *ScaleConfig
-
-	// 单节点状态
-	node *NodeState
-
-	// 定时任务停止通道
-	stopChan chan struct{}
-
-	logger *slog.Logger
-
-	// 读写锁，保护 node 状态并发访问
-	mu sync.Mutex
-}
-
-func (n *NodeState) LogStateSlog(logger *slog.Logger) {
-	history := make([]string, len(n.ScaleHistory))
-	for i, evt := range n.ScaleHistory {
-		history[i] = fmt.Sprintf("{Time: %s, Amount: %d}", evt.Time.Format(time.RFC3339), evt.Amount)
-	}
-
-	logger.Info("NodeState",
-		"ID", n.ID,
-		"State", n.State,
-		"Z", n.Z,
-		"P", n.P,
-		"RetainTime", n.RetainTime.Format(time.RFC3339),
-		"ScaleHistory", history,
-		"VolatilityQueue", n.VolatilityQueue.SnapshotLatestFirst(),
-	)
-}
-
-// NewDefaultScaleConfig 返回带默认值的 ScaleConfig
-func NewDefaultScaleConfig() *ScaleConfig {
-	return &ScaleConfig{
-		// 队列与波动相关
-		VolatilityWeight:    1.0,
-		QueueWeight:         1.0,
-		DecayFactor:         0.8,
-		VolatilityThreshold: 0.05, // 小波动忽略
-
-		// DPP 控制参数
-		CostWeight: 1.0, // 默认成本敏感度
-
-		// 成本相关
-		ScalingCostFixed:    10.0, // 举例
-		ScalingCostVariable: 1.0,
-		ScalingRatio:        0.1, // 默认扩容 1 台
-
-		// 保留机制
-		BaseRetentionTime:  5 * time.Minute,
-		RetentionAmplifier: 1.0,
-		RetentionDecay:     10 * time.Minute,
-		PermanentThreshold: 1 * time.Hour,
-		PermanentDuration:  1 * time.Hour,
-
-		// 定时任务
-		TickerInterval: 30 * time.Second,
-	}
-}
-
-// NewNodeState 初始化单个节点状态
-func NewNodeState(id string, queue *util.FixedQueue) *NodeState {
-	return &NodeState{
-		ID:              id,
-		VolatilityQueue: queue,
-		Z:               0,
-		State:           Inactive,
-		ScaleHistory:    []ScaleEvent{},
-		ScaledVMs:       []VM{},
-		RetainTime:      time.Time{}, // 保持时间
-		P:               0,
-	}
-}
-
-// NewScaler 初始化 Scaler 控制器
-func NewScaler(nodeID string, config *ScaleConfig, queue *util.FixedQueue) *Scaler {
-	if config == nil {
-		config = NewDefaultScaleConfig()
-	}
-
-	return &Scaler{
-		config:   config,
-		node:     NewNodeState(nodeID, queue),
-		stopChan: make(chan struct{}),
-	}
-}
-
 // StartTicker 启动定时任务
 func (s *Scaler) StartTicker() {
 	ticker := time.NewTicker(s.config.TickerInterval)
-
 	go func() {
 		for {
 			select {
@@ -207,34 +42,36 @@ func (s *Scaler) StopTicker() {
 }
 
 // 计算当前扰动量 \widetilde P_i(t)
-func (s *Scaler) calculateP() float64 {
+func (s *Scaler) calculatePerturbation() float64 {
 
-	//todo  这里面放着的是结构体不是数字
 	var queue []interface{}
 	queue = s.node.VolatilityQueue.SnapshotLatestFirst()
 
 	//还没有足够数据
-	if len(queue) <= 0 {
-		s.logger.Warn("queue is empty")
+	if len(queue) <= 1 {
+		s.logger.Info("the data of volatility queue is spare")
 		return 0
 	}
 
 	//如果最新的波动小于阈值 ，则直接返回 0
-	if queue[0].(float64) <= s.config.VolatilityThreshold {
+	avgCache := queue[0].(storage.NetworkTelemetry).NodeCongestion.AvgWeightedCache
+	avgCache_ := queue[1].(storage.NetworkTelemetry).NodeCongestion.AvgWeightedCache
+	if avgCache <= s.config.VolatilityThreshold && avgCache_ <= s.config.VolatilityThreshold {
 		s.logger.Info("latest volatility is too small", "volatility", queue[0].(float64))
 		return 0
 	}
 
-	var sum float64
-	for _, v := range queue {
-		if f, ok := v.(float64); ok {
-			sum += f
-		}
-	}
-	if len(queue) == 0 {
+	p := math.Abs(avgCache - avgCache_)
+	return p
+
+}
+
+func (s *Scaler) calculateVolatilityAccumulation() float64 {
+	z := s.node.P*s.config.VolatilityWeight + s.node.Z*s.config.DecayFactor
+	if z < 0 {
 		return 0
 	}
-	return sum / float64(len(queue)) // 简单取平均，可按实际逻辑加权
+	return z
 }
 
 func (s *Scaler) calculateDelta(node *NodeState) float64 {
@@ -289,7 +126,7 @@ func (s *Scaler) tryLock(timeout time.Duration) bool {
 func (s *Scaler) evaluateScaling() {
 
 	// 尝试获取锁，若获取不到则直接返回
-	if !s.tryLock(5 * time.Second) {
+	if !s.tryLock(1 * time.Second) {
 		fmt.Println("无法获取到锁，定时任务取消")
 		return
 	}
@@ -322,21 +159,24 @@ func (s *Scaler) evaluateScaling() {
 			//如果后面不触发 Triggered 走到最后就会被删除
 			node.State = Releasing
 		}
+	default:
+		panic("unhandled default case")
 	}
 
 	// 1️⃣ 计算当前扰动量 P 和波动值 Z
-	node.P = s.calculateP()
-	node.Z = s.calculateDelta(s.node)
+	node.P = s.calculatePerturbation()
+	node.Z = s.calculateVolatilityAccumulation()
+	delta := s.calculateDelta(s.node)
+	s.logger.Info("calculate delta", node.P, node.Z, delta)
 
 	// 2️⃣ 判断是否需要触发扩容
-	if node.Z < 0 {
+	if delta < 0 {
 		switch node.State {
 		case Inactive:
 			node.State = ScalingUp
 			if ok, vm := s.triggerScaling1(1, s.logger); ok {
 				node.State = Triggered
-				node.ScaleHistory = append(node.ScaleHistory, ScaleEvent{Time: time.Now(),
-					Amount: 1, ScaledVM: vm})
+				node.ScaleHistory = append(node.ScaleHistory, ScaleEvent{Time: time.Now(), Amount: 1, ScaledVM: vm})
 				node.ScaledVMs = append(node.ScaledVMs, vm)
 				retain, state := s.calculateRetention()
 				node.RetainTime = retain
@@ -359,6 +199,8 @@ func (s *Scaler) evaluateScaling() {
 			} else {
 				s.logger.Error("triggerScaling 2 failed")
 			}
+		default:
+			panic("unhandled default case")
 		}
 	}
 	node.LogStateSlog(s.logger) //打印 node
@@ -379,6 +221,8 @@ func (s *Scaler) evaluateScaling() {
 		node.State = Dormant
 		s.triggerDormant()
 		s.logger.Info("the state of node is chagned to dormant from scalingup")
+	default:
+		panic("unhandled default case")
 	}
 	node.LogStateSlog(s.logger) //打印 node
 	return
