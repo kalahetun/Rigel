@@ -11,6 +11,15 @@ sudo apt update && sudo apt upgrade -y
 echo "==> Install basic tools"
 sudo apt install -y git vim wget build-essential ca-certificates
 
+# ---------- tier-1 essential tools ----------
+echo "==> Install tier-1 essential tools (curl / htop / tmux)"
+sudo apt install -y curl htop tmux
+echo "==> Verify tier-1 tools installation"
+curl --version | head -n 1
+htop --version
+tmux -V
+# -------------------------------------------
+
 echo "==> Install Go ${GO_VERSION}"
 if [ -d "/usr/local/go" ]; then
     echo "Found existing /usr/local/go, backing up to /usr/local/go.bak"
