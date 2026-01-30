@@ -73,6 +73,9 @@ func (g *GraphManager) Routing(startContinent string, request UserRouteRequest, 
 	minCost := math.Inf(1)
 	for _, sNode := range startNodes {
 		path, cost := g.Dijkstra(InNode(sNode.PublicIP), cloudFull)
+		if path == nil {
+			continue
+		}
 		tempPaths = append(tempPaths, Path{path, cost})
 		if len(path) > 0 && cost < minCost {
 			minCost = cost

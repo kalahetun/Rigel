@@ -68,7 +68,7 @@ func TestDijkstra(t *testing.T) {
 			{PublicIP: "10.0.0.2", Continent: "Europe"},
 			{PublicIP: "10.0.0.3", Continent: "America"},
 		}),
-		l: slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})),
+		logger: slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})),
 	}
 
 	// 测试用例1：有效最短路径
@@ -109,7 +109,7 @@ func TestDijkstra(t *testing.T) {
 func TestRouting(t *testing.T) {
 	// 1. 初始化GraphManager（所有字段为map类型）
 	gm := &GraphManager{
-		l: slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})),
+		logger: slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})),
 		// nodes: map[string]*storage.NetworkTelemetry
 		nodes: buildNodeMap([]*storage.NetworkTelemetry{
 			{PublicIP: "192.168.1.1", Continent: "Asia"},    // 亚洲起点
@@ -129,7 +129,7 @@ func TestRouting(t *testing.T) {
 	}))
 
 	// 测试用例1：有效大洲路由
-	routingInfo := gm.Routing("Asia", "America", "", logger)
+	routingInfo := gm.Routing("Asia", UserRouteRequest{}, logger)
 	t.Logf("有效大洲路由测试 - 结果: %+v", routingInfo)
 
 	// 验证路由结果非空
@@ -150,14 +150,14 @@ func TestRouting(t *testing.T) {
 	}
 
 	// 测试用例2：起点大洲无节点
-	routingInfo = gm.Routing("Africa", "America", "", logger)
+	routingInfo = gm.Routing("Africa", UserRouteRequest{}, logger)
 	if len(routingInfo.Routing) != 0 {
 		t.Error("无效起点大洲测试失败：期望空RoutingInfo")
 	}
 
 	// 测试用例3：无有效路径
 	gmNoPath := &GraphManager{
-		l: slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})),
+		logger: slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})),
 		nodes: buildNodeMap([]*storage.NetworkTelemetry{
 			{PublicIP: "192.168.1.1", Continent: "Asia"},
 			{PublicIP: "192.168.4.1", Continent: "America"}, // 无连接的终点
@@ -166,7 +166,7 @@ func TestRouting(t *testing.T) {
 			{SourceIp: InNode("192.168.1.1"), DestinationIp: OutNode("192.168.2.1"), EdgeWeight: 5},
 		}),
 	}
-	routingInfo = gmNoPath.Routing("Asia", "America", "", logger)
+	routingInfo = gmNoPath.Routing("Asia", UserRouteRequest{}, logger)
 	if len(routingInfo.Routing) != 0 {
 		t.Error("无路径测试失败：期望空RoutingInfo")
 	}
@@ -175,7 +175,7 @@ func TestRouting(t *testing.T) {
 // BenchmarkDijkstra: 性能基准测试（适配所有map类型）
 func BenchmarkDijkstra(b *testing.B) {
 	gm := &GraphManager{
-		l: slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})),
+		logger: slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})),
 		nodes: buildNodeMap([]*storage.NetworkTelemetry{
 			{PublicIP: "10.0.0.1", Continent: "Asia"},
 			{PublicIP: "10.0.0.2", Continent: "Europe"},
