@@ -16,10 +16,10 @@ import (
 const (
 	HeaderFileName = "X-File-Name" // 通过 Header 传文件名
 	bucketName     = "rigel-data"
-	credFile       = "/home/matth/civil-honor-480405-e0-bdec4345bdd7.json"
-	localBaseDir   = "/home/matth/upload/"   // 本地文件目录前缀
-	HOST           = "http://127.0.0.1:8081" //可以通过geoDNS获取
-	RoutingURL     = "/api/v1/routing"
+	credFile       = "/home/matth/civil-honor-480405-e0-e62b994bbc27.json"
+	localBaseDir   = "/home/matth/upload/" // 本地文件目录前缀
+	//HOST           = "http://127.0.0.1:8081" //可以通过geoDNS获取
+	RoutingURL = "/api/v1/routing"
 )
 
 type ApiResponse struct {

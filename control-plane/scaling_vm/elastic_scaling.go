@@ -262,9 +262,14 @@ func (s *Scaler) triggerScaling1(n int, logger *slog.Logger) (bool, VM) {
 	logger.Info("Scaling node", gcp.Zone, vmName, ip)
 
 	//安装环境 启动 触发envoy
-	err = deployBinaryToServer(username, ip, "22", localBinaryPath, remotePath)
+	err = deployBinaryToServer(username, ip, "22", localPathProxy, remotePathProxy, binaryProxy, logger)
 	if err != nil {
-		logger.Error("部署二进制文件失败", "error", err)
+		logger.Error("部署二进制文件失败", remotePathProxy, "error", err)
+		return false, VM{}
+	}
+	err = deployBinaryToServer(username, ip, "22", localPathPlane, remotePathPlane, binaryPlane, logger)
+	if err != nil {
+		logger.Error("部署二进制文件失败", remotePathPlane, "error", err)
 		return false, VM{}
 	}
 

@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"data-plane/pkg/envoy_manager"
-	model "data-plane/pkg/local_info_report"
 	"data-plane/pkg/local_info_report/reporter"
 	"data-plane/probing"
 	"data-plane/util"
@@ -12,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 )
 
@@ -26,6 +26,12 @@ func InitEnvoy(logger, logger1 *slog.Logger) {
 	}
 	logger.Info("Envoy启动成功，PID: %d", pid)
 }
+
+var (
+	// 锁和状态变量
+	statusLock sync.Mutex
+	status     string = "on" // 默认状态为 "on"
+)
 
 func main() {
 
@@ -58,12 +64,35 @@ func main() {
 	// 2. 初始化Gin路由
 	router := gin.Default()
 
+	router.GET("/healthStateChange", func(c *gin.Context) {
+		// 获取查询参数 "set"
+		set := c.DefaultQuery("set", "on") // 默认值为 "on"，即默认返回 200
+
+		// 锁住状态修改操作，保证并发安全
+		statusLock.Lock()
+		defer statusLock.Unlock()
+
+		// 根据 set 参数来决定状态值和返回的状态码
+		if set == "off" {
+			// set 为 "off"，修改状态为 "off"，并返回 500
+			status = "off"
+		} else {
+			// 默认情况或 set 为 "on" 时，修改状态为 "on"，并返回 200
+			status = "on"
+		}
+		c.JSON(http.StatusOK, "success")
+	})
+
 	router.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, model.ApiResponse{
-			Code: 200,
-			Msg:  "success",
-			Data: gin.H{"time": time.Now().UTC().Format(time.RFC3339)},
-		})
+
+		// 锁住状态修改操作，保证并发安全
+		statusLock.Lock()
+		defer statusLock.Unlock()
+		if status == "off" {
+			c.JSON(http.StatusInternalServerError, "error")
+			return
+		}
+		c.JSON(http.StatusOK, "success")
 	})
 
 	// 3. 初始化上报器
