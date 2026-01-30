@@ -122,6 +122,19 @@ func (g *GraphManager) GetEdge(edgeID string) *Edge {
 	return nil
 }
 
+// FindEdgeBySuffix 根据目标后缀匹配 Edge ID，返回匹配到的 Edge 和是否存在
+func (g *GraphManager) FindEdgeBySuffix(suffix string) (*Edge, bool) {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	for edgeID, edge := range g.edges {
+		if len(edgeID) >= len(suffix) && edgeID[len(edgeID)-len(suffix):] == suffix {
+			return edge, true
+		}
+	}
+	return nil, false
+}
+
 func InNode(n string) string {
 	return n + "-1"
 }

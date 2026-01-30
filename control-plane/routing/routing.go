@@ -48,6 +48,7 @@ func (g *GraphManager) Routing(startContinent string, request UserRouteRequest, 
 		}
 	}
 
+	//client所在大区没有接入点 直接公网传输
 	if len(startNodes) == 0 {
 		logger.Warn("No nodes found for start continent", "startContinent", startContinent)
 		return RoutingInfo{}
@@ -55,6 +56,12 @@ func (g *GraphManager) Routing(startContinent string, request UserRouteRequest, 
 
 	cloudFull := fmt.Sprintf("%s_%s_%s",
 		request.CloudProvider, request.CloudRegion, request.CloudCity)
+
+	//没有到该cloud storage的路径
+	if _, ok := g.FindEdgeBySuffix(cloudFull); !ok {
+		logger.Warn("No cloud node found", "cloudFull", cloudFull)
+		return RoutingInfo{}
+	}
 
 	// 遍历 start × end 节点组合，寻找最短路径
 	var bestPath []string
