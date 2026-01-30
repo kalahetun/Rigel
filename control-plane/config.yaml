@@ -1,33 +1,31 @@
 # config.yaml
 envoy_path: "/home/matth/envoy"       # Envoy 可执行文件路径
 server_list:                             # Etcd 集群所有节点
-  - "10.0.0.1:2379"
-  - "10.0.0.2:2379"
-  - "10.0.0.3:2379"
-server_ip: "10.0.0.1"                    # 当前节点 IP
+  - "34.82.65.74:2379"
+  - "34.163.132.176:2379"
+  - "34.104.169.146:2379"
+server_ip: "34.82.65.74"                    # 当前节点 IP
 data_dir: "/home/matth/etcd"                # Etcd 数据目录
 #name: "etcd-1"                            # 当前节点名字
 
 node:
   provider: "gcp"        # gcp | aws | azure | vultr | digitalocean | onprem
-  continent: "Asia"      # ONLY field used for bandwidth / cost query
-  country: "JP"          # 可选，用于日志/解释/未来扩展
-  city: "Tokyo"          # 可选，用于日志/解释/未来扩展
+  continent: "NorthAmerica"      # ONLY field used for bandwidth / cost query
+  country: "US"          # 可选，用于日志/解释/未来扩展
+  city: "west1-c"          # 可选，用于日志/解释/未来扩展
 
   ip:
-    private: "10.0.0.1"  # 内网 IP
-    public: "34.92.18.7" # 公网 IP 作为hostname
+    private: "10.138.0.4"  # 内网 IP
+    public: "34.82.65.74" # 公网 IP 作为hostname
 
   # 节点相关配置结束
 
 proxy:
   ips:
-    - "10.0.1.10"
-    - "10.0.1.11"
-    - "10.0.1.12"
+    - "34.82.65.74"
 
 gcp:
   projectID: "civil-honor-480405-e0"      # 替换为你的 GCP 项目 ID
-  zone: "us-central1-a"                   # 机房
+  zone: "us-west1-c"                   # 机房
   vmPrefix: "scaling-vm-"                     # VM 名称前缀（不是具体名字）
-  credFile: "/home/matth/civil-honor-480405-e0-bdec4345bdd7.json"  # GCP 凭证文件路径
+  credFile: "/home/matth/civil-honor-480405-e0-e62b994bbc27.json"  # GCP 凭证文件路径
