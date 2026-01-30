@@ -3,6 +3,7 @@ package routing
 import (
 	"control-plane/storage"
 	"control-plane/util"
+	"fmt"
 	"log/slog"
 	"math"
 	"sync"
@@ -156,14 +157,15 @@ func (g *GraphManager) AddNode(node *storage.NetworkTelemetry) {
 		if v.Target.TargetType == "cloud_storage" {
 			pp, _ := util.GetBandwidthPrice(node.Provider, node.Continent, v.Target.Region, g.logger)
 			r = EdgeRisk(0, pp, v.PacketLoss, g.logger)
+			cloudFull := fmt.Sprintf("%s_%s_%s", v.Target.Provider, v.Target.Region, v.Target.City)
 			g.edges[in+"->"+k] = &Edge{
 				SourceIp:        out,
-				DestinationIp:   k,
+				DestinationIp:   cloudFull,
 				SourceProvider:  node.Provider,
 				SourceContinent: node.Continent,
 				EdgeWeight:      r,
 			}
-			g.logger.Info("EdgeRisk", out+"->"+k, r)
+			g.logger.Info("EdgeRisk", out+"->"+cloudFull, r)
 		}
 	}
 

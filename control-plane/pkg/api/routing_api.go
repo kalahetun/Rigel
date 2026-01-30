@@ -22,16 +22,6 @@ func NewUserRoutingAPIHandler(gm *routing.GraphManager, logger *slog.Logger) *Us
 	}
 }
 
-// Post请求Body结构
-type UserRouteRequest struct {
-	FileName   string `json:"fileName"`        // 文件名
-	Priority   int    `json:"priority"`        // 文件优先级
-	ClientCont string `json:"clientContinent"` // 客户端大区
-	ServerIP   string `json:"serverIP"`        // 目标服务器 IP 或域名
-	ServerCont string `json:"serverContinent"` // 目标服务器大区
-	Username   string `json:"username"`        // 客户端用户名
-}
-
 // RouteInfo 返回给用户的结构
 //type PathInfo struct {
 //	Hops string `json:"hops"`
@@ -53,16 +43,11 @@ func (h *UserRoutingAPIHandler) GetUserRoute(c *gin.Context) {
 
 	// 1️⃣ 解析 header 信息（如果有）
 	clientIP := c.GetHeader("X-Client-IP")
-	if clientIP == "" {
-		clientIP = c.ClientIP() // fallback
-	}
-
 	filename := c.GetHeader("X-File-Name")
-
 	username := c.GetHeader("X-User-Name")
 
 	// 2️⃣ 解析 body JSON
-	var req UserRouteRequest
+	var req routing.UserRouteRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		resp.Code = 400
 		resp.Msg = "请求体解析失败：" + err.Error()
@@ -78,12 +63,15 @@ func (h *UserRoutingAPIHandler) GetUserRoute(c *gin.Context) {
 		"priority", req.Priority,
 		"clientContinent", req.ClientCont,
 		"serverIP", req.ServerIP,
-		"serverContinent", req.ServerCont,
+		//"serverContinent", req.ServerCont,
+		"cloudProvider", req.CloudProvider,
+		"cloudRegion", req.CloudRegion,
+		"cloudCity", req.CloudCity,
 	)
 
 	// 3️⃣ 调用 GraphManager 获取最优路径
 	// 可以把 GetBestPath 改成支持从客户端到服务器
-	paths := h.GM.Routing(req.ClientCont, req.ServerCont, req.ServerIP, h.Logger)
+	paths := h.GM.Routing(req.ClientCont, req, h.Logger)
 
 	resp.Code = 200
 	resp.Msg = "成功获取路径"
