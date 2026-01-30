@@ -96,7 +96,7 @@ func (g *GraphManager) Routing(startContinent, endContinent, serverIP string, lo
 	merged += "," + serverIP
 
 	//计算速率
-	rate := ComputeAdmissionRate(Task{WeightU: 1, MinRate: 10, MaxRate: 20}, minCost, 1.0, 100, g.l)
+	rate := ComputeAdmissionRate(Task{WeightU: 1, MinRate: 10, MaxRate: 20}, minCost, 1.0, 100, g.logger)
 
 	return RoutingInfo{[]PathInfo{PathInfo{merged, int64(rate)}}}
 }

@@ -23,10 +23,10 @@ func ComputeAdmissionRate(
 	cost float64,
 	alpha float64,
 	V float64,
-	l *slog.Logger,
+	logger *slog.Logger,
 ) float64 {
 
-	l.Info("ComputeAdmissionRate", "task", task, "cost", cost, "alpha", alpha, "V", V)
+	logger.Info("ComputeAdmissionRate", "task", task, "cost", cost, "alpha", alpha, "V", V)
 
 	// Step 1: compute path cost C_k^*(t)
 	var pathCost float64 = cost
@@ -42,7 +42,7 @@ func ComputeAdmissionRate(
 		1.0/alpha,
 	)
 
-	l.Info("ComputeAdmissionRate", "rawRate", rawRate)
+	logger.Info("ComputeAdmissionRate", "rawRate", rawRate)
 
 	// Step 3: projection to a feasible region
 	if rawRate < task.MinRate {
