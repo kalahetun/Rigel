@@ -1,6 +1,9 @@
 package local_info_report
 
-import "time"
+import (
+	"data-plane/util"
+	"time"
+)
 
 // VMReport 数据平面上报给控制平面的核心结构体（全量字段）
 type VMReport struct {
@@ -114,9 +117,10 @@ type ProxyStatus struct {
 }
 
 type LinkCongestionInfo struct {
-	TargetIP       string  `json:"target_ip"`       // 目标节点 IP
-	PacketLoss     float64 `json:"packet_loss"`     // 丢包率，百分比
-	WeightedCache  float64 `json:"weighted_cache"`  // 链路缓存情况（可选）
-	AverageLatency float64 `json:"average_latency"` // 平均延迟（毫秒）
-	BandwidthUsage float64 `json:"bandwidth_usage"` // 带宽利用率（可选百分比）
+	TargetIP       string         `json:"target_ip"` // 目标节点 IP
+	Target         util.ProbeTask `json:"target"`
+	PacketLoss     float64        `json:"packet_loss"`     // 丢包率，百分比
+	WeightedCache  float64        `json:"weighted_cache"`  // 链路缓存情况（可选）
+	AverageLatency float64        `json:"average_latency"` // 平均延迟（毫秒）
+	BandwidthUsage float64        `json:"bandwidth_usage"` // 带宽利用率（可选百分比）
 }

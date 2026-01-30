@@ -6,16 +6,77 @@ import (
 	"control-plane/util"
 	model "control-plane/vm_info"
 	"encoding/json"
+	"fmt"
 	"github.com/gin-gonic/gin"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
+)
+
+const (
+	cloudStorageProbeTargets = "cloud_storage_probe_targets.json"
+)
+
+var (
+	CloudStorageMap map[string]CloudStorageTarget
 )
 
 // NodeProbeAPIHandler 提供获取节点探测任务的接口
 type NodeProbeAPIHandler struct {
 	etcdClient *clientv3.Client
 	logger     *slog.Logger
+}
+
+type CloudStorageTarget struct {
+	Provider string `json:"provider"`
+	IP       string `json:"ip"`
+	Port     int    `json:"port"`
+	Region   string `json:"region"`
+	City     string `json:"city"`
+}
+
+//type ProbeTask struct {
+//	TargetType string // "node" | "cloud_storage"
+//	Provider   string // node 可为空，cloud storage 用 google/aws/azure
+//	IP         string
+//	Port       int
+//	Region     string // cloud storage 用，node 可为空
+//	City       string // cloud storage 用，node 可为空
+//}
+
+func LoadCloudStorageTargetsFromExeDir() (map[string]CloudStorageTarget, error) {
+	// 1. 获取可执行文件路径
+	exePath, err := os.Executable()
+	if err != nil {
+		return nil, fmt.Errorf("get executable path failed: %w", err)
+	}
+
+	// 2. 解析可执行文件所在目录
+	exeDir := filepath.Dir(exePath)
+
+	// 3. 拼出配置文件完整路径
+	targetFile := filepath.Join(exeDir, cloudStorageProbeTargets)
+
+	// 4. 读取文件
+	data, err := os.ReadFile(targetFile)
+	if err != nil {
+		return nil, fmt.Errorf("read cloud storage targets file failed (%s): %w", targetFile, err)
+	}
+
+	// 5. 反序列化 JSON
+	var targets []CloudStorageTarget
+	if err := json.Unmarshal(data, &targets); err != nil {
+		return nil, fmt.Errorf("unmarshal cloud storage targets failed: %w", err)
+	}
+
+	cloudStorageMap := make(map[string]CloudStorageTarget)
+	for _, v := range targets {
+		cloudStorageMap[v.IP] = v
+	}
+
+	return cloudStorageMap, nil
 }
 
 // NewNodeProbeAPIHandler 初始化
@@ -46,7 +107,7 @@ func (h *NodeProbeAPIHandler) GetProbeTasks(c *gin.Context) {
 	}
 
 	// 2. 解析每个节点JSON，生成Targets列表
-	tasks := []string{}
+	var tasks []util.ProbeTask
 	ip_, _ := util.GetPublicIP()
 	for k, nodeJson := range nodeMap {
 		if k == ip_ {
@@ -58,7 +119,22 @@ func (h *NodeProbeAPIHandler) GetProbeTasks(c *gin.Context) {
 			continue
 		}
 		//选取controller作为 node代理节点进行探测
-		tasks = append(tasks, telemetry.PublicIP+":8081")
+		tasks = append(tasks, util.ProbeTask{
+			TargetType: "node",
+			IP:         telemetry.PublicIP,
+			Port:       8081,
+		})
+	}
+
+	for _, v := range CloudStorageMap {
+		tasks = append(tasks, util.ProbeTask{
+			TargetType: "cloud_storage",
+			Provider:   v.Provider,
+			IP:         v.IP,
+			Port:       v.Port,
+			Region:     v.Region,
+			City:       v.City,
+		})
 	}
 
 	// 3. 返回JSON

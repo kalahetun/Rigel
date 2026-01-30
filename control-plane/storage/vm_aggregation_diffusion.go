@@ -33,13 +33,23 @@ type NodeCongestionInfo struct {
 	CalculateTime      time.Time `json:"calculate_time"`       // 计算时间
 }
 
+//type ProbeTask struct {
+//	TargetType string // "node" | "cloud_storage"
+//	Provider   string // node 可为空，cloud storage 用 google/aws/azure
+//	IP         string
+//	Port       int
+//	Region     string // cloud storage 用，node 可为空
+//	City       string // cloud storage 用，node 可为空
+//}
+
 // 链路拥塞信息
 type LinkCongestionInfo struct {
-	TargetIP       string  `json:"target_ip"`       // 目标节点 IP
-	PacketLoss     float64 `json:"packet_loss"`     // 丢包率，百分比
-	WeightedCache  float64 `json:"weighted_cache"`  // 链路缓存情况（可选）
-	AverageLatency float64 `json:"average_latency"` // 平均延迟（毫秒）
-	BandwidthUsage float64 `json:"bandwidth_usage"` // 带宽利用率（可选百分比）
+	TargetIP       string         `json:"target_ip"` // 目标节点 IP
+	Target         util.ProbeTask `json:"target"`
+	PacketLoss     float64        `json:"packet_loss"`     // 丢包率，百分比
+	WeightedCache  float64        `json:"weighted_cache"`  // 链路缓存情况（可选）
+	AverageLatency float64        `json:"average_latency"` // 平均延迟（毫秒）
+	BandwidthUsage float64        `json:"bandwidth_usage"` // 带宽利用率（可选百分比）
 }
 
 // 节点遥测数据
@@ -79,8 +89,10 @@ func CalcClusterWeightedAvg(fs *FileStorage, interval time.Duration,
 			totalWeightedCache float64 // 总加权缓存：Σ(ActiveConnections*AvgCachePerConn)
 			totalActiveConn    float64 // 总活跃连接数：Σ(ActiveConnections)
 			totalLinksCong     map[string][]float64
+			totalLinksCong_    map[string]util.ProbeTask
 		)
 		totalLinksCong = make(map[string][]float64)
+		totalLinksCong_ = make(map[string]util.ProbeTask)
 
 		// 6. 遍历GetAll()结果，累加统计值
 		for _, report := range allReports {
@@ -88,6 +100,12 @@ func CalcClusterWeightedAvg(fs *FileStorage, interval time.Duration,
 			avgCache := report.Congestion.AvgCachePerConn
 			totalWeightedCache += activeConn * avgCache
 			totalActiveConn += activeConn
+
+			//探测任务copy
+			for _, v := range report.LinksCongestion {
+				totalLinksCong_[v.TargetIP] = v.Target
+				break
+			}
 
 			//处理链路
 			for _, v := range report.LinksCongestion {
@@ -147,7 +165,7 @@ func CalcClusterWeightedAvg(fs *FileStorage, interval time.Duration,
 
 		//放入queue 为自动化扩缩容做准备
 		queue.Push(result)
-		
+
 		logger.Info("定时计算完成", string(jsonData))
 	}
 }

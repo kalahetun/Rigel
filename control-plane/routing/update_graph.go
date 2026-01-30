@@ -48,18 +48,18 @@ func (e *Edge) Weight() float64 {
 // ----------------------- GraphManager -----------------------
 // 全局图管理器，维护 edges 和节点
 type GraphManager struct {
-	mu    sync.RWMutex
-	edges map[string]*Edge                     // key: "source->destination"
-	nodes map[string]*storage.NetworkTelemetry // storage.NetworkTelemetry
-	l     *slog.Logger
+	mu     sync.RWMutex
+	edges  map[string]*Edge                     // key: "source->destination"
+	nodes  map[string]*storage.NetworkTelemetry // storage.NetworkTelemetry
+	logger *slog.Logger
 }
 
 // NewGraphManager 初始化
 func NewGraphManager(logger *slog.Logger) *GraphManager {
 	return &GraphManager{
-		edges: make(map[string]*Edge),
-		nodes: make(map[string]*storage.NetworkTelemetry),
-		l:     logger,
+		edges:  make(map[string]*Edge),
+		nodes:  make(map[string]*storage.NetworkTelemetry),
+		logger: logger,
 	}
 }
 
@@ -141,7 +141,7 @@ func (g *GraphManager) AddNode(node *storage.NetworkTelemetry) {
 	// 2. 添加虚拟边（in->out）
 	in := InNode(node.PublicIP)
 	out := OutNode(node.PublicIP)
-	r := EdgeRisk(node.NodeCongestion.AvgWeightedCache, 0, 0, g.l)
+	r := EdgeRisk(node.NodeCongestion.AvgWeightedCache, 0, 0, g.logger)
 	g.edges[in+"->"+out] = &Edge{
 		SourceIp:        in,
 		DestinationIp:   out,
@@ -149,20 +149,36 @@ func (g *GraphManager) AddNode(node *storage.NetworkTelemetry) {
 		SourceContinent: node.Continent,
 		EdgeWeight:      r,
 	}
-	g.l.Info("EdgeRisk", in+"->"+out, r)
+	g.logger.Info("EdgeRisk", in+"->"+out, r)
+
+	//添加节点到cloud storage server
+	for k, v := range node.LinksCongestion {
+		if v.Target.TargetType == "cloud_storage" {
+			pp, _ := util.GetBandwidthPrice(node.Provider, node.Continent, v.Target.Region, g.logger)
+			r = EdgeRisk(0, pp, v.PacketLoss, g.logger)
+			g.edges[in+"->"+k] = &Edge{
+				SourceIp:        out,
+				DestinationIp:   k,
+				SourceProvider:  node.Provider,
+				SourceContinent: node.Continent,
+				EdgeWeight:      r,
+			}
+			g.logger.Info("EdgeRisk", out+"->"+k, r)
+		}
+	}
 
 	// 3. 添加 inter-node 边：当前节点的 out -> 其他节点的 in
 	for id, other := range g.nodes {
 		if id == node.PublicIP {
 			continue
 		}
-		pp, _ := util.GetBandwidthPrice(node.Provider, node.Continent, other.Continent, g.l)
+		pp, _ := util.GetBandwidthPrice(node.Provider, node.Continent, other.Continent, g.logger)
 		var ll float64 = 0
 		if val, ok := node.LinksCongestion[id]; ok && val.PacketLoss > 0 {
 			ll = val.PacketLoss
 		}
 		// 新节点 out -> 老节点 in
-		r = EdgeRisk(0, pp, ll, g.l)
+		r = EdgeRisk(0, pp, ll, g.logger)
 		g.edges[out+"->"+InNode(id)] = &Edge{
 			SourceIp:        out,
 			DestinationIp:   InNode(id),
@@ -170,15 +186,15 @@ func (g *GraphManager) AddNode(node *storage.NetworkTelemetry) {
 			SourceContinent: node.Continent,
 			EdgeWeight:      r,
 		}
-		g.l.Info("EdgeRisk", out+"->"+InNode(id), r)
+		g.logger.Info("EdgeRisk", out+"->"+InNode(id), r)
 
-		pp_, _ := util.GetBandwidthPrice(other.Provider, other.Continent, node.Continent, g.l)
+		pp_, _ := util.GetBandwidthPrice(other.Provider, other.Continent, node.Continent, g.logger)
 		//var ll_ float64 = 0
 		//if val, ok := node.LinksCongestion[id]; ok && val.PacketLoss > 0 {
 		//	ll_ = val.PacketLoss
 		//}
 		// 老节点 out -> 新节点 in
-		r = EdgeRisk(0, pp_, ll, g.l)
+		r = EdgeRisk(0, pp_, ll, g.logger)
 		g.edges[OutNode(id)+"->"+in] = &Edge{
 			SourceIp:        OutNode(id),
 			DestinationIp:   in,
@@ -186,7 +202,7 @@ func (g *GraphManager) AddNode(node *storage.NetworkTelemetry) {
 			SourceContinent: other.Continent,
 			EdgeWeight:      r,
 		}
-		g.l.Info("EdgeRisk", OutNode(id)+"->"+in, r)
+		g.logger.Info("EdgeRisk", OutNode(id)+"->"+in, r)
 	}
 
 	return

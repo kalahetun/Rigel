@@ -93,6 +93,9 @@ func main() {
 	}
 	defer cli.Close()
 
+	// 1. 获取所有节点探测任务	cloud storage服务器的
+	api.CloudStorageMap, _ = api.LoadCloudStorageTargetsFromExeDir()
+
 	//获取全量前缀信息 然后初始化 routing map
 	r := routing.NewGraphManager(logger)
 	nodeMap, _ := etcd_client.GetPrefixAll(cli, "/routing/", logger)

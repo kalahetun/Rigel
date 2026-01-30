@@ -2,19 +2,21 @@ package probing
 
 import (
 	"context"
+	"data-plane/util"
 	"log/slog"
 	"net"
+	"strconv"
 	"sync"
 	"time"
 )
 
 // Result 保存探测结果
 type Result struct {
-	Target   string        `json:"target"`    // 探测目标 IP/host
-	Attempts int           `json:"attempts"`  // 探测次数
-	Failures int           `json:"failures"`  // 失败次数
-	LossRate float64       `json:"loss_rate"` // 丢包率
-	AvgRTT   time.Duration `json:"avg_rtt"`   // 成功连接平均时延
+	Target   util.ProbeTask `json:"target"`    // 探测目标 IP/host
+	Attempts int            `json:"attempts"`  // 探测次数
+	Failures int            `json:"failures"`  // 失败次数
+	LossRate float64        `json:"loss_rate"` // 丢包率
+	AvgRTT   time.Duration  `json:"avg_rtt"`   // 成功连接平均时延
 }
 
 // Config 配置
@@ -38,7 +40,7 @@ func updateLatestResults(results []Result) {
 	mu.Lock()
 	defer mu.Unlock()
 	for _, r := range results {
-		latestResults[r.Target] = r
+		latestResults[r.Target.IP] = r
 	}
 }
 
@@ -111,8 +113,8 @@ func StartProbePeriodically(ctx context.Context, controlHost string, cfg Config,
 
 // ----------------- 单轮探测函数 -----------------
 
-func doProbeLossRTT(targets []string, cfg Config, logger *slog.Logger) {
-	jobs := make(chan string)
+func doProbeLossRTT(targets []util.ProbeTask, cfg Config, logger *slog.Logger) {
+	jobs := make(chan util.ProbeTask)
 	var wg sync.WaitGroup
 	roundResults := make([]Result, 0, len(targets))
 	var roundMu sync.Mutex
@@ -129,7 +131,7 @@ func doProbeLossRTT(targets []string, cfg Config, logger *slog.Logger) {
 
 				for a := 0; a < cfg.Attempts; a++ {
 					start := time.Now()
-					conn, err := net.DialTimeout("tcp", target, cfg.Timeout)
+					conn, err := net.DialTimeout("tcp", target.IP+":"+strconv.Itoa(target.Port), cfg.Timeout)
 					rtt := time.Since(start)
 
 					if err != nil {
@@ -154,7 +156,11 @@ func doProbeLossRTT(targets []string, cfg Config, logger *slog.Logger) {
 					AvgRTT:   avgRTT,
 				}
 
-				logger.Info(result.Target, slog.Any("result", result))
+				logger.Info(result.Target.IP,
+					result.Target.Port,
+					result.Target.Provider,
+					result.Target.TargetType,
+					slog.Any("result", result))
 
 				// 收集到本轮结果
 				roundMu.Lock()

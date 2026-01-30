@@ -11,6 +11,10 @@ import (
 // 全局模型变量
 var bandwidthModel *BandwidthCostModel
 
+const (
+	bandwidthPricing = "bandwidth_pricing.json"
+)
+
 type BandwidthCostModel struct {
 	Unit       string                        `json:"unit"`
 	Dimension  string                        `json:"dimension"`
@@ -27,7 +31,7 @@ func LoadBandwidthCost(logger *slog.Logger) error {
 	}
 
 	exeDir := filepath.Dir(exePath)
-	costFile := filepath.Join(exeDir, "bandwidth_cost.json")
+	costFile := filepath.Join(exeDir, bandwidthPricing)
 	logger.Info("加载带宽价格文件", "file", costFile)
 
 	data, err := os.ReadFile(costFile)

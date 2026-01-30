@@ -1,0 +1,9 @@
+[
+  {
+    "provider": "gcp",
+    "ip": "142.250.72.0",
+    "port": 80,
+    "region": "NorthAmerica",
+    "city": "us-central1(Iowa)"
+  }
+]
