@@ -1,2 +1,2 @@
 port: "8080"
-control_host: "http://34.82.65.74:8081"
+control_host: "http://34.163.132.176:8081"
