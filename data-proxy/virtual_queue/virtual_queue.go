@@ -75,8 +75,12 @@ func CheckCongestion(allBufferSize int, logger *slog.Logger) ProxyStatus {
 	s.ProcessMem = proxyMem
 
 	usageRatio := float64(proxyMem) / float64(totalMem)
-	logger.Info("Proxy memory: %v MiB, Total memory: %v MiB, Ratio: %.2f%%\n",
-		proxyMem/1024/1024, totalMem/1024/1024, usageRatio*100)
+	logger.Info(fmt.Sprintf(
+		"Proxy memory: %v MiB, Total memory: %v MiB, Ratio: %.2f%%",
+		proxyMem/1024/1024,
+		totalMem/1024/1024,
+		usageRatio*100,
+	))
 
 	//if usageRatio > WarningLevelforBuffer {
 	perConnCache := allBufferSize * 1024 // 每连接 128 KB
@@ -87,19 +91,19 @@ func CheckCongestion(allBufferSize int, logger *slog.Logger) ProxyStatus {
 	s.ActiveConnections = active
 
 	avgCache := float64(proxyMem) / float64(active)
-	logger.Info("Active connections: %d, Average per-connection memory: %.2f KB\n",
-		active, avgCache/1024)
+	logger.Info(fmt.Sprintf(
+		"Active connections: %d, Average per-connection memory: %.2f KB",
+		active,
+		avgCache/1024,
+	))
+
 	s.AvgCachePerConn = avgCache
-	s.CacheUsageRatio = float64(avgCache) / float64(perConnCache)
+	s.CacheUsageRatio = avgCache / float64(perConnCache)
 
 	if s.CacheUsageRatio > WarningLevelforBuffer {
 		logger.Warn("Potential congestion: average per-connection buffer near 128KB")
 	}
 
-	logger.Info("Proxy status: %+v", s)
-	return s
-	//}
-
-	logger.Info("Proxy status: %+v", s)
+	logger.Info(fmt.Sprintf("Proxy status: %+v", s))
 	return s
 }
