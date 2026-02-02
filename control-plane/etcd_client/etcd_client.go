@@ -101,10 +101,11 @@ func GetKey(cli *clientv3.Client, key string, logger *slog.Logger) {
 //}
 
 func WatchPrefix(cli *clientv3.Client, prefix string, callback func(eventType, key, value string, logger *slog.Logger), logger *slog.Logger) {
+	logger.Info("Start watch prefix", slog.String("prefix", prefix))
 	go func() {
 		rch := cli.Watch(context.Background(), prefix, clientv3.WithPrefix(), clientv3.WithPrevKV())
-		for wresp := range rch {
-			for _, ev := range wresp.Events {
+		for resp := range rch {
+			for _, ev := range resp.Events {
 				eventType := ""
 				switch ev.Type {
 				case clientv3.EventTypePut:

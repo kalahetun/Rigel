@@ -110,15 +110,19 @@ func main() {
 
 	//获取全量前缀信息 然后初始化 routing map
 	r := routing.NewGraphManager(logger)
-	nodeMap, _ := etcd_client.GetPrefixAll(cli, "/routing/", logger)
-	logger.Info("获取全量前缀信息成功", "nodeMap", nodeMap)
-	for k, nodeJson := range nodeMap {
-		var tel storage.NetworkTelemetry
-		if err := json.Unmarshal([]byte(nodeJson), &tel); err != nil {
-			logger.Warn("解析节点JSON失败，跳过", slog.String("ip", k), slog.Any("error", err))
-			continue
+	nodeMap, err := etcd_client.GetPrefixAll(cli, "/routing/", logger)
+	if err != nil {
+		logger.Warn("获取全量前缀信息失败", "error", err)
+	} else {
+		logger.Info("获取全量前缀信息成功", "nodeMap", nodeMap)
+		for k, nodeJson := range nodeMap {
+			var tel storage.NetworkTelemetry
+			if err := json.Unmarshal([]byte(nodeJson), &tel); err != nil {
+				logger.Warn("解析节点JSON失败，跳过", slog.String("ip", k), slog.Any("error", err))
+				continue
+			}
+			r.AddNode(&tel)
 		}
-		r.AddNode(&tel)
 	}
 
 	// 监听 /routing/ 前缀 更新routing map
@@ -147,7 +151,7 @@ func main() {
 	//启动virtual queue逻辑
 	exe, _ := os.Executable()
 	storageDir := filepath.Join(filepath.Dir(exe), "vm_local_info_storage")
-	//storageDir := filepath.Join(".", "vm_local_info_storage")
+	logger.Info("storageDir", storageDir)
 	s, _ := storage.NewFileStorage(storageDir, 0, logger)
 	queue := util.NewFixedQueue(20)
 	storage.CalcClusterWeightedAvg(s, 30*time.Second, cli, queue, logger)
