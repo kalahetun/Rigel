@@ -59,7 +59,13 @@ func main() {
 	//	Level: slog.LevelInfo,
 	//}))
 
-	util.Config_, _ = util.ReadYamlConfig(logger)
+	util.Config_, err = util.ReadYamlConfig(logger)
+	if err != nil {
+		logger.Error("read config failed", "error", err)
+		return
+	} else {
+		logger.Error("print config info", util.Config_)
+	}
 
 	// 2. 初始化Gin路由
 	router := gin.Default()
