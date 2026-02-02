@@ -1,9 +1,9 @@
 # config-.yaml
 envoy_path: "/home/matth/envoy"       # Envoy 可执行文件路径
 server_list:                             # Etcd 集群所有节点
-  - "34.163.132.176:2379"
-  - "34.104.169.146:2379"
-server_ip: "34.104.169.146"                    # 当前节点 IP
+  - "34.96.131.245:2379"
+  - "34.141.236.188:2379"
+server_ip: "34.96.131.245"                    # 当前节点 IP
 data_dir: "/home/matth/etcd"                # Etcd 数据目录
 #name: "etcd-1"                            # 当前节点名字
 
@@ -14,14 +14,14 @@ node:
   city: "asia-northeast1-b"          # 可选，用于日志/解释/未来扩展
 
   ip:
-    private: "10.146.0.2"  # 内网 IP
-    public: "34.104.169.146" # 公网 IP 作为hostname
+    private: "10.170.0.2"  # 内网 IP
+    public: "34.96.131.245" # 公网 IP 作为hostname
 
   # 节点相关配置结束
 
 proxy:
   ips:
-    - "34.104.169.146"
+    - "34.96.131.245"
 
 gcp:
   projectID: "civil-honor-480405-e0"      # 替换为你的 GCP 项目 ID
