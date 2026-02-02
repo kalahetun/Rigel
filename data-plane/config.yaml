@@ -1,2 +1,2 @@
 envoy_path: "/home/matth/envoy"
-control_host: "http://34.163.132.176:8081"
+control_host: "http://127.0.0.1:8081"

@@ -50,7 +50,11 @@ func main() {
 	}))
 
 	// 读取配置文件
-	util.Config_, _ = util.ReadYamlConfig(logger)
+	util.Config_, err = util.ReadYamlConfig(logger)
+	if err != nil {
+		logger.Error("Failed to read config file: ", err.Error())
+		return
+	}
 	uu := util.Config_
 	b, _ := json.Marshal(uu)
 	logger.Info("读取配置文件成功", "config", b)

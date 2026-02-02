@@ -224,7 +224,15 @@ func main() {
 		Level: slog.LevelInfo,
 	}))
 
-	config.Config_, _ = config.ReadYamlConfig(logger)
+	//logger.Error("log init success")
+
+	config.Config_, err = config.ReadYamlConfig(logger)
+	if err != nil {
+		logger.Error("read config failed", "error", err)
+		return
+	} else {
+		logger.Error("print config info", config.Config_)
+	}
 
 	router := gin.Default()
 

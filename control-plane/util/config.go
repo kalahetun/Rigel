@@ -64,8 +64,8 @@ func ReadYamlConfig(logger *slog.Logger) (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("获取程序路径失败: %w", err)
 	}
-	exeDir := filepath.Dir(exePath)                     // 程序所在目录
-	configPath := filepath.Join(exeDir, "config-.yaml") // 拼接同层级的config.yaml路径
+	exeDir := filepath.Dir(exePath)                    // 程序所在目录
+	configPath := filepath.Join(exeDir, "config.yaml") // 拼接同层级的config.yaml路径
 
 	// 2. 校验配置文件是否存在
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
@@ -76,8 +76,9 @@ func ReadYamlConfig(logger *slog.Logger) (*Config, error) {
 	content, err := os.ReadFile(configPath)
 	if err != nil {
 		return nil, fmt.Errorf("读取配置文件失败: %w", err)
+	} else {
+		logger.Info("读取配置文件成功", "path", configPath)
 	}
-
 	// 4. 解析yaml到结构体
 	var config Config
 	if err := yaml.Unmarshal(content, &config); err != nil {

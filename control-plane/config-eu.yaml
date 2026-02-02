@@ -1,9 +1,9 @@
 # config-.yaml
 envoy_path: "/home/matth/envoy"       # Envoy 可执行文件路径
 server_list:                             # Etcd 集群所有节点
-  - "34.96.131.245:2379"
-  - "34.141.236.188:2379"
-server_ip: "34.141.236.188"                    # 当前节点 IP
+  - "10.164.0.2:2379"
+  - "10.170.0.2:2379"
+server_ip: "10.164.0.2"                    # 当前节点 IP
 data_dir: "/home/matth/etcd"                # Etcd 数据目录
 #name: "etcd-1"                            # 当前节点名字
 
