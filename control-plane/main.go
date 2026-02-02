@@ -100,7 +100,13 @@ func main() {
 	defer cli.Close()
 
 	// 1. 获取所有节点探测任务	cloud storage服务器的
-	api.CloudStorageMap, _ = api.LoadCloudStorageTargetsFromExeDir()
+	api.CloudStorageMap, err = api.LoadCloudStorageTargetsFromExeDir()
+	if err != nil {
+		logger.Error("Failed to load cloud storage targets: ", err.Error())
+		return
+	} else {
+		logger.Info("Load cloud storage targets success", "targets", api.CloudStorageMap)
+	}
 
 	//获取全量前缀信息 然后初始化 routing map
 	r := routing.NewGraphManager(logger)
