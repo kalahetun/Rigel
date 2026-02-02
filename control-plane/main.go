@@ -81,9 +81,11 @@ func main() {
 	}
 
 	// 初始化etcd客户端
-	serverIps := []string{uu.ServerIP}
-	if serverIps[0] == "" && len(uu.ServerList) > 0 {
-		serverIps = uu.ServerList
+	var serverIps []string
+	if len(uu.ServerList) > 0 {
+		for _, v := range uu.ServerList {
+			serverIps = append(serverIps, v+":2379")
+		}
 	} else {
 		logger.Error("Failed to get serverIps: %v", serverIps)
 		return

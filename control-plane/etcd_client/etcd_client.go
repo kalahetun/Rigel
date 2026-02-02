@@ -146,6 +146,11 @@ func GetPrefixAll(cli *clientv3.Client, prefix string, logger *slog.Logger) (map
 		return nil, err
 	}
 
+	if len(resp.Kvs) == 0 {
+		logger.Info("No keys found for prefix", slog.String("prefix", prefix))
+		return nil, nil
+	}
+
 	// 3. 初始化返回结果（map 存储所有 Key-Value，方便调用方使用）
 	prefixData := make(map[string]string, len(resp.Kvs))
 
