@@ -1,9 +1,9 @@
 [
   {
     "provider": "gcp",
-    "ip": "142.250.72.0",
+    "ip": "34.39.223.93",
     "port": 80,
-    "region": "NorthAmerica",
-    "city": "us-central1-Iowa"
+    "region": "SouthAmerica",
+    "city": "southamerica-east1-c"
   }
 ]
