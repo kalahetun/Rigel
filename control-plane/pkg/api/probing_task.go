@@ -110,14 +110,16 @@ func (h *NodeProbeAPIHandler) GetProbeTasks(c *gin.Context) {
 	var tasks []util.ProbeTask
 	ip_, _ := util.GetPublicIP()
 	for k, nodeJson := range nodeMap {
-		if k == ip_ {
-			continue
-		}
 		var telemetry storage.NetworkTelemetry
 		if err := json.Unmarshal([]byte(nodeJson), &telemetry); err != nil {
 			h.logger.Warn("解析节点JSON失败，跳过", slog.String("ip", k), slog.Any("error", err))
 			continue
 		}
+
+		if telemetry.PublicIP == ip_ {
+			continue
+		}
+
 		//选取controller作为 node代理节点进行探测
 		tasks = append(tasks, util.ProbeTask{
 			TargetType: "node",

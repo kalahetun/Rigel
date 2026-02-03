@@ -196,7 +196,7 @@ func (fs *FileStorage) startCleanupWorker() {
 
 	for range fs.cleanupTicker.C {
 		if err := fs.cleanupExpiredFiles(); err != nil {
-			fs.l.Error("清理过期文件失败: %v\n", err)
+			fs.l.Error("清理过期文件失败", slog.Any("err", err))
 		}
 	}
 }
@@ -227,7 +227,7 @@ func (fs *FileStorage) cleanupExpiredFiles() error {
 		// 获取文件修改时间
 		fileInfo, err := file.Info()
 		if err != nil {
-			fs.l.Error("获取文件[%s]信息失败: %v\n", file.Name(), err)
+			fs.l.Error("获取文件信息失败", slog.String("fileName", file.Name()), slog.Any("err", err))
 			continue
 		}
 
@@ -235,9 +235,9 @@ func (fs *FileStorage) cleanupExpiredFiles() error {
 		if fileInfo.ModTime().Before(expireTime) {
 			filePath := filepath.Join(fs.storageDir, file.Name())
 			if err := os.Remove(filePath); err != nil {
-				fs.l.Error("删除过期文件[%s]失败: %v\n", filePath, err)
+				fs.l.Error("删除过期文件失败", slog.String("filePath", filePath), slog.Any("err", err))
 			} else {
-				fs.l.Info("清理过期文件: %s\n", filePath)
+				fs.l.Info("清理过期文件", slog.String("filePath", filePath))
 			}
 		}
 	}
