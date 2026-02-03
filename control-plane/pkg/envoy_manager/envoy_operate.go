@@ -366,7 +366,10 @@ func (o *EnvoyOperator) StartFirstEnvoy(logger, logger1 *slog.Logger) error {
 		}
 	}()
 
-	logger.Info("✅ Envoy首次启动成功，PID: %d", cmd.Process.Pid)
+	logger.Info(
+		"Envoy 首次启动成功",
+		slog.Int("pid", cmd.Process.Pid),
+	)
 	return nil
 }
 
