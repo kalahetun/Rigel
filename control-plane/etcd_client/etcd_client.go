@@ -1,7 +1,9 @@
 package etcd_client
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"log/slog"
 	"time"
 
@@ -162,7 +164,19 @@ func GetPrefixAll(cli *clientv3.Client, prefix string, logger *slog.Logger) (map
 		prefixData[key] = value
 
 		// 可选：打印日志（与你现有 GetKey 函数的日志风格保持一致）
-		logger.Info("Get prefix data", slog.String("key", key), slog.String("value", value))
+		//logger.Info("Get prefix data", slog.String("key", key), slog.String("value", value))
+
+		compact := new(bytes.Buffer)
+		err := json.Compact(compact, []byte(value))
+		if err != nil {
+			logger.Warn("压缩 JSON 失败", slog.Any("err", err))
+			compact.WriteString(value) // 失败就直接原值
+		}
+
+		logger.Info("Get prefix data",
+			slog.String("key", key),
+			slog.String("value", compact.String()),
+		)
 	}
 
 	// 5. 日志提示前缀下数据总量

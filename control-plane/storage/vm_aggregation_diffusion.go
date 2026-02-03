@@ -166,6 +166,6 @@ func CalcClusterWeightedAvg(fs *FileStorage, interval time.Duration,
 		//放入queue 为自动化扩缩容做准备
 		queue.Push(result)
 
-		logger.Info("定时计算完成", string(jsonData))
+		logger.Info("定时计算完成", slog.String("data", string(jsonData)))
 	}
 }

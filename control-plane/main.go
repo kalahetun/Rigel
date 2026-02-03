@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"control-plane/etcd_client"
 	"control-plane/etcd_server"
 	"control-plane/pkg/api"
@@ -129,7 +130,19 @@ func main() {
 	etcd_client.WatchPrefix(
 		cli, "/routing/",
 		func(eventType, key, val string, logger *slog.Logger) {
-			logger.Info("[WATCH] %s %s = %s", eventType, key, val)
+
+			compact := new(bytes.Buffer)
+			err := json.Compact(compact, []byte(val))
+			if err != nil {
+				logger.Warn("压缩 JSON 失败", slog.Any("err", err))
+				compact.WriteString(val) // 失败就直接原值
+			}
+
+			logger.Info("[WATCH] event",
+				slog.String("eventType", eventType),
+				slog.String("key", key),
+				slog.String("value", val),
+			)
 			var tel storage.NetworkTelemetry
 			if err := json.Unmarshal([]byte(val), &tel); err != nil {
 				logger.Warn("解析节点JSON失败，跳过", slog.String("ip", key), slog.Any("error", err))
@@ -142,7 +155,10 @@ func main() {
 				case "DELETE":
 					r.RemoveNode(tel.PublicIP)
 				default:
-					logger.Warn("[WATCH] UNKNOWN eventType %s for %s", eventType, key)
+					logger.Warn("[WATCH] UNKNOWN eventType",
+						slog.String("eventType", eventType),
+						slog.String("key", key),
+					)
 				}
 			}
 		}, logger,

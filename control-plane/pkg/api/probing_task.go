@@ -121,8 +121,10 @@ func (h *NodeProbeAPIHandler) GetProbeTasks(c *gin.Context) {
 		//选取controller作为 node代理节点进行探测
 		tasks = append(tasks, util.ProbeTask{
 			TargetType: "node",
+			Provider:   telemetry.Provider,
 			IP:         telemetry.PublicIP,
 			Port:       8081,
+			Region:     telemetry.Continent,
 		})
 	}
 
