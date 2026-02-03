@@ -151,10 +151,13 @@ func main() {
 	//启动virtual queue逻辑
 	exe, _ := os.Executable()
 	storageDir := filepath.Join(filepath.Dir(exe), "vm_local_info_storage")
-	logger.Info("storageDir", storageDir)
+	logger.Info(
+		"using storage directory",
+		slog.String("storageDir", storageDir),
+	)
 	s, _ := storage.NewFileStorage(storageDir, 0, logger)
 	queue := util.NewFixedQueue(20)
-	storage.CalcClusterWeightedAvg(s, 30*time.Second, cli, queue, logger)
+	go storage.CalcClusterWeightedAvg(s, 30*time.Second, cli, queue, logger)
 
 	//启动envoy
 	// 1. 固定配置文件路径（matth目录）

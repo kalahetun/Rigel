@@ -43,6 +43,10 @@ func StartEmbeddedEtcd(serverList []string, serverIP, dataDir, name string, logg
 	}
 
 	<-e.Server.ReadyNotify()
-	logger.Info("Embedded etcd [%s] started at %s:2379\n", name, serverIP)
+	logger.Info(
+		"Embedded etcd started",
+		slog.String("name", name),
+		slog.String("endpoint", serverIP+":2379"),
+	)
 	return e, nil
 }
