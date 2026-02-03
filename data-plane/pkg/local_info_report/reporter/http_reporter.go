@@ -89,7 +89,11 @@ func ReportCycle(controlHost string, logger *slog.Logger) {
 	ticker := time.NewTicker(ReportInterval)
 	defer ticker.Stop()
 
-	logger.Info("数据平面启动，开始定时上报（周期：%v），上报地址：%s", ReportInterval, controlHost+ReportURL)
+	logger.Info(
+		"数据平面启动，开始定时上报",
+		slog.Duration("report_interval", ReportInterval),
+		slog.String("report_url", controlHost+ReportURL),
+	)
 
 	// 3. 立即执行一次上报，然后按周期执行
 	//reportOnce(vmCollector, httpReporter, logger)
@@ -105,18 +109,19 @@ func reportOnce(controlHost string, collector *collector.VMCollector, reporter *
 	logger.Info("开始采集VM信息...")
 	vmReport, err := collector.Collect(logger)
 	if err != nil {
-		logger.Error("采集失败：%v", err)
+		logger.Error("采集失败", slog.Any("err", err))
 		return
 	}
 
 	// 2. 上报信息
 	b, _ := json.Marshal(vmReport)
-	logger.Info("开始上报VM信息：%v", string(b))
+	logger.Info("开始上报VM信息", slog.String("data", string(b)))
+
 	err = reporter.Report(controlHost, vmReport)
 	if err != nil {
-		logger.Error("上报失败：%v", err)
+		logger.Error("上报失败", slog.Any("err", err))
 		return
 	}
 
-	logger.Info("上报成功（ReportID：%s）", vmReport.ReportID)
+	logger.Info("上报成功", slog.String("ReportID", vmReport.ReportID))
 }

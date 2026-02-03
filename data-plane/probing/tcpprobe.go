@@ -96,7 +96,10 @@ func StartProbePeriodically(ctx context.Context, controlHost string, cfg Config,
 				time.Sleep(time.Second) // 防止死循环快速重试
 				continue
 			}
-			logger.Info("get probing tasks", targets)
+			logger.Info(
+				"get probing tasks",
+				slog.Any("targets", targets),
+			)
 
 			// 执行一轮探测
 			doProbeLossRTT(targets, cfg, logger)
@@ -129,18 +132,48 @@ func doProbeLossRTT(targets []util.ProbeTask, cfg Config, logger *slog.Logger) {
 				var totalRTT time.Duration
 				successes := 0
 
+				//for a := 0; a < cfg.Attempts; a++ {
+				//	start := time.Now()
+				//	conn, err := net.DialTimeout("tcp", target.IP+":"+strconv.Itoa(target.Port), cfg.Timeout)
+				//	rtt := time.Since(start)
+				//
+				//	if err != nil {
+				//		failures++
+				//	} else {
+				//		successes++
+				//		totalRTT += rtt
+				//		conn.Close()
+				//	}
+				//}
+
+				dialer := net.Dialer{
+					Timeout: cfg.Timeout,
+				}
+
 				for a := 0; a < cfg.Attempts; a++ {
 					start := time.Now()
-					conn, err := net.DialTimeout("tcp", target.IP+":"+strconv.Itoa(target.Port), cfg.Timeout)
+					conn, err := dialer.Dial("tcp", target.IP+":"+strconv.Itoa(target.Port))
 					rtt := time.Since(start)
 
 					if err != nil {
-						failures++
-					} else {
+						// 👇 关键：区分错误类型
+						if nerr, ok := err.(net.Error); ok && nerr.Timeout() {
+							// 网络不通 / 丢包
+							failures++
+							continue
+						}
+
+						// 非 timeout（通常是 RST）
+						// 👉 网络是通的，只是端口没服务
 						successes++
 						totalRTT += rtt
-						conn.Close()
+						continue
 					}
+
+					// 正常连上
+					successes++
+					totalRTT += rtt
+					conn.Close()
 				}
 
 				avgRTT := time.Duration(0)
@@ -156,11 +189,14 @@ func doProbeLossRTT(targets []util.ProbeTask, cfg Config, logger *slog.Logger) {
 					AvgRTT:   avgRTT,
 				}
 
-				logger.Info(result.Target.IP,
-					result.Target.Port,
-					result.Target.Provider,
-					result.Target.TargetType,
-					slog.Any("result", result))
+				logger.Info(
+					"probe result",
+					slog.String("ip", result.Target.IP),
+					slog.Int("port", result.Target.Port),
+					slog.String("provider", result.Target.Provider),
+					slog.String("target_type", result.Target.TargetType),
+					slog.Any("result", result),
+				)
 
 				// 收集到本轮结果
 				roundMu.Lock()
