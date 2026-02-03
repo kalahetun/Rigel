@@ -50,20 +50,27 @@ func main() {
 		Level: slog.LevelInfo,
 	}))
 
+	// 初始化标记
+	logPre := "init"
+
 	// 读取配置文件
 	util.Config_, err = util.ReadYamlConfig(logger)
 	if err != nil {
-		logger.Error("Failed to read config file: ", err.Error())
+		logger.Error("Failed to read config file",
+			slog.String("pre", logPre),
+			slog.Any("err", err.Error()))
 		return
 	}
 	uu := util.Config_
 	b, _ := json.Marshal(uu)
-	logger.Info("读取配置文件成功", "config", b)
+	logger.Info("读取配置文件成功", slog.String("pre", logPre),
+		slog.String("config", string(b)))
 
 	//初始化 bandwidth cost信息
 	err = util.LoadBandwidthCost(logger)
 	if err != nil {
-		logger.Error("Failed to load bandwidth cost: ", err.Error())
+		logger.Error("Failed to load bandwidth cost", slog.String("pre", logPre),
+			slog.Any("err", err.Error()))
 		return
 	}
 
@@ -76,7 +83,9 @@ func main() {
 		// 启动 etcd server
 		etcdServer, err := etcd_server.StartEmbeddedEtcd(uu.ServerList, uu.ServerIP, uu.DataDir, nodeName, logger)
 		if err != nil {
-			logger.Error("Failed to start embedded etcd: %v", err)
+			logger.Error("Failed to start embedded etcd",
+				slog.String("pre", logPre),
+				slog.Any("err", err))
 		}
 		defer etcdServer.Close()
 	}
@@ -88,41 +97,45 @@ func main() {
 			serverIps = append(serverIps, v+":2379")
 		}
 	} else {
-		logger.Error("Failed to get serverIps: %v", serverIps)
+		logger.Error("Failed to get serverIps", slog.String("pre", logPre),
+			slog.Any("serverIps", serverIps))
 		return
 	}
 	cli, err := etcd_client.NewEtcdClient(serverIps, 5*time.Second)
 	if err != nil {
-		logger.Error("Failed to connect to etcd:", err)
+		logger.Error("Failed to connect to etcd", slog.String("pre", logPre), slog.Any("err", err))
 		return
 	} else {
-		logger.Info("Etcd Client connected", "serverIps", serverIps)
+		logger.Info("Etcd Client connected", slog.String("pre", logPre), slog.Any("serverIps", serverIps))
 	}
 	defer cli.Close()
 
 	// 1. 获取所有节点探测任务	cloud storage服务器的
 	api.CloudStorageMap, err = api.LoadCloudStorageTargetsFromExeDir()
 	if err != nil {
-		logger.Error("Failed to load cloud storage targets: ", err.Error())
+		logger.Error("Failed to load cloud storage targets", slog.String("pre", logPre),
+			slog.Any("err", err.Error()))
 		return
 	} else {
-		logger.Info("Load cloud storage targets success", "targets", api.CloudStorageMap)
+		logger.Info("Load cloud storage targets success", slog.String("pre", logPre),
+			slog.Any("targets", api.CloudStorageMap))
 	}
 
 	//获取全量前缀信息 然后初始化 routing map
 	r := routing.NewGraphManager(logger)
 	nodeMap, err := etcd_client.GetPrefixAll(cli, "/routing/", logger)
 	if err != nil {
-		logger.Warn("获取全量前缀信息失败", "error", err)
+		logger.Warn("获取全量前缀信息失败", slog.String("pre", logPre), slog.Any("err", err))
 	} else {
-		logger.Info("获取全量前缀信息成功", "nodeMap", nodeMap)
+		logger.Info("获取全量前缀信息成功", slog.String("pre", logPre), slog.Any("nodeMap", nodeMap))
 		for k, nodeJson := range nodeMap {
 			var tel storage.NetworkTelemetry
 			if err := json.Unmarshal([]byte(nodeJson), &tel); err != nil {
-				logger.Warn("解析节点JSON失败，跳过", slog.String("ip", k), slog.Any("error", err))
+				logger.Warn("解析节点JSON失败，跳过", slog.String("pre", logPre),
+					slog.String("ip", k), slog.Any("err", err))
 				continue
 			}
-			r.AddNode(&tel)
+			r.AddNode(&tel, logPre)
 		}
 	}
 
@@ -131,31 +144,40 @@ func main() {
 		cli, "/routing/",
 		func(eventType, key, val string, logger *slog.Logger) {
 
+			//日志跟踪
+			logPre := util.GenerateRandomLetters(5)
+
 			compact := new(bytes.Buffer)
 			err := json.Compact(compact, []byte(val))
 			if err != nil {
-				logger.Warn("压缩 JSON 失败", slog.Any("err", err))
+				logger.Warn("压缩 JSON 失败",
+					slog.String("pre", logPre),
+					slog.Any("err", err),
+				)
 				compact.WriteString(val) // 失败就直接原值
 			}
 
 			logger.Info("[WATCH] event",
+				slog.String("pre", logPre),
 				slog.String("eventType", eventType),
 				slog.String("key", key),
 				slog.String("value", val),
 			)
 			var tel storage.NetworkTelemetry
 			if err := json.Unmarshal([]byte(val), &tel); err != nil {
-				logger.Warn("解析节点JSON失败，跳过", slog.String("ip", key), slog.Any("error", err))
+				logger.Warn("解析节点JSON失败，跳过", slog.String("pre", logPre),
+					slog.String("ip", key), slog.Any("error", err))
 			} else {
 				switch eventType {
 				case "CREATE":
-					r.AddNode(&tel)
+					r.AddNode(&tel, logPre)
 				case "UPDATE":
-					r.AddNode(&tel)
+					r.AddNode(&tel, logPre)
 				case "DELETE":
 					r.RemoveNode(tel.PublicIP)
 				default:
 					logger.Warn("[WATCH] UNKNOWN eventType",
+						slog.String("pre", logPre),
 						slog.String("eventType", eventType),
 						slog.String("key", key),
 					)
@@ -169,11 +191,12 @@ func main() {
 	storageDir := filepath.Join(filepath.Dir(exe), "vm_local_info_storage")
 	logger.Info(
 		"using storage directory",
+		slog.String("pre", logPre),
 		slog.String("storageDir", storageDir),
 	)
 	s, _ := storage.NewFileStorage(storageDir, 0, logger)
 	queue := util.NewFixedQueue(20)
-	go storage.CalcClusterWeightedAvg(s, 30*time.Second, cli, queue, logger)
+	go storage.CalcClusterWeightedAvg(s, 30*time.Second, cli, queue, logPre, logger)
 
 	//启动envoy
 	// 1. 固定配置文件路径（matth目录）
@@ -184,7 +207,7 @@ func main() {
 	_ = operator.InitEnvoyGlobalConfig(uu, 9901)
 	err = operator.StartFirstEnvoy(logger, logger1)
 	if err != nil {
-		logger.Error("启动第一个Envoy失败", "error", err)
+		logger.Error("启动第一个Envoy失败", slog.String("pre", logPre), "error", err)
 		return
 	}
 
@@ -203,9 +226,9 @@ func main() {
 	api.InitNodeProbeRouter(router, cli, logger)
 	//client获取 bulk transfer path信息的接口
 	api.InitUserRoutingRouter(router, r, logger)
-	logger.Info("Envoy端口管理API启动", "addr", ":8081") // 启动API服务
+	logger.Info("Envoy端口管理API启动", slog.String("pre", logPre), "addr", ":8081") // 启动API服务
 	if err := router.Run(":8081"); err != nil {
-		logger.Error("API服务启动失败", "error", err)
+		logger.Error("API服务启动失败", slog.String("pre", logPre), "error", err)
 		//os.Exit(1)
 		return
 	}

@@ -145,7 +145,7 @@ func OutNode(n string) string {
 
 // InitGraph 初始化节点和对应的虚拟边 & inter-node 边
 // AddNodeWithEdges 将节点加入 GraphManager，并同时生成虚拟边和 inter-node 边
-func (g *GraphManager) AddNode(node *storage.NetworkTelemetry) {
+func (g *GraphManager) AddNode(node *storage.NetworkTelemetry, logPre string) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
@@ -155,7 +155,7 @@ func (g *GraphManager) AddNode(node *storage.NetworkTelemetry) {
 	// 2. 添加虚拟边（in->out）
 	in := InNode(node.PublicIP)
 	out := OutNode(node.PublicIP)
-	r := EdgeRisk(node.NodeCongestion.AvgWeightedCache, 0, 0, g.logger)
+	r := EdgeRisk(node.NodeCongestion.AvgWeightedCache, 0, 0, logPre, g.logger)
 	g.edges[in+"->"+out] = &Edge{
 		SourceIp:        in,
 		DestinationIp:   out,
@@ -169,7 +169,7 @@ func (g *GraphManager) AddNode(node *storage.NetworkTelemetry) {
 	for k, v := range node.LinksCongestion {
 		if v.Target.TargetType == "cloud_storage" {
 			pp, _ := util.GetBandwidthPrice(node.Provider, node.Continent, v.Target.Region, g.logger)
-			r = EdgeRisk(0, pp, v.PacketLoss, g.logger)
+			r = EdgeRisk(0, pp, v.PacketLoss, logPre, g.logger)
 			cloudFull := fmt.Sprintf("%s_%s_%s", v.Target.Provider, v.Target.Region, v.Target.City)
 			g.edges[in+"->"+k] = &Edge{
 				SourceIp:        out,
@@ -178,7 +178,7 @@ func (g *GraphManager) AddNode(node *storage.NetworkTelemetry) {
 				SourceContinent: node.Continent,
 				EdgeWeight:      r,
 			}
-			g.logger.Info("EdgeRisk", out+"->"+cloudFull, r)
+			g.logger.Info("EdgeRisk", slog.String("pre", logPre), out+"->"+cloudFull, r)
 		}
 	}
 
@@ -193,7 +193,7 @@ func (g *GraphManager) AddNode(node *storage.NetworkTelemetry) {
 			ll = val.PacketLoss
 		}
 		// 新节点 out -> 老节点 in
-		r = EdgeRisk(0, pp, ll, g.logger)
+		r = EdgeRisk(0, pp, ll, logPre, g.logger)
 		g.edges[out+"->"+InNode(id)] = &Edge{
 			SourceIp:        out,
 			DestinationIp:   InNode(id),
@@ -201,7 +201,7 @@ func (g *GraphManager) AddNode(node *storage.NetworkTelemetry) {
 			SourceContinent: node.Continent,
 			EdgeWeight:      r,
 		}
-		g.logger.Info("EdgeRisk", out+"->"+InNode(id), r)
+		g.logger.Info("EdgeRisk", slog.String("pre", logPre), out+"->"+InNode(id), r)
 
 		pp_, _ := util.GetBandwidthPrice(other.Provider, other.Continent, node.Continent, g.logger)
 		//var ll_ float64 = 0
@@ -209,7 +209,7 @@ func (g *GraphManager) AddNode(node *storage.NetworkTelemetry) {
 		//	ll_ = val.PacketLoss
 		//}
 		// 老节点 out -> 新节点 in
-		r = EdgeRisk(0, pp_, ll, g.logger)
+		r = EdgeRisk(0, pp_, ll, logPre, g.logger)
 		g.edges[OutNode(id)+"->"+in] = &Edge{
 			SourceIp:        OutNode(id),
 			DestinationIp:   in,
@@ -217,7 +217,7 @@ func (g *GraphManager) AddNode(node *storage.NetworkTelemetry) {
 			SourceContinent: other.Continent,
 			EdgeWeight:      r,
 		}
-		g.logger.Info("EdgeRisk", OutNode(id)+"->"+in, r)
+		g.logger.Info("EdgeRisk", slog.String("pre", logPre), OutNode(id)+"->"+in, r)
 	}
 
 	return
@@ -238,12 +238,12 @@ func (g *GraphManager) AddNode(node *storage.NetworkTelemetry) {
 // Output:
 //
 //	A non-negative additive risk score (lower is better).
-func EdgeRisk(cacheUtil, cost, lossRate float64, l *slog.Logger) float64 {
+func EdgeRisk(cacheUtil, cost, lossRate float64, logPre string, l *slog.Logger) float64 {
 	// -----------------------------
 	// Policy constants (system values)
 	// -----------------------------
 
-	l.Info("EdgeRisk", "cacheUtil", cacheUtil, "cost", cost, "lossRate", lossRate)
+	l.Info("EdgeRisk", slog.String("pre", logPre), "cacheUtil", cacheUtil, "cost", cost, "lossRate", lossRate)
 
 	const (
 		// Cache policy
@@ -277,10 +277,11 @@ func EdgeRisk(cacheUtil, cost, lossRate float64, l *slog.Logger) float64 {
 		lossRisk = -math.Log(1 - lossRate)
 	}
 
-	l.Info("EdgeRisk", "cacheRisk", cacheRisk, "costRisk", costRisk, "lossRisk", lossRisk)
+	l.Info("EdgeRisk", slog.String("pre", logPre),
+		"cacheRisk", cacheRisk, "costRisk", costRisk, "lossRisk", lossRisk)
 
 	r := wCache*cacheRisk + wCost*costRisk + wLoss*lossRisk
-	l.Info("EdgeRisk", "risk", r)
+	l.Info("EdgeRisk", slog.String("pre", logPre), "risk", r)
 
 	return r
 }

@@ -64,23 +64,27 @@ type NetworkTelemetry struct {
 //1、定时器 读storage文件 汇聚group信息 到etcd 并且 加入一个全局的 queue供 elastic scaling使用
 
 func CalcClusterWeightedAvg(fs *FileStorage, interval time.Duration,
-	etcdClient *clientv3.Client, queue *util.FixedQueue, logger *slog.Logger) {
+	etcdClient *clientv3.Client, queue *util.FixedQueue, logPre string, logger *slog.Logger) {
 	// 1. 内嵌定时器，直接创建
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop() // 程序退出时回收定时器资源
 
 	// 2. 日志输出启动信息
-	logger.Info("定时加权计算启动成功", slog.Duration("间隔", interval), slog.String("存储目录", fs.storageDir))
+	logger.Info("定时加权计算启动成功", slog.String("pre", logPre),
+		slog.Duration("间隔", interval), slog.String("存储目录", fs.storageDir))
 
 	// 3. 无限循环，定时触发核心逻辑（复用GetAll()）
 	for {
 		// 监听定时器信号，到达间隔执行计算
 		<-ticker.C
 
+		logPre := util.GenerateRandomLetters(5)
+
 		// 4. 复用GetAll()获取所有VMReport数据
-		allReports, err := fs.GetAll()
+		allReports, err := fs.GetAll(logPre)
 		if err != nil {
-			logger.Warn("调用GetAll()失败，跳过本次计算", slog.Any("错误", err))
+			logger.Warn("调用GetAll失败，跳过本次计算",
+				slog.String("pre", logPre), slog.Any("err", err))
 			continue
 		}
 
@@ -116,7 +120,7 @@ func CalcClusterWeightedAvg(fs *FileStorage, interval time.Duration,
 		// 7. 避免除以0，输出计算结果
 		var avgWeightedCache float64 = 0
 		if totalActiveConn <= 0 {
-			logger.Info("本次计算：总活跃连接数为0，无需计算平均值")
+			logger.Info("本次计算：总活跃连接数为0，无需计算平均值", slog.String("pre", logPre))
 			totalWeightedCache = 0
 		} else {
 			avgWeightedCache = totalWeightedCache / totalActiveConn
@@ -132,7 +136,7 @@ func CalcClusterWeightedAvg(fs *FileStorage, interval time.Duration,
 			if avg != 0 && len(vs) > 0 {
 				avg = avg / float64(len(vs))
 			}
-			linkMap[k] = LinkCongestionInfo{TargetIP: k, PacketLoss: avg}
+			linkMap[k] = LinkCongestionInfo{TargetIP: k, PacketLoss: avg, Target: totalLinksCong_[k]}
 		}
 
 		// 填充结果结构体
@@ -153,7 +157,8 @@ func CalcClusterWeightedAvg(fs *FileStorage, interval time.Duration,
 		// 4. 结构体序列化为JSON（Etcd存储二进制数据，JSON格式易解析）
 		jsonData, err := json.MarshalIndent(result, "", "  ")
 		if err != nil {
-			logger.Warn("结构体JSON序列化失败，跳过本次发送", slog.Any("错误", err))
+			logger.Warn("结构体JSON序列化失败，跳过本次发送",
+				slog.String("pre", logPre), slog.Any("错误", err))
 			continue
 		}
 
@@ -166,6 +171,7 @@ func CalcClusterWeightedAvg(fs *FileStorage, interval time.Duration,
 		//放入queue 为自动化扩缩容做准备
 		queue.Push(result)
 
-		logger.Info("定时计算完成", slog.String("data", string(jsonData)))
+		logger.Info("定时计算完成",
+			slog.String("pre", logPre), slog.String("data", string(jsonData)))
 	}
 }

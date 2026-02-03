@@ -19,7 +19,7 @@ func StartEmbeddedEtcd(serverList []string, serverIP, dataDir, name string, logg
 	cfg.Name = name
 
 	// 当前节点 URL
-	clientAddr, _ := url.Parse("http://" + serverIP + ":2379")
+	clientAddr, _ := url.Parse("http://" + serverIP + ":2379") //也可以0.0.0.0
 	peerAddr, _ := url.Parse("http://" + serverIP + ":2380")
 
 	cfg.ListenClientUrls = []url.URL{*clientAddr}

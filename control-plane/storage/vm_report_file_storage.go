@@ -246,7 +246,7 @@ func (fs *FileStorage) cleanupExpiredFiles() error {
 }
 
 // GetAll 读取存储目录下所有有效VM上报文件，直接返回原始VMReport切片
-func (fs *FileStorage) GetAll() ([]*model.VMReport, error) {
+func (fs *FileStorage) GetAll(logPre string) ([]*model.VMReport, error) {
 	// 复用你提供的：加读锁保证并发安全
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
@@ -273,14 +273,16 @@ func (fs *FileStorage) GetAll() ([]*model.VMReport, error) {
 		filePath := filepath.Join(fs.storageDir, fileName)
 		data, err := os.ReadFile(filePath)
 		if err != nil {
-			fs.l.Warn("读取文件内容失败，跳过该文件", slog.String("file_name", fileName))
+			fs.l.Warn("读取文件内容失败，跳过该文件", slog.String("pre", logPre),
+				slog.String("file_name", fileName))
 			continue
 		}
 
 		// 补充：JSON反序列化为原始VMReport
 		var report model.VMReport
 		if err := json.Unmarshal(data, &report); err != nil {
-			fs.l.Warn("JSON反序列化失败，跳过该文件", slog.String("file_name", fileName))
+			fs.l.Warn("JSON反序列化失败，跳过该文件", slog.String("pre", logPre),
+				slog.String("file_name", fileName))
 			continue
 		}
 
