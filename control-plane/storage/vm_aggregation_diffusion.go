@@ -120,7 +120,7 @@ func CalcClusterWeightedAvg(fs *FileStorage, interval time.Duration,
 		// 7. 避免除以0，输出计算结果
 		var avgWeightedCache float64 = 0
 		if totalActiveConn <= 0 {
-			logger.Info("本次计算：总活跃连接数为0，无需计算平均值", slog.String("pre", logPre))
+			logger.Info("本次计算总活跃连接数为0无需计算平均值", slog.String("pre", logPre))
 			totalWeightedCache = 0
 		} else {
 			avgWeightedCache = totalWeightedCache / totalActiveConn
@@ -165,7 +165,7 @@ func CalcClusterWeightedAvg(fs *FileStorage, interval time.Duration,
 		//// 5. 发送（写入）数据到Etcd（*clientv3.Client核心操作）
 		ip, _ := util.GetPublicIP()
 		key := fmt.Sprintf("/routing/%s", ip)
-		etcd_client.PutKey(etcdClient, key, string(jsonData), logger)
+		etcd_client.PutKey(etcdClient, key, string(jsonData), logPre, logger)
 		_ = etcd_client.PutKeyWithLease(etcdClient, key, string(jsonData), int64(60*expireTime), logger)
 
 		//放入queue 为自动化扩缩容做准备

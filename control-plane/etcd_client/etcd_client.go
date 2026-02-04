@@ -23,15 +23,15 @@ func NewEtcdClient(endpoints []string, dialTimeout time.Duration) (*clientv3.Cli
 }
 
 // PutKey 写入 key
-func PutKey(cli *clientv3.Client, key, value string, logger *slog.Logger) {
+func PutKey(cli *clientv3.Client, key, value, pre string, logger *slog.Logger) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
 	_, err := cli.Put(ctx, key, value)
 	if err != nil {
-		logger.Error("Put error:", err)
+		logger.Error("Put error", slog.Any("err", err))
 	} else {
-		logger.Info("Put %s=%s\n", key, value)
+		logger.Info("Put", slog.String("pre", pre), key, value)
 	}
 }
 

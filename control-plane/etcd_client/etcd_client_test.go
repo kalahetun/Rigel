@@ -28,7 +28,7 @@ func TestEtcdClient(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		key := fmt.Sprintf("/test/key%d", i)
 		val := fmt.Sprintf("val-%d", i)
-		PutKey(cli, key, val, logger)
+		PutKey(cli, key, val, "", logger)
 		time.Sleep(5000 * time.Millisecond) // 给 watch 一点时间捕获事件
 	}
 
