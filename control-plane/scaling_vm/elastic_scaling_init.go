@@ -144,7 +144,11 @@ func NewNodeState(id string, queue *util.FixedQueue) *NodeState {
 }
 
 // NewScaler 初始化 Scaler 控制器
-func NewScaler(nodeID string, config *ScaleConfig, queue *util.FixedQueue, logger *slog.Logger) *Scaler {
+func NewScaler(nodeID string, config *ScaleConfig, queue *util.FixedQueue, pre string, logger *slog.Logger) *Scaler {
+
+	logger.Info("NewScaler", slog.String("pre", pre),
+		"nodeID", nodeID, "config", config, "queue", queue)
+
 	if config == nil {
 		config = NewDefaultScaleConfig()
 	}
@@ -157,13 +161,14 @@ func NewScaler(nodeID string, config *ScaleConfig, queue *util.FixedQueue, logge
 	}
 }
 
-func (n *NodeState) LogStateSlog(logger *slog.Logger) {
+func (n *NodeState) LogStateSlog(pre string, logger *slog.Logger) {
 	history := make([]string, len(n.ScaleHistory))
 	for i, evt := range n.ScaleHistory {
 		history[i] = fmt.Sprintf("{Time: %s, Amount: %d}", evt.Time.Format(time.RFC3339), evt.Amount)
 	}
 
 	logger.Info("NodeState",
+		slog.String("pre", pre),
 		"ID", n.ID,
 		"State", n.State,
 		"Z", n.Z,

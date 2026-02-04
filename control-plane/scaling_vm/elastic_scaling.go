@@ -19,7 +19,8 @@ import (
 //维护vm信息;扩容&缩容&安装环境以及二进制;开启&关闭健康检查; 这些都是elastic scaling的approach
 
 // StartTicker 启动定时任务
-func (s *Scaler) StartTicker() {
+func (s *Scaler) StartTicker(pre string) {
+	s.logger.Info("start ticker", "pre", pre)
 	ticker := time.NewTicker(s.config.TickerInterval)
 	go func() {
 		for {
@@ -126,56 +127,65 @@ func (s *Scaler) tryLock(timeout time.Duration) bool {
 // evaluateScaling 核心扩容判断与状态管理逻辑
 func (s *Scaler) evaluateScaling() {
 
+	pre := util.GenerateRandomLetters(5)
+
 	// 尝试获取锁，若获取不到则直接返回
 	if !s.tryLock(1 * time.Second) {
-		fmt.Println("无法获取到锁，定时任务取消")
+		s.logger.Warn("cannot get lock",
+			slog.String("pre", pre),
+			slog.Any("err", "cannot get lock"),
+		)
 		return
 	}
 	defer s.mu.Unlock()
 
 	node := s.node
-	node.LogStateSlog(s.logger) //打印 node
+	node.LogStateSlog(pre, s.logger) //打印 node
 
-	s.logger.Info("evaluating scaling", "node", node.ID, "state", node.State)
+	s.logger.Info("evaluating scaling", slog.String("pre", pre),
+		"node", node.ID, "state", node.State)
 
 	switch node.State {
 	case ScalingUp:
-		s.logger.Info("node is scaling up")
+		s.logger.Info("node is scaling up", slog.String("pre", pre))
 		return
 	case Releasing:
-		s.logger.Info("node is releasing")
+		s.logger.Info("node is releasing", slog.String("pre", pre))
 		return
 	case Triggered:
 		if time.Now().Sub(s.node.RetainTime) < 0 {
-			s.logger.Info("node is triggered, but retention time not reached")
+			s.logger.Info("node is triggered, but retention time not reached",
+				slog.String("pre", pre))
 			return
 		}
 		//往下走就是已经超时
 	case Dormant, Permanent:
 		if time.Now().Sub(s.node.RetainTime) < 0 {
-			s.logger.Info("node is dormant or permanent, but retention time not reached")
+			s.logger.Info("node is dormant or permanent, but retention time not reached",
+				slog.String("pre", pre))
 			// 后面检验一下是不是需要扩容 如果扩容这个状态就会被change
 		} else {
-			s.logger.Info("node is dormant or permanent, and retention time reached")
+			s.logger.Info("node is dormant or permanent, and retention time reached",
+				slog.String("pre", pre))
 			//如果后面不触发 Triggered 走到最后就会被删除
 			node.State = Releasing
 		}
 	default:
-		panic("unhandled default case")
+		s.logger.Warn("unhandled default case", slog.String("pre", pre))
 	}
 
 	// 1️⃣ 计算当前扰动量 P 和波动值 Z
 	node.P = s.calculatePerturbation()
 	node.Z = s.calculateVolatilityAccumulation()
 	delta := s.calculateDelta(s.node)
-	s.logger.Info("calculate delta", node.P, node.Z, delta)
+	s.logger.Info("calculate delta", slog.String("pre", pre), node.P, node.Z, delta)
 
 	// 2️⃣ 判断是否需要触发扩容
 	if delta < 0 {
 		switch node.State {
 		case Inactive:
 			node.State = ScalingUp
-			if ok, vm := s.triggerScaling1(1, s.logger); ok {
+			if ok, vm := s.triggerScaling1(1, pre, s.logger); ok {
 				node.State = Triggered
 				node.ScaleHistory = append(node.ScaleHistory, ScaleEvent{Time: time.Now(), Amount: 1, ScaledVM: vm})
 				node.ScaledVMs = append(node.ScaledVMs, vm)
@@ -185,7 +195,7 @@ func (s *Scaler) evaluateScaling() {
 					node.State = Permanent
 				}
 			} else {
-				s.logger.Error("triggerScaling 1 failed")
+				s.logger.Error("triggerScaling 1 failed", slog.String("pre", pre))
 			}
 		case Dormant:
 			node.State = Triggered
@@ -198,13 +208,13 @@ func (s *Scaler) evaluateScaling() {
 					node.State = Permanent
 				}
 			} else {
-				s.logger.Error("triggerScaling 2 failed")
+				s.logger.Error("triggerScaling 2 failed", slog.String("pre", pre))
 			}
 		default:
-			panic("unhandled default case")
+			s.logger.Warn("unhandled default case", slog.String("pre", pre))
 		}
 	}
-	node.LogStateSlog(s.logger) //打印 node
+	node.LogStateSlog(pre, s.logger) //打印 node
 	if node.State == Triggered || node.State == Permanent {
 		return
 	}
@@ -212,7 +222,8 @@ func (s *Scaler) evaluateScaling() {
 	// 3️⃣ 如果没有触发扩容，根据当前状态处理
 	switch node.State {
 	case Dormant, Permanent:
-		s.logger.Info("node is dormant or permanent, and retention time reached")
+		s.logger.Info("node is dormant or permanent, and retention time reached",
+			slog.String("pre", pre))
 		node.State = Releasing
 		s.triggerRelease()
 		node.State = Inactive
@@ -221,18 +232,19 @@ func (s *Scaler) evaluateScaling() {
 		node.RetainTime = retain
 		node.State = Dormant
 		s.triggerDormant()
-		s.logger.Info("the state of node is chagned to dormant from scalingup")
+		s.logger.Info("the state of node is changed to dormant from scaling up",
+			slog.String("pre", pre))
 	default:
-		panic("unhandled default case")
+		s.logger.Warn("unhandled default case", slog.String("pre", pre))
 	}
-	node.LogStateSlog(s.logger) //打印 node
+	node.LogStateSlog(pre, s.logger) //打印 node
 	return
 }
 
 // triggerScaling 模拟扩容动作
-func (s *Scaler) triggerScaling1(n int, logger *slog.Logger) (bool, VM) {
+func (s *Scaler) triggerScaling1(n int, pre string, logger *slog.Logger) (bool, VM) {
 
-	logger.Info("triggerScaling1", "n", n)
+	logger.Info("triggerScaling1", slog.String("pre", pre), "n", n)
 
 	//获取本节点配置信息
 	//扩容
@@ -244,32 +256,35 @@ func (s *Scaler) triggerScaling1(n int, logger *slog.Logger) (bool, VM) {
 	err := CreateVM(ctx, logger, gcp.ProjectID, gcp.Zone, vmName, gcp.CredFile)
 
 	if err != nil {
-		logger.Error("创建 VM 失败", "error", err)
+		logger.Error("创建 VM 失败", slog.String("pre", pre), "error", err)
 		return false, VM{}
 	}
 
 	// 在创建虚拟机后等待一定时间，确保 VM 启动完成
-	logger.Info("Waiting for VM to start...", "vmName", vmName)
+	logger.Info("Waiting for VM to start...", slog.String("pre", pre), "vmName", vmName)
 	time.Sleep(10 * time.Minute) // 等待 10 分钟
 
 	//获取ip等信息用于管理
 	ip, err := GetVMExternalIP(ctx, logger, gcp.ProjectID, gcp.Zone, vmName, gcp.CredFile)
 	if err != nil {
-		logger.Error("获取 VM 外部 IP 失败", "error", err)
+		logger.Error("获取 VM 外部 IP 失败", slog.String("pre", pre), "error", err)
 		return false, VM{}
 	}
 
-	logger.Info("Scaling node", gcp.Zone, vmName, ip)
+	logger.Info("Scaling node", slog.String("pre", pre), slog.String("zone", gcp.Zone),
+		slog.String("vm name", vmName), slog.String("ip", ip))
 
 	//安装环境 启动 触发envoy
 	err = deployBinaryToServer(username, ip, "22", localPathProxy, remotePathProxy, binaryProxy, logger)
 	if err != nil {
-		logger.Error("部署二进制文件失败", remotePathProxy, "error", err)
+		logger.Error("部署二进制文件失败", slog.String("pre", pre),
+			slog.String("remote proxy", remotePathProxy), "error", err)
 		return false, VM{}
 	}
 	err = deployBinaryToServer(username, ip, "22", localPathPlane, remotePathPlane, binaryPlane, logger)
 	if err != nil {
-		logger.Error("部署二进制文件失败", remotePathPlane, "error", err)
+		logger.Error("部署二进制文件失败", slog.String("pre", pre),
+			slog.String("remote proxy", remotePathProxy), "error", err)
 		return false, VM{}
 	}
 

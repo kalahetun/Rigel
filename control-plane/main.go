@@ -216,8 +216,8 @@ func main() {
 	}
 
 	//elastic scaling
-	es := scaling_vm.NewScaler("", nil, queue, logger)
-	es.StartTicker()
+	es := scaling_vm.NewScaler("", nil, queue, logPre, logger)
+	es.StartTicker(logPre)
 
 	// 初始化Gin路由
 	router := gin.Default()
