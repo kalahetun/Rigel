@@ -23,7 +23,7 @@ type Storage interface {
 	Put(report *model.VMReport) (string, error)
 	Get(vmID string) (*model.VMReport, error)
 	// 新增：获取所有存储的VM上报数据
-	GetAll() ([]*model.VMReport, error)
+	GetAll(logPre string) ([]*model.VMReport, error)
 	// 新增：关闭存储（停止清理协程）
 	Close()
 }
