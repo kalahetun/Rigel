@@ -2,6 +2,7 @@ package api
 
 import (
 	"control-plane/routing"
+	"control-plane/util"
 	model "control-plane/vm_info"
 	"github.com/gin-gonic/gin"
 	"log/slog"
@@ -35,6 +36,9 @@ func NewUserRoutingAPIHandler(gm *routing.GraphManager, logger *slog.Logger) *Us
 
 // GetUserRoute 处理 POST /api/v1/routing
 func (h *UserRoutingAPIHandler) GetUserRoute(c *gin.Context) {
+
+	pre := util.GenerateRandomLetters(5)
+
 	resp := model.ApiResponse{
 		Code: 500,
 		Msg:  "服务端内部错误",
@@ -52,17 +56,19 @@ func (h *UserRoutingAPIHandler) GetUserRoute(c *gin.Context) {
 		resp.Code = 400
 		resp.Msg = "请求体解析失败：" + err.Error()
 		c.JSON(http.StatusOK, resp)
-		h.Logger.Warn("PostUserRoute parse body failed", slog.Any("error", err))
+		h.Logger.Warn("PostUserRoute parse body failed",
+			slog.String("pre", pre), slog.Any("error", err))
 		return
 	}
 
 	h.Logger.Info("UserRoute POST request",
+		slog.String("pre", pre),
 		"clientIP", clientIP,
 		"username", username,
 		"fileName", filename,
 		"priority", req.Priority,
 		"clientContinent", req.ClientCont,
-		"serverIP", req.ServerIP,
+		"serverIP", req.ServerIP, //ip:port or domain
 		//"serverContinent", req.ServerCont,
 		"cloudProvider", req.CloudProvider,
 		"cloudRegion", req.CloudRegion,
@@ -71,7 +77,7 @@ func (h *UserRoutingAPIHandler) GetUserRoute(c *gin.Context) {
 
 	// 3️⃣ 调用 GraphManager 获取最优路径
 	// 可以把 GetBestPath 改成支持从客户端到服务器
-	paths := h.GM.Routing(req.ClientCont, req, h.Logger)
+	paths := h.GM.Routing(req.ClientCont, req, pre, h.Logger)
 
 	resp.Code = 200
 	resp.Msg = "成功获取路径"

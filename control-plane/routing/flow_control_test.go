@@ -75,7 +75,7 @@ func TestComputeAdmissionRate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rate := ComputeAdmissionRate(tt.task, tt.cost, alpha, V, nil)
+			rate := ComputeAdmissionRate(tt.task, tt.cost, alpha, V, "", nil)
 			if !approxEqual(rate, tt.expected, 1e-6) {
 				t.Errorf("expected %.2f, got %.2f", tt.expected, rate)
 			}

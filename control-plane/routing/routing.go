@@ -32,9 +32,11 @@ type UserRouteRequest struct {
 }
 
 // 输入是client区域和cloud storage 区域
-func (g *GraphManager) Routing(startContinent string, request UserRouteRequest, logger *slog.Logger) RoutingInfo {
+func (g *GraphManager) Routing(startContinent string, request UserRouteRequest,
+	pre string, logger *slog.Logger) RoutingInfo {
 
-	logger.Info("Routing", "startContinent", startContinent, "userRouteRequest", request)
+	logger.Info("Routing", slog.String("pre", pre),
+		"startContinent", startContinent, "userRouteRequest", request)
 
 	// 获取所有节点
 	allNodes := g.GetNodes()
@@ -50,7 +52,8 @@ func (g *GraphManager) Routing(startContinent string, request UserRouteRequest, 
 
 	//client所在大区没有接入点 直接公网传输
 	if len(startNodes) == 0 {
-		logger.Warn("No nodes found for start continent", "startContinent", startContinent)
+		logger.Warn("No nodes found for start continent",
+			slog.String("pre", pre), "startContinent", startContinent)
 		return RoutingInfo{}
 	}
 
@@ -59,7 +62,8 @@ func (g *GraphManager) Routing(startContinent string, request UserRouteRequest, 
 
 	//没有到该cloud storage的路径
 	if _, ok := g.FindEdgeBySuffix(cloudFull); !ok {
-		logger.Warn("No cloud node found", "cloudFull", cloudFull)
+		logger.Warn("No cloud node found",
+			slog.String("pre", pre), "cloudFull", cloudFull)
 		return RoutingInfo{}
 	}
 
@@ -82,14 +86,16 @@ func (g *GraphManager) Routing(startContinent string, request UserRouteRequest, 
 			bestPath = path
 		}
 	}
-	logger.Info("All candidate paths", "paths", fmt.Sprintf("%+v", tempPaths))
+	logger.Info("All candidate paths", slog.String("pre", pre),
+		"paths", fmt.Sprintf("%+v", tempPaths))
 
 	// 输出结果
 	if len(bestPath) == 0 {
-		logger.Warn("No path found between continents",
+		logger.Warn("No path found between continents", slog.String("pre", pre),
 			"startContinent", startContinent, "endContinent", cloudFull)
 	} else {
-		logger.Info("Shortest path found", "startContinent", startContinent,
+		logger.Info("Shortest path found",
+			slog.String("pre", pre), "startContinent", startContinent,
 			"endContinent", cloudFull, "path", bestPath, "totalRisk", minCost)
 	}
 
@@ -99,16 +105,18 @@ func (g *GraphManager) Routing(startContinent string, request UserRouteRequest, 
 		tempIP := strings.Split(h, "-")[0]
 		if _, ok := hopMap[tempIP]; !ok {
 			hops = append(hops, tempIP)
+			hopMap[tempIP] = tempIP
 		}
 	}
 	var hops_ []string
-	for _, h := range hops {
-		hops_ = append(hops_, h+":8090") //gateway port
+	for i := 0; i < len(hops)-1; i++ { //去掉最后一个 后面替换成真实的ip:port
+		hops_ = append(hops_, hops[i]+":8090") //gateway port
 	}
 	merged := strings.Join(hops_, ",")
 	merged += "," + request.ServerIP
 
 	//计算速率
-	rate := ComputeAdmissionRate(Task{WeightU: 1, MinRate: 10, MaxRate: 20}, minCost, 1.0, 100, g.logger)
+	rate := ComputeAdmissionRate(Task{WeightU: 1, MinRate: 10, MaxRate: 20},
+		minCost, 1.0, 100, pre, g.logger)
 	return RoutingInfo{[]PathInfo{PathInfo{merged, int64(rate)}}}
 }
