@@ -22,11 +22,12 @@ func CreateVM(
 	zone string,
 	vmName string,
 	credFile string,
+	pre string,
 ) error {
 	// 1️⃣ 创建客户端（直接使用凭证文件）
 	instancesClient, err := compute.NewInstancesRESTClient(ctx, option.WithCredentialsFile(credFile))
 	if err != nil {
-		logger.Error("创建 Instances 客户端失败", "error", err)
+		logger.Error("创建 Instances 客户端失败", slog.String("pre", pre), "error", err)
 		return err
 	}
 	defer instancesClient.Close()
@@ -87,18 +88,29 @@ func CreateVM(
 	// 7️⃣ 发送请求
 	op, err := instancesClient.Insert(ctx, req)
 	if err != nil {
-		logger.Error("创建 VM 失败", "vmName", vmName, "zone", zone, "error", err)
+		logger.Error("创建 VM 失败", slog.String("pre", pre),
+			"vmName", vmName, "zone", zone, "error", err)
 		return err
 	}
 
-	logger.Info("VM 创建操作已启动", "vmName", vmName, "operation", op.Proto().GetName())
-	logger.Info(fmt.Sprintf("可通过命令检查状态: gcloud compute operations describe %s --zone %s --project %s",
-		op.Proto().GetName(), zone, projectID))
+	logger.Info("VM 创建操作已启动", slog.String("pre", pre),
+		"vmName", vmName, "operation", op.Proto().GetName())
+
+	logger.Info("检查操作状态",
+		slog.String("pre", pre),
+		slog.String("operation", op.Proto().GetName()),
+		slog.String("zone", zone),
+		slog.String("project", projectID),
+		slog.String("cmd", fmt.Sprintf("gcloud compute operations describe %s --zone %s --project %s",
+			op.Proto().GetName(), zone, projectID)),
+	)
+
 	return nil
 }
 
 // GetVMExternalIP 获取指定 VM 的公网 IP
-func GetVMExternalIP(ctx context.Context, logger *slog.Logger, projectID, zone, vmName, credFile string) (string, error) {
+func GetVMExternalIP(ctx context.Context, logger *slog.Logger,
+	projectID, zone, vmName, credFile, pre string) (string, error) {
 	// 创建客户端（使用凭证文件）
 	client, err := compute.NewInstancesRESTClient(ctx, option.WithCredentialsFile(credFile))
 	if err != nil {
@@ -124,16 +136,17 @@ func GetVMExternalIP(ctx context.Context, logger *slog.Logger, projectID, zone, 
 	}
 
 	natIP := vm.NetworkInterfaces[0].AccessConfigs[0].GetNatIP()
-	logger.Info("获取 VM 公网 IP", "vmName", vmName, "ip", natIP)
+	logger.Info("获取 VM 公网 IP", slog.String("pre", pre), "vmName", vmName, "ip", natIP)
 	return natIP, nil
 }
 
 // DeleteVM 删除指定的 VM
-func DeleteVM(ctx context.Context, logger *slog.Logger, projectID, zone, vmName, credFile string) error {
+func DeleteVM(ctx context.Context, logger *slog.Logger,
+	projectID, zone, vmName, credFile, pre string) error {
 	// 创建客户端（使用凭证文件）
 	instancesClient, err := compute.NewInstancesRESTClient(ctx, option.WithCredentialsFile(credFile))
 	if err != nil {
-		logger.Error("创建 Instances 客户端失败", "error", err)
+		logger.Error("创建 Instances 客户端失败", slog.String("pre", pre), "error", err)
 		return err
 	}
 	defer instancesClient.Close()
@@ -148,12 +161,22 @@ func DeleteVM(ctx context.Context, logger *slog.Logger, projectID, zone, vmName,
 	// 发送删除请求
 	op, err := instancesClient.Delete(ctx, req)
 	if err != nil {
-		logger.Error("删除 VM 失败", "vmName", vmName, "zone", zone, "error", err)
+		logger.Error("删除 VM 失败", slog.String("pre", pre), "vmName", vmName, "zone", zone, "error", err)
 		return err
 	}
 
-	logger.Info("VM 删除操作已启动", "vmName", vmName, "operation", op.Proto().GetName())
-	logger.Info(fmt.Sprintf("可通过命令检查状态: gcloud compute operations describe %s --zone %s --project %s",
-		op.Proto().GetName(), zone, projectID))
+	logger.Info("VM 删除操作已启动", slog.String("pre", pre), "vmName", vmName, "operation", op.Proto().GetName())
+
+	logger.Info("可通过命令检查状态",
+		slog.String("pre", pre),
+		slog.String("operation", op.Proto().GetName()),
+		slog.String("zone", zone),
+		slog.String("project", projectID),
+		slog.String("cmd", fmt.Sprintf(
+			"gcloud compute operations describe %s --zone %s --project %s",
+			op.Proto().GetName(), zone, projectID,
+		)),
+	)
+
 	return nil
 }

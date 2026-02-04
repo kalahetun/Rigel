@@ -191,7 +191,7 @@ func (s *Scaler) evaluateScaling() {
 				node.State = Triggered
 				node.ScaleHistory = append(node.ScaleHistory, ScaleEvent{Time: time.Now(), Amount: 1, ScaledVM: vm})
 				node.ScaledVMs = append(node.ScaledVMs, vm)
-				retain, state := s.calculateRetention()
+				retain, state := s.calculateRetention(pre)
 				node.RetainTime = retain
 				if state == Permanent {
 					node.State = Permanent
@@ -204,7 +204,7 @@ func (s *Scaler) evaluateScaling() {
 			if s.triggerScaling2(pre) {
 				node.State = Triggered
 				node.ScaleHistory = append(node.ScaleHistory, ScaleEvent{Time: time.Now(), Amount: 1})
-				retain, state := s.calculateRetention()
+				retain, state := s.calculateRetention(pre)
 				node.RetainTime = retain
 				if state == Permanent {
 					node.State = Permanent
@@ -230,7 +230,7 @@ func (s *Scaler) evaluateScaling() {
 		s.triggerRelease(pre)
 		node.State = Inactive
 	case ScalingUp:
-		retain, _ := s.calculateRetention()
+		retain, _ := s.calculateRetention(pre)
 		node.RetainTime = retain
 		node.State = Dormant
 		s.triggerDormant(pre)
@@ -255,7 +255,7 @@ func (s *Scaler) triggerScaling1(n int, pre string, logger *slog.Logger) (bool, 
 
 	gcp := util.Config_.GCP
 	vmName := gcp.VMPrefix + util.GenerateRandomLetters(4)
-	err := CreateVM(ctx, logger, gcp.ProjectID, gcp.Zone, vmName, gcp.CredFile)
+	err := CreateVM(ctx, logger, gcp.ProjectID, gcp.Zone, vmName, gcp.CredFile, pre)
 
 	if err != nil {
 		logger.Error("创建 VM 失败", slog.String("pre", pre), "error", err)
@@ -267,7 +267,7 @@ func (s *Scaler) triggerScaling1(n int, pre string, logger *slog.Logger) (bool, 
 	time.Sleep(10 * time.Minute) // 等待 10 分钟
 
 	//获取ip等信息用于管理
-	ip, err := GetVMExternalIP(ctx, logger, gcp.ProjectID, gcp.Zone, vmName, gcp.CredFile)
+	ip, err := GetVMExternalIP(ctx, logger, gcp.ProjectID, gcp.Zone, vmName, gcp.CredFile, pre)
 	if err != nil {
 		logger.Error("获取 VM 外部 IP 失败", slog.String("pre", pre), "error", err)
 		return false, VM{}
@@ -353,7 +353,7 @@ func (s *Scaler) triggerRelease(pre string) bool {
 	defer cancel() // 确保上下文最终被释放
 
 	gcp := util.Config_.GCP
-	err := DeleteVM(ctx, logger, gcp.ProjectID, gcp.Zone, vm.VMName, gcp.CredFile)
+	err := DeleteVM(ctx, logger, gcp.ProjectID, gcp.Zone, vm.VMName, gcp.CredFile, pre)
 	if err != nil {
 		s.logger.Error("删除 VM 失败", slog.String("pre", pre), "error", err)
 	}
