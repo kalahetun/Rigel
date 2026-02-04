@@ -3,6 +3,7 @@ package routing
 import (
 	"control-plane/storage"
 	"control-plane/util"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"math"
@@ -86,7 +87,7 @@ func (g *GraphManager) GetNodes() []*storage.NetworkTelemetry {
 }
 
 // RemoveNode 删除节点及其相关的所有边
-func (g *GraphManager) RemoveNode(id string) {
+func (g *GraphManager) RemoveNode(id, logPre string) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
@@ -99,6 +100,7 @@ func (g *GraphManager) RemoveNode(id string) {
 			delete(g.edges, key)
 		}
 	}
+	g.DumpGraph(logPre)
 }
 
 // GetEdges 返回当前所有 edges
@@ -225,7 +227,23 @@ func (g *GraphManager) AddNode(node *storage.NetworkTelemetry, logPre string) {
 		//g.logger.Info("EdgeRisk", slog.String("pre", logPre), OutNode(id)+"->"+in, r)
 	}
 
+	//打印整个拓扑图 的 节点和边
+	g.DumpGraph(logPre)
+
 	return
+}
+
+func (g *GraphManager) DumpGraph(logPre string) {
+	//打印整个拓扑图 的 节点和边
+	g.logger.Info("DumpGraph", slog.String("pre", logPre))
+	for _, node := range g.GetNodes() {
+		b, _ := json.MarshalIndent(node, "", "  ")
+		g.logger.Info("Graph Node", slog.String("pre", logPre), slog.String("node", string(b)))
+	}
+	for _, edge := range g.GetEdges() {
+		b, _ := json.MarshalIndent(edge, "", "  ")
+		g.logger.Info("Graph Edge", slog.String("pre", logPre), slog.String("edge", string(b)))
+	}
 }
 
 // EdgeRisk computes the unified risk score for both virtual and physical edges.

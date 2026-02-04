@@ -174,7 +174,7 @@ func main() {
 				case "UPDATE":
 					r.AddNode(&tel, logPre)
 				case "DELETE":
-					r.RemoveNode(tel.PublicIP)
+					r.RemoveNode(tel.PublicIP, logPre)
 				default:
 					logger.Warn("[WATCH] UNKNOWN eventType",
 						slog.String("pre", logPre),
