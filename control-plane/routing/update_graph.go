@@ -155,30 +155,33 @@ func (g *GraphManager) AddNode(node *storage.NetworkTelemetry, logPre string) {
 	// 2. 添加虚拟边（in->out）
 	in := InNode(node.PublicIP)
 	out := OutNode(node.PublicIP)
-	r := EdgeRisk(node.NodeCongestion.AvgWeightedCache, 0, 0, logPre, g.logger)
-	g.edges[in+"->"+out] = &Edge{
+	line := in + "->" + out
+	r := EdgeRisk(node.NodeCongestion.AvgWeightedCache, 0, 0,
+		logPre+"-"+line, g.logger)
+	g.edges[line] = &Edge{
 		SourceIp:        in,
 		DestinationIp:   out,
 		SourceProvider:  node.Provider,
 		SourceContinent: node.Continent,
 		EdgeWeight:      r,
 	}
-	g.logger.Info("EdgeRisk", in+"->"+out, r)
+	//g.logger.Info("EdgeRisk", virtulLine, r)
 
 	//添加节点到cloud storage server
-	for k, v := range node.LinksCongestion {
+	for _, v := range node.LinksCongestion {
 		if v.Target.TargetType == "cloud_storage" {
 			pp, _ := util.GetBandwidthPrice(node.Provider, node.Continent, v.Target.Region, g.logger)
-			r = EdgeRisk(0, pp, v.PacketLoss, logPre, g.logger)
 			cloudFull := fmt.Sprintf("%s_%s_%s", v.Target.Provider, v.Target.Region, v.Target.City)
-			g.edges[in+"->"+k] = &Edge{
+			line := out + "->" + cloudFull
+			r = EdgeRisk(0, pp, v.PacketLoss, logPre+"-"+line, g.logger)
+			g.edges[line] = &Edge{
 				SourceIp:        out,
 				DestinationIp:   cloudFull,
 				SourceProvider:  node.Provider,
 				SourceContinent: node.Continent,
 				EdgeWeight:      r,
 			}
-			g.logger.Info("EdgeRisk", slog.String("pre", logPre), out+"->"+cloudFull, r)
+			//g.logger.Info("EdgeRisk", slog.String("pre", logPre), out+"->"+cloudFull, r)
 		}
 	}
 
@@ -193,15 +196,16 @@ func (g *GraphManager) AddNode(node *storage.NetworkTelemetry, logPre string) {
 			ll = val.PacketLoss
 		}
 		// 新节点 out -> 老节点 in
-		r = EdgeRisk(0, pp, ll, logPre, g.logger)
-		g.edges[out+"->"+InNode(id)] = &Edge{
+		line := out + "->" + InNode(id)
+		r = EdgeRisk(0, pp, ll, logPre+"-"+line, g.logger)
+		g.edges[line] = &Edge{
 			SourceIp:        out,
 			DestinationIp:   InNode(id),
 			SourceProvider:  node.Provider,
 			SourceContinent: node.Continent,
 			EdgeWeight:      r,
 		}
-		g.logger.Info("EdgeRisk", slog.String("pre", logPre), out+"->"+InNode(id), r)
+		//g.logger.Info("EdgeRisk", slog.String("pre", logPre), out+"->"+InNode(id), r)
 
 		pp_, _ := util.GetBandwidthPrice(other.Provider, other.Continent, node.Continent, g.logger)
 		//var ll_ float64 = 0
@@ -209,15 +213,16 @@ func (g *GraphManager) AddNode(node *storage.NetworkTelemetry, logPre string) {
 		//	ll_ = val.PacketLoss
 		//}
 		// 老节点 out -> 新节点 in
-		r = EdgeRisk(0, pp_, ll, logPre, g.logger)
-		g.edges[OutNode(id)+"->"+in] = &Edge{
+		line = OutNode(id) + "->" + in
+		r = EdgeRisk(0, pp_, ll, logPre+"-"+line, g.logger)
+		g.edges[line] = &Edge{
 			SourceIp:        OutNode(id),
 			DestinationIp:   in,
 			SourceProvider:  other.Provider,
 			SourceContinent: other.Continent,
 			EdgeWeight:      r,
 		}
-		g.logger.Info("EdgeRisk", slog.String("pre", logPre), OutNode(id)+"->"+in, r)
+		//g.logger.Info("EdgeRisk", slog.String("pre", logPre), OutNode(id)+"->"+in, r)
 	}
 
 	return
@@ -277,11 +282,13 @@ func EdgeRisk(cacheUtil, cost, lossRate float64, logPre string, l *slog.Logger) 
 		lossRisk = -math.Log(1 - lossRate)
 	}
 
-	l.Info("EdgeRisk", slog.String("pre", logPre),
-		"cacheRisk", cacheRisk, "costRisk", costRisk, "lossRisk", lossRisk)
-
 	r := wCache*cacheRisk + wCost*costRisk + wLoss*lossRisk
-	l.Info("EdgeRisk", slog.String("pre", logPre), "risk", r)
+
+	l.Info("EdgeRisk", slog.String("pre", logPre),
+		slog.Float64("cacheRisk", cacheRisk),
+		slog.Float64("costRisk", costRisk),
+		slog.Float64("lossRisk", lossRisk),
+		slog.Float64("risk", r))
 
 	return r
 }
