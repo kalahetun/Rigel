@@ -2,6 +2,7 @@ package scaling_vm
 
 import (
 	"control-plane/util"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -146,8 +147,10 @@ func NewNodeState(id string, queue *util.FixedQueue) *NodeState {
 // NewScaler 初始化 Scaler 控制器
 func NewScaler(nodeID string, config *ScaleConfig, queue *util.FixedQueue, pre string, logger *slog.Logger) *Scaler {
 
+	configJSON, _ := json.Marshal(config)
+	queueJSON, _ := json.Marshal(queue)
 	logger.Info("NewScaler", slog.String("pre", pre),
-		"nodeID", nodeID, "config", config, "queue", queue)
+		"nodeID", nodeID, "config", configJSON, "queue", queueJSON)
 
 	if config == nil {
 		config = NewDefaultScaleConfig()

@@ -43,14 +43,14 @@ func (s *Scaler) StopTicker() {
 }
 
 // 计算当前扰动量 \widetilde P_i(t)
-func (s *Scaler) calculatePerturbation() float64 {
+func (s *Scaler) calculatePerturbation(pre string) float64 {
 
 	var queue []interface{}
 	queue = s.node.VolatilityQueue.SnapshotLatestFirst()
 
 	//还没有足够数据
 	if len(queue) <= 1 {
-		s.logger.Info("the data of volatility queue is spare")
+		s.logger.Info("the data of volatility queue is spare", slog.String("pre", pre))
 		return 0
 	}
 
@@ -59,7 +59,8 @@ func (s *Scaler) calculatePerturbation() float64 {
 	avgCache_ := queue[1].(storage.NetworkTelemetry).NodeCongestion.AvgWeightedCache
 	if (avgCache <= s.config.VolatilityThreshold && avgCache_ <= s.config.VolatilityThreshold) ||
 		(avgCache >= s.config.VolatilityThreshold && avgCache_ >= s.config.VolatilityThreshold) {
-		s.logger.Info("latest volatility is too small", "volatility", queue[0].(float64))
+		s.logger.Info("latest volatility is too small",
+			slog.String("pre", pre), "volatility", queue[0].(float64))
 		return 0
 	}
 
@@ -175,10 +176,11 @@ func (s *Scaler) evaluateScaling() {
 	}
 
 	// 1️⃣ 计算当前扰动量 P 和波动值 Z
-	node.P = s.calculatePerturbation()
+	node.P = s.calculatePerturbation(pre)
 	node.Z = s.calculateVolatilityAccumulation()
 	delta := s.calculateDelta(s.node)
-	s.logger.Info("calculate delta", slog.String("pre", pre), node.P, node.Z, delta)
+	s.logger.Info("calculate delta", slog.String("pre", pre), slog.Float64("P", node.P),
+		slog.Float64("Z", node.Z), slog.Float64("delta", delta))
 
 	// 2️⃣ 判断是否需要触发扩容
 	if delta < 0 {
@@ -199,7 +201,7 @@ func (s *Scaler) evaluateScaling() {
 			}
 		case Dormant:
 			node.State = Triggered
-			if s.triggerScaling2() {
+			if s.triggerScaling2(pre) {
 				node.State = Triggered
 				node.ScaleHistory = append(node.ScaleHistory, ScaleEvent{Time: time.Now(), Amount: 1})
 				retain, state := s.calculateRetention()
@@ -225,13 +227,13 @@ func (s *Scaler) evaluateScaling() {
 		s.logger.Info("node is dormant or permanent, and retention time reached",
 			slog.String("pre", pre))
 		node.State = Releasing
-		s.triggerRelease()
+		s.triggerRelease(pre)
 		node.State = Inactive
 	case ScalingUp:
 		retain, _ := s.calculateRetention()
 		node.RetainTime = retain
 		node.State = Dormant
-		s.triggerDormant()
+		s.triggerDormant(pre)
 		s.logger.Info("the state of node is changed to dormant from scaling up",
 			slog.String("pre", pre))
 	default:
@@ -298,50 +300,50 @@ func (s *Scaler) triggerScaling1(n int, pre string, logger *slog.Logger) (bool, 
 	return true, VM{ip, vmName, time.Now(), Triggered}
 }
 
-func (s *Scaler) triggerScaling2() bool {
+func (s *Scaler) triggerScaling2(pre string) bool {
 
 	var ip, setState string
 	//找到睡眠的vm获取 ip
 	if len(s.node.ScaledVMs) <= 0 {
-		s.logger.Error("No scaled VMs found")
+		s.logger.Error("No scaled VMs found", slog.String("pre", pre))
 		return false
 	}
 	vm := s.node.ScaledVMs[0]
 	ip = vm.PublicIP
 	setState = "on"
 
-	if b := setHealthState(ip, setState, s.logger); b == false {
+	if b := setHealthState(ip, setState, pre, s.logger); b == false {
 		return false
 	}
 	return true
 }
 
-func (s *Scaler) triggerDormant() bool {
+func (s *Scaler) triggerDormant(pre string) bool {
 
 	var ip, setState string
 	//找到睡眠的vm获取 ip
 	if len(s.node.ScaledVMs) <= 0 {
-		s.logger.Error("No scaled VMs found")
+		s.logger.Error("No scaled VMs found", slog.String("pre", pre))
 		return false
 	}
 	vm := s.node.ScaledVMs[0]
 	ip = vm.PublicIP
 	setState = "off"
 
-	if b := setHealthState(ip, setState, s.logger); b == false {
+	if b := setHealthState(ip, setState, pre, s.logger); b == false {
 		return false
 	}
 	return true
 }
 
 // triggerRelease 模拟释放动作
-func (s *Scaler) triggerRelease() bool {
+func (s *Scaler) triggerRelease(pre string) bool {
 
-	s.logger.Info("triggerRelease")
+	s.logger.Info("triggerRelease", slog.String("pre", pre))
 
 	//找到睡眠的vm获取 ip
 	if len(s.node.ScaledVMs) <= 0 {
-		s.logger.Error("No scaled VMs found")
+		s.logger.Error("No scaled VMs found", slog.String("pre", pre))
 		return false
 	}
 	vm := s.node.ScaledVMs[0]
@@ -353,15 +355,16 @@ func (s *Scaler) triggerRelease() bool {
 	gcp := util.Config_.GCP
 	err := DeleteVM(ctx, logger, gcp.ProjectID, gcp.Zone, vm.VMName, gcp.CredFile)
 	if err != nil {
-		s.logger.Error("删除 VM 失败", "error", err)
+		s.logger.Error("删除 VM 失败", slog.String("pre", pre), "error", err)
 	}
 
-	s.logger.Info("Releasing node", vm.VMName)
+	s.logger.Info("Releasing node", slog.String("pre", pre),
+		slog.String("vm name", vm.VMName))
 	return true
 }
 
 // calculateRetention 计算节点的 Retain Time，返回绝对时间点
-func (s *Scaler) calculateRetention() (time.Time, NodeStatus) {
+func (s *Scaler) calculateRetention(pre string) (time.Time, NodeStatus) {
 	now := time.Now()
 	var activationPotential float64
 
@@ -393,7 +396,7 @@ func expDecay(delta time.Duration, tau time.Duration) float64 {
 
 // setHealthState 用于向 API 发送请求，设置健康状态
 // 参数 apiHost 是主机地址，setState 是健康状态（可以是 "on" 或 "off"）
-func setHealthState(apiHost, setState string, logger *slog.Logger) bool {
+func setHealthState(apiHost, setState, pre string, logger *slog.Logger) bool {
 	// 创建 URL 和查询参数
 	apiURL := fmt.Sprintf("http://%s:8095/healthStateChange", apiHost) // 使用传入的 apiHost
 	params := url.Values{}
@@ -405,19 +408,20 @@ func setHealthState(apiHost, setState string, logger *slog.Logger) bool {
 	// 调用 API 并设置健康状态
 	resp, err := http.Get(reqURL)
 	if err != nil {
-		logger.Error("请求失败: %v", err)
+		logger.Error("请求失败", slog.String("pre", pre), slog.Any("err", err))
 		return false
 	}
 	defer resp.Body.Close()
 
 	// 输出响应状态
-	logger.Info("响应状态码: %d\n", resp.StatusCode)
+	logger.Info("响应状态码", slog.String("pre", pre), slog.Int64("status code", int64(resp.StatusCode)))
 
 	// 根据响应状态码处理结果
 	if resp.StatusCode == http.StatusOK {
-		logger.Info("健康状态已成功设置为: %s\n", setState)
+		logger.Info("健康状态已成功设置为", slog.String("pre", pre), slog.String("set state", setState))
 	} else {
-		logger.Error("健康状态设置失败，状态码: %d", resp.StatusCode)
+		logger.Error("健康状态设置失败状态码", slog.String("pre", pre),
+			slog.Int64("status code", int64(resp.StatusCode)))
 		return false
 	}
 	return true
