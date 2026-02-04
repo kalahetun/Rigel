@@ -136,6 +136,7 @@ func main() {
 				continue
 			}
 			r.AddNode(&tel, logPre)
+			r.DumpGraph(logPre)
 		}
 	}
 
@@ -171,10 +172,13 @@ func main() {
 				switch eventType {
 				case "CREATE":
 					r.AddNode(&tel, logPre)
+					r.DumpGraph(logPre)
 				case "UPDATE":
 					r.AddNode(&tel, logPre)
+					r.DumpGraph(logPre)
 				case "DELETE":
 					r.RemoveNode(tel.PublicIP, logPre)
+					r.DumpGraph(logPre)
 				default:
 					logger.Warn("[WATCH] UNKNOWN eventType",
 						slog.String("pre", logPre),

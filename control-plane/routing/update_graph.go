@@ -100,7 +100,6 @@ func (g *GraphManager) RemoveNode(id, logPre string) {
 			delete(g.edges, key)
 		}
 	}
-	g.DumpGraph(logPre)
 }
 
 // GetEdges 返回当前所有 edges
@@ -226,9 +225,6 @@ func (g *GraphManager) AddNode(node *storage.NetworkTelemetry, logPre string) {
 		}
 		//g.logger.Info("EdgeRisk", slog.String("pre", logPre), OutNode(id)+"->"+in, r)
 	}
-
-	//打印整个拓扑图 的 节点和边
-	g.DumpGraph(logPre)
 
 	return
 }
