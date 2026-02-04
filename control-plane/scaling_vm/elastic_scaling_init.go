@@ -99,6 +99,12 @@ type Scaler struct {
 
 	// 读写锁，保护 node 状态并发访问
 	mu sync.Mutex
+
+	// ====== 测试 / 模拟用 ======
+	nowFn               func() time.Time
+	mockDelta           *float64
+	mockTriggerScaling1 *bool
+	mockTriggerScaling2 *bool
 }
 
 // NewDefaultScaleConfig 返回带默认值的 ScaleConfig
@@ -180,4 +186,11 @@ func (n *NodeState) LogStateSlog(pre string, logger *slog.Logger) {
 		"ScaleHistory", history,
 		"VolatilityQueue", n.VolatilityQueue.SnapshotLatestFirst(),
 	)
+}
+
+func (s *Scaler) now() time.Time {
+	if s.nowFn != nil {
+		return s.nowFn()
+	}
+	return time.Now()
 }

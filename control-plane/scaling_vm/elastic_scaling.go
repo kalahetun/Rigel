@@ -154,14 +154,14 @@ func (s *Scaler) evaluateScaling() {
 		s.logger.Info("node is releasing", slog.String("pre", pre))
 		return
 	case Triggered:
-		if time.Now().Sub(s.node.RetainTime) < 0 {
+		if s.now().Before(s.node.RetainTime) {
 			s.logger.Info("node is triggered, but retention time not reached",
 				slog.String("pre", pre))
 			return
 		}
 		//往下走就是已经超时
 	case Dormant, Permanent:
-		if time.Now().Sub(s.node.RetainTime) < 0 {
+		if s.now().Before(s.node.RetainTime) {
 			s.logger.Info("node is dormant or permanent, but retention time not reached",
 				slog.String("pre", pre))
 			// 后面检验一下是不是需要扩容 如果扩容这个状态就会被change
@@ -189,7 +189,7 @@ func (s *Scaler) evaluateScaling() {
 			node.State = ScalingUp
 			if ok, vm := s.triggerScaling1(1, pre, s.logger); ok {
 				node.State = Triggered
-				node.ScaleHistory = append(node.ScaleHistory, ScaleEvent{Time: time.Now(), Amount: 1, ScaledVM: vm})
+				node.ScaleHistory = append(node.ScaleHistory, ScaleEvent{Time: s.now(), Amount: 1, ScaledVM: vm})
 				node.ScaledVMs = append(node.ScaledVMs, vm)
 				retain, state := s.calculateRetention(pre)
 				node.RetainTime = retain
@@ -203,7 +203,7 @@ func (s *Scaler) evaluateScaling() {
 			node.State = Triggered
 			if s.triggerScaling2(pre) {
 				node.State = Triggered
-				node.ScaleHistory = append(node.ScaleHistory, ScaleEvent{Time: time.Now(), Amount: 1})
+				node.ScaleHistory = append(node.ScaleHistory, ScaleEvent{Time: s.now(), Amount: 1})
 				retain, state := s.calculateRetention(pre)
 				node.RetainTime = retain
 				if state == Permanent {
@@ -297,7 +297,7 @@ func (s *Scaler) triggerScaling1(n int, pre string, logger *slog.Logger) (bool, 
 		return false, VM{}
 	}
 
-	return true, VM{ip, vmName, time.Now(), Triggered}
+	return true, VM{ip, vmName, s.now(), Triggered}
 }
 
 func (s *Scaler) triggerScaling2(pre string) bool {
@@ -365,7 +365,7 @@ func (s *Scaler) triggerRelease(pre string) bool {
 
 // calculateRetention 计算节点的 Retain Time，返回绝对时间点
 func (s *Scaler) calculateRetention(pre string) (time.Time, NodeStatus) {
-	now := time.Now()
+	now := s.now()
 	var activationPotential float64
 
 	for _, evt := range s.node.ScaleHistory {
