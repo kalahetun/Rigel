@@ -124,6 +124,8 @@ func (s *Scaler) autoScaling() {
 	}
 	defer s.mu.Unlock()
 
+	s.logger.Info("autoScaling", slog.String("pre", pre))
+
 	if s.ManualAction != "init" {
 		s.logger.Info("in the manual mode", slog.String("pre", pre),
 			slog.String("action", s.ManualAction))
