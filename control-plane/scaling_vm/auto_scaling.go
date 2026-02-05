@@ -26,9 +26,7 @@ func (s *Scaler) StartTicker(pre string) {
 		for {
 			select {
 			case <-ticker.C:
-				s.mu.Lock()
 				s.autoScaling()
-				s.mu.Unlock()
 			case <-s.stopChan:
 				ticker.Stop()
 				return
