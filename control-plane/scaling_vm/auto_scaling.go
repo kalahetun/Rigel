@@ -27,7 +27,7 @@ func (s *Scaler) StartTicker(pre string) {
 			select {
 			case <-ticker.C:
 				s.mu.Lock()
-				s.evaluateScaling()
+				s.autoScaling()
 				s.mu.Unlock()
 			case <-s.stopChan:
 				ticker.Stop()
@@ -79,7 +79,7 @@ func (s *Scaler) calculateVolatilityAccumulation() float64 {
 
 func (s *Scaler) calculateDelta(node *NodeState) float64 {
 
-	if s.Override.Delta != nil {
+	if s.Override != nil && s.Override.Delta != nil {
 		return *s.Override.Delta
 	}
 
@@ -109,46 +109,31 @@ func (s *Scaler) calculateCost(node *NodeState) float64 {
 	}
 }
 
-// 尝试获取锁，如果获取不到则返回 false
-func (s *Scaler) tryLock(timeout time.Duration) bool {
-	// 设置一个通道，用于接收锁的获取结果
-	done := make(chan bool, 1)
-
-	// 启动一个 goroutine 来尝试获取锁
-	go func() {
-		s.mu.Lock()
-		done <- true
-	}()
-
-	// 等待锁或超时
-	select {
-	case <-done: // 如果成功获取到锁
-		return true
-	case <-time.After(timeout): // 如果超时
-		return false
-	}
-}
-
 // evaluateScaling 核心扩容判断逻辑
 // evaluateScaling 核心扩容判断与状态管理逻辑
-func (s *Scaler) evaluateScaling() {
+func (s *Scaler) autoScaling() {
 
 	pre := util.GenerateRandomLetters(5)
 
 	// 尝试获取锁，若获取不到则直接返回
 	if !s.tryLock(1 * time.Second) {
-		s.logger.Warn("cannot get lock",
-			slog.String("pre", pre),
+		s.logger.Warn("cannot get lock", slog.String("pre", pre),
 			slog.Any("err", "cannot get lock"),
 		)
 		return
 	}
 	defer s.mu.Unlock()
 
+	if s.ManualAction != "init" {
+		s.logger.Info("in the manual mode", slog.String("pre", pre),
+			slog.String("action", s.ManualAction))
+		return
+	}
+
 	//-----------------------------------------------------------------------------------------------------------------/
 
 	// 1️⃣ 判断当前节点状态，如果不需要扩容则直接返回
-	s.ScalerDump(pre, s.logger) //打印 node
+	s.ScalerDump(pre+"-1", s.logger) //打印 node
 	node := s.Node
 	switch s.getState() {
 	case ScalingUp:
@@ -175,6 +160,8 @@ func (s *Scaler) evaluateScaling() {
 			//如果后面不触发 Triggered 走到最后就会被删除
 			node.State = Releasing
 		}
+	case Inactive:
+		s.logger.Info("node is inactive", slog.String("pre", pre))
 	default:
 		s.logger.Warn("unhandled default case", slog.String("pre", pre))
 	}
@@ -185,7 +172,7 @@ func (s *Scaler) evaluateScaling() {
 	node.P = s.calculatePerturbation(pre)
 	node.Z = s.calculateVolatilityAccumulation()
 	delta := s.calculateDelta(s.Node)
-	s.ScalerDump(pre, s.logger)
+	s.ScalerDump(pre+"-2", s.logger)
 	s.logger.Info("calculate delta", slog.String("pre", pre), slog.Float64("delta", delta))
 	// 2️⃣ 判断是否需要触发扩容
 	if delta < 0 {
@@ -221,7 +208,7 @@ func (s *Scaler) evaluateScaling() {
 			s.logger.Warn("unhandled default case", slog.String("pre", pre))
 		}
 	}
-	s.ScalerDump(pre, s.logger) //打印 node
+	s.ScalerDump(pre+"-3", s.logger) //打印 node
 	if node.State == Triggered || node.State == Permanent {
 		return
 	}
@@ -244,7 +231,7 @@ func (s *Scaler) evaluateScaling() {
 	default:
 		s.logger.Warn("unhandled default case", slog.String("pre", pre))
 	}
-	s.ScalerDump(pre, s.logger) //打印 node
+	s.ScalerDump(pre+"-4", s.logger) //打印 node
 
 	return
 }

@@ -2,26 +2,28 @@ package util
 
 import (
 	"container/list"
-	"fmt"
+	"log/slog"
 	"sync"
 )
 
 // ----------------------- FixedQueue -----------------------
 // 线程安全固定大小队列，支持自动弹出最老元素
 type FixedQueue struct {
-	list *list.List
-	size int
-	mu   sync.Mutex
+	list   *list.List
+	size   int
+	mu     sync.Mutex
+	logger *slog.Logger
 }
 
 // NewFixedQueue 创建固定大小队列
-func NewFixedQueue(size int) *FixedQueue {
+func NewFixedQueue(size int, logger *slog.Logger) *FixedQueue {
 	if size <= 0 {
 		panic("size must be greater than 0")
 	}
 	return &FixedQueue{
-		list: list.New(),
-		size: size,
+		list:   list.New(),
+		size:   size,
+		logger: logger,
 	}
 }
 
@@ -67,15 +69,13 @@ func (q *FixedQueue) Len() int {
 }
 
 // Print 打印队列内容
-func (q *FixedQueue) Print() {
+func (q *FixedQueue) Print(pre string) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
-	fmt.Print("Queue: ")
 	for e := q.list.Front(); e != nil; e = e.Next() {
-		fmt.Printf("%v ", e.Value)
+		q.logger.Info("Queue", slog.String("pre", pre), slog.Any("data", e.Value))
 	}
-	fmt.Println()
 }
 
 // SnapshotLatestFirst 返回队列中所有元素的切片（按最新到最老顺序）

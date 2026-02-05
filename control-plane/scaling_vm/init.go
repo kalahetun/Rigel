@@ -108,6 +108,8 @@ type Scaler struct {
 
 	// ====== 测试 / 模拟用 ======
 	Override *ScalerOverride `json:"override,omitempty"`
+
+	ManualAction string
 }
 
 // NewDefaultScaleConfig 返回带默认值的 ScaleConfig
@@ -167,10 +169,32 @@ func NewScaler(nodeID string, config *ScaleConfig, queue *util.FixedQueue,
 	}
 
 	return &Scaler{
-		Config:   config,
-		Node:     NewNodeState(nodeID, queue),
-		stopChan: make(chan struct{}),
-		logger:   logger,
+		Config:       config,
+		Node:         NewNodeState(nodeID, queue),
+		stopChan:     make(chan struct{}),
+		logger:       logger,
+		Override:     nil,
+		ManualAction: "init",
+	}
+}
+
+// 尝试获取锁，如果获取不到则返回 false
+func (s *Scaler) tryLock(timeout time.Duration) bool {
+	// 设置一个通道，用于接收锁的获取结果
+	done := make(chan bool, 1)
+
+	// 启动一个 goroutine 来尝试获取锁
+	go func() {
+		s.mu.Lock()
+		done <- true
+	}()
+
+	// 等待锁或超时
+	select {
+	case <-done: // 如果成功获取到锁
+		return true
+	case <-time.After(timeout): // 如果超时
+		return false
 	}
 }
 
@@ -188,21 +212,21 @@ func (s *Scaler) ScalerDump(pre string, logger *slog.Logger) {
 
 func (s *Scaler) now() time.Time {
 	now := time.Now()
-	if s.Override.Now != nil {
+	if s.Override != nil && s.Override.Now != nil {
 		now = *s.Override.Now
 	}
 	return now
 }
 
 func (s *Scaler) getRetainTime() time.Time {
-	if s.Override.RetainTime != nil {
+	if s.Override != nil && s.Override.RetainTime != nil {
 		return *s.Override.RetainTime
 	}
 	return s.Node.RetainTime
 }
 
 func (s *Scaler) getState() NodeStatus {
-	if s.Override.State != nil {
+	if s.Override != nil && s.Override.State != nil {
 		return *s.Override.State
 	}
 	return s.Node.State

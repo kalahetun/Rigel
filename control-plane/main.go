@@ -199,7 +199,7 @@ func main() {
 		slog.String("storageDir", storageDir),
 	)
 	s, _ := storage.NewFileStorage(storageDir, 0, logger)
-	queue := util.NewFixedQueue(20)
+	queue := util.NewFixedQueue(20, logger)
 	go storage.CalcClusterWeightedAvg(s, 30*time.Second, cli, queue, logPre, logger)
 
 	//启动envoy
@@ -222,6 +222,7 @@ func main() {
 	// 初始化Gin路由
 	router := gin.Default()
 	router.GET("/health", func(c *gin.Context) { c.JSON(http.StatusOK, "success") })
+
 	//收集上报的代理节点信息
 	api.InitVmReportAPIRouter(router, s, logger)
 	//更改envoy的配置信息
@@ -230,6 +231,9 @@ func main() {
 	api.InitNodeProbeRouter(router, cli, logger)
 	//client获取 bulk transfer path信息的接口
 	api.InitUserRoutingRouter(router, r, logger)
+	//手动控制scaling的接口
+	api.InitManualScalingRouter(router, es, logger)
+
 	logger.Info("Envoy端口管理API启动", slog.String("pre", logPre), "addr", ":8081") // 启动API服务
 	if err := router.Run(":8081"); err != nil {
 		logger.Error("API服务启动失败", slog.String("pre", logPre), "error", err)
