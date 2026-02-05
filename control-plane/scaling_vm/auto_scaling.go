@@ -55,10 +55,16 @@ func (s *Scaler) calculatePerturbation(pre string) float64 {
 	//如果最新的波动小于阈值 ，则直接返回 0
 	avgCache := queue[0].(storage.NetworkTelemetry).NodeCongestion.AvgWeightedCache
 	avgCache_ := queue[1].(storage.NetworkTelemetry).NodeCongestion.AvgWeightedCache
+
 	if (avgCache <= s.Config.VolatilityThreshold && avgCache_ <= s.Config.VolatilityThreshold) ||
 		(avgCache >= s.Config.VolatilityThreshold && avgCache_ >= s.Config.VolatilityThreshold) {
-		s.logger.Info("latest volatility is too small",
-			slog.String("pre", pre), "volatility", queue[0].(float64))
+
+		s.logger.Info("latest volatility is insignificant",
+			slog.String("pre", pre),
+			slog.Float64("avg_cache_curr", avgCache),
+			slog.Float64("avg_cache_prev", avgCache_),
+			slog.Float64("threshold", s.Config.VolatilityThreshold),
+		)
 		return 0
 	}
 
