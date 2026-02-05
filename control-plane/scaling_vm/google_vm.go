@@ -17,12 +17,12 @@ import (
 // vmName: VM名字
 func CreateVM(
 	ctx context.Context,
-	logger *slog.Logger,
 	projectID string,
 	zone string,
 	vmName string,
 	credFile string,
 	pre string,
+	logger *slog.Logger,
 ) error {
 	// 1️⃣ 创建客户端（直接使用凭证文件）
 	instancesClient, err := compute.NewInstancesRESTClient(ctx, option.WithCredentialsFile(credFile))
@@ -33,7 +33,7 @@ func CreateVM(
 	defer instancesClient.Close()
 
 	// 2️⃣ SSH 公钥
-	sshKey := "matth:ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICrnRGaFqSdQWQ7H0Ia0po0nDG88pMj8pa7wXkQLXSmQ matth@arcturus"
+	sshKey := "matth:ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCyKfXWsf5A1H2Ga0OYZDb2LPhpivEoQatdOBfssmhJxxlNQ4m+TkzVMZGZfFYWUpBigbRKfOtoAGPR0wIc/qEmRpRF6L+9FvBFJZG1t0BnC1uZiydoK8f7taVz9kcHScAjdxXF1malRPGL0su5MLMvwQ5HYyevYpfHlvhTZziVqnTJZR6mnaVYb5vezYZPTgTyKEZABZxpxsc8wUQum7wcr2OffqVJItQa65XJyxHtASNlY8YxQevPuOHUzaX/d6yoCtZMYVTf68JE0etQ+0Fx/HPdlGAlccXiZIyC6vVGQfYylnTo7yl29FpaMhfM/IHc2nPERcPslQKnestE+Z0+IjJXJMtbGYKUrwxhFtYqy22JD2rKLy6r2kR7rKoi3+e9n+GdbH8jranccnrWkj1/rtP7YG8hniXwgoOB86TJp+OoWkiRDtCXE++jxsiegMAcF/gVmChDzH42+5v+vMYI9MI1Prjd4CLqbWDKffuUg94MTJILbKMZIbwqYAkBQtk= matth@instance-20260202-081539"
 
 	// 3️⃣ 启动盘配置
 	bootDisk := &computepb.AttachedDisk{
@@ -42,25 +42,28 @@ func CreateVM(
 		Type:       proto.String(computepb.AttachedDisk_PERSISTENT.String()),
 		InitializeParams: &computepb.AttachedDiskInitializeParams{
 			SourceImage: proto.String("projects/debian-cloud/global/images/family/debian-12"),
-			DiskSizeGb:  proto.Int64(10),
+			DiskSizeGb:  proto.Int64(10), // 确保客户端在使用后被关闭
 		},
 	}
+	// 设置用于SSH访问的公钥
 
 	// 4️⃣ 网络接口配置（默认网络，带公网IP）
 	networkInterface := &computepb.NetworkInterface{
+		// 配置虚拟机的启动盘，包括自动删除、启动类型、源镜像和磁盘大小
 		Network: proto.String("global/networks/default"),
-		AccessConfigs: []*computepb.AccessConfig{
-			{
-				Name: proto.String("External NAT"),
+		AccessConfigs: []*computepb.AccessConfig{ // 自动删除
+			{ // 作为启动盘
+				Name: proto.String("External NAT"),   // 持久化磁盘类型
 				Type: proto.String("ONE_TO_ONE_NAT"), // 让系统自动分配公网IP
-			},
-		},
+			}, // Debian 12镜像
+		}, // 10GB大小
 	}
 
 	// 5️⃣ 构建 VM 实例对象
 	instance := &computepb.Instance{
+		// 配置网络接口，使用默认网络并启用公网IP
 		Name:        proto.String(vmName),
-		MachineType: proto.String(fmt.Sprintf("zones/%s/machineTypes/e2-medium", zone)),
+		MachineType: proto.String(fmt.Sprintf("zones/%s/machineTypes/e2-medium", zone)), // 使用默认网络
 		Disks:       []*computepb.AttachedDisk{bootDisk},
 		NetworkInterfaces: []*computepb.NetworkInterface{
 			networkInterface,

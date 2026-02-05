@@ -23,7 +23,7 @@ func TestCreateVM(t *testing.T) {
 	defer cancel() // 确保上下文最终被释放
 
 	t.Log("==== 创建 VM ====")
-	err := CreateVM(ctx, logger, projectID, zone, vmName, credFile)
+	err := CreateVM(ctx, projectID, zone, vmName, credFile, "", logger)
 	if err != nil {
 		// t.Fatalf 会终止当前测试用例，若想后续步骤继续执行，可改为 t.Errorf
 		t.Fatalf("创建 VM 失败: %v", err)
@@ -38,7 +38,7 @@ func TestGetVMExternalIP(t *testing.T) {
 	defer cancel() // 确保上下文最终被释放
 
 	t.Log("==== 获取 VM 公网 IP ====")
-	ip, err := GetVMExternalIP(ctx, logger, projectID, zone, vmName, credFile)
+	ip, err := GetVMExternalIP(ctx, logger, projectID, zone, vmName, credFile, "")
 	if err != nil {
 		t.Errorf("获取 VM 公网 IP 失败: %v", err)
 	} else {
@@ -54,7 +54,7 @@ func TestDeleteVM(t *testing.T) {
 	defer cancel() // 确保上下文最终被释放
 
 	t.Log("==== 删除 VM ====")
-	err := DeleteVM(ctx, logger, projectID, zone, vmName, credFile)
+	err := DeleteVM(ctx, logger, projectID, zone, vmName, credFile, "")
 	if err != nil {
 		t.Errorf("删除 VM 失败: %v", err)
 	} else {

@@ -60,7 +60,7 @@ type NodeState struct {
 
 	ScaleHistory []ScaleEvent `json:"scale_history,omitempty"`
 
-	ScaledVMs []VM `json:"scaled_vms,omitempty"`
+	ScaledVMs []VM `json:"scaled_vms,omitempty"` //目前只能单个轮次转动这个状态机
 
 	RetainTime time.Time `json:"retain_time"`
 

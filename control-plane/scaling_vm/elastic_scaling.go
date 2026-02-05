@@ -202,7 +202,7 @@ func (s *Scaler) evaluateScaling() {
 					node.State = Permanent
 				}
 			} else {
-				s.logger.Error("triggerScaling 1 failed", slog.String("pre", pre))
+				s.logger.Error("triggerScaling1 failed", slog.String("pre", pre))
 			}
 		case Dormant:
 			node.State = Triggered
@@ -215,7 +215,7 @@ func (s *Scaler) evaluateScaling() {
 					node.State = Permanent
 				}
 			} else {
-				s.logger.Error("triggerScaling 2 failed", slog.String("pre", pre))
+				s.logger.Error("triggerScaling2 failed", slog.String("pre", pre))
 			}
 		default:
 			s.logger.Warn("unhandled default case", slog.String("pre", pre))
@@ -260,8 +260,8 @@ func (s *Scaler) triggerScaling1(n int, pre string, logger *slog.Logger) (bool, 
 	defer cancel() // 确保上下文最终被释放
 
 	gcp := util.Config_.GCP
-	vmName := gcp.VMPrefix + util.GenerateRandomLetters(4)
-	err := CreateVM(ctx, logger, gcp.ProjectID, gcp.Zone, vmName, gcp.CredFile, pre)
+	vmName := gcp.VMPrefix + util.GenerateRandomLetters(5)
+	err := CreateVM(ctx, gcp.ProjectID, gcp.Zone, vmName, gcp.CredFile, pre, logger)
 
 	if err != nil {
 		logger.Error("创建 VM 失败", slog.String("pre", pre), "error", err)
@@ -270,7 +270,7 @@ func (s *Scaler) triggerScaling1(n int, pre string, logger *slog.Logger) (bool, 
 
 	// 在创建虚拟机后等待一定时间，确保 VM 启动完成
 	logger.Info("Waiting for VM to start...", slog.String("pre", pre), "vmName", vmName)
-	time.Sleep(10 * time.Minute) // 等待 10 分钟
+	time.Sleep(5 * time.Minute) // 等待 10 分钟
 
 	//获取ip等信息用于管理
 	ip, err := GetVMExternalIP(ctx, logger, gcp.ProjectID, gcp.Zone, vmName, gcp.CredFile, pre)
