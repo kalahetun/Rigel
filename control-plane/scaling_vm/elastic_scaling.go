@@ -21,7 +21,7 @@ import (
 // StartTicker 启动定时任务
 func (s *Scaler) StartTicker(pre string) {
 	s.logger.Info("start ticker", "pre", pre)
-	ticker := time.NewTicker(s.config.TickerInterval)
+	ticker := time.NewTicker(s.Config.TickerInterval)
 	go func() {
 		for {
 			select {
@@ -46,7 +46,7 @@ func (s *Scaler) StopTicker() {
 func (s *Scaler) calculatePerturbation(pre string) float64 {
 
 	var queue []interface{}
-	queue = s.node.VolatilityQueue.SnapshotLatestFirst()
+	queue = s.Node.VolatilityQueue.SnapshotLatestFirst()
 
 	//还没有足够数据
 	if len(queue) <= 1 {
@@ -57,8 +57,8 @@ func (s *Scaler) calculatePerturbation(pre string) float64 {
 	//如果最新的波动小于阈值 ，则直接返回 0
 	avgCache := queue[0].(storage.NetworkTelemetry).NodeCongestion.AvgWeightedCache
 	avgCache_ := queue[1].(storage.NetworkTelemetry).NodeCongestion.AvgWeightedCache
-	if (avgCache <= s.config.VolatilityThreshold && avgCache_ <= s.config.VolatilityThreshold) ||
-		(avgCache >= s.config.VolatilityThreshold && avgCache_ >= s.config.VolatilityThreshold) {
+	if (avgCache <= s.Config.VolatilityThreshold && avgCache_ <= s.Config.VolatilityThreshold) ||
+		(avgCache >= s.Config.VolatilityThreshold && avgCache_ >= s.Config.VolatilityThreshold) {
 		s.logger.Info("latest volatility is too small",
 			slog.String("pre", pre), "volatility", queue[0].(float64))
 		return 0
@@ -70,7 +70,7 @@ func (s *Scaler) calculatePerturbation(pre string) float64 {
 }
 
 func (s *Scaler) calculateVolatilityAccumulation() float64 {
-	z := s.node.P*s.config.VolatilityWeight + s.node.Z*s.config.DecayFactor
+	z := s.Node.P*s.Config.VolatilityWeight + s.Node.Z*s.Config.DecayFactor
 	if z < 0 {
 		return 0
 	}
@@ -78,6 +78,11 @@ func (s *Scaler) calculateVolatilityAccumulation() float64 {
 }
 
 func (s *Scaler) calculateDelta(node *NodeState) float64 {
+
+	if s.Override.Delta != nil {
+		return *s.Override.Delta
+	}
+
 	// 1️⃣ 当前扰动量
 	P := node.P
 	Z := node.Z
@@ -86,8 +91,8 @@ func (s *Scaler) calculateDelta(node *NodeState) float64 {
 	cost := s.calculateCost(node)
 
 	// 3️⃣ 公式
-	delta := -s.config.DecayFactor*s.config.VolatilityWeight*s.config.QueueWeight*Z*P +
-		s.config.CostWeight*cost
+	delta := -s.Config.DecayFactor*s.Config.VolatilityWeight*s.Config.QueueWeight*Z*P +
+		s.Config.CostWeight*cost
 
 	return delta
 }
@@ -96,9 +101,9 @@ func (s *Scaler) calculateDelta(node *NodeState) float64 {
 func (s *Scaler) calculateCost(node *NodeState) float64 {
 	switch node.State {
 	case Inactive:
-		return s.config.ScalingCostFixed + s.config.ScalingCostVariable*node.P
+		return s.Config.ScalingCostFixed + s.Config.ScalingCostVariable*node.P
 	case Dormant:
-		return s.config.ScalingCostVariable * node.P
+		return s.Config.ScalingCostVariable * node.P
 	default:
 		return 0
 	}
@@ -140,13 +145,13 @@ func (s *Scaler) evaluateScaling() {
 	}
 	defer s.mu.Unlock()
 
-	node := s.node
-	node.LogStateSlog(pre, s.logger) //打印 node
+	s.LogStateSlog(pre, s.logger) //打印 node
 
-	s.logger.Info("evaluating scaling", slog.String("pre", pre),
-		"node", node.ID, "state", node.State)
+	node := s.Node
+	b, _ := json.Marshal(node)
+	s.logger.Info("evaluating scaling", slog.String("pre", pre), slog.String("node", string(b)))
 
-	switch node.State {
+	switch s.getState() {
 	case ScalingUp:
 		s.logger.Info("node is scaling up", slog.String("pre", pre))
 		return
@@ -154,14 +159,14 @@ func (s *Scaler) evaluateScaling() {
 		s.logger.Info("node is releasing", slog.String("pre", pre))
 		return
 	case Triggered:
-		if s.now().Before(s.node.RetainTime) {
+		if s.now().Before(s.getRetainTime()) {
 			s.logger.Info("node is triggered, but retention time not reached",
 				slog.String("pre", pre))
 			return
 		}
 		//往下走就是已经超时
 	case Dormant, Permanent:
-		if s.now().Before(s.node.RetainTime) {
+		if s.now().Before(s.getRetainTime()) {
 			s.logger.Info("node is dormant or permanent, but retention time not reached",
 				slog.String("pre", pre))
 			// 后面检验一下是不是需要扩容 如果扩容这个状态就会被change
@@ -178,13 +183,16 @@ func (s *Scaler) evaluateScaling() {
 	// 1️⃣ 计算当前扰动量 P 和波动值 Z
 	node.P = s.calculatePerturbation(pre)
 	node.Z = s.calculateVolatilityAccumulation()
-	delta := s.calculateDelta(s.node)
-	s.logger.Info("calculate delta", slog.String("pre", pre), slog.Float64("P", node.P),
-		slog.Float64("Z", node.Z), slog.Float64("delta", delta))
+	delta := s.calculateDelta(s.Node)
+	//s.logger.Info("calculate delta", slog.String("pre", pre), slog.Float64("P", node.P),
+	//	slog.Float64("Z", node.Z), slog.Float64("delta", delta))
+	b, _ = json.Marshal(node)
+	s.logger.Info("calculate delta", slog.String("pre", pre),
+		slog.String("node", string(b)), slog.Float64("delta", delta))
 
 	// 2️⃣ 判断是否需要触发扩容
 	if delta < 0 {
-		switch node.State {
+		switch s.getState() {
 		case Inactive:
 			node.State = ScalingUp
 			if ok, vm := s.triggerScaling1(1, pre, s.logger); ok {
@@ -216,7 +224,7 @@ func (s *Scaler) evaluateScaling() {
 			s.logger.Warn("unhandled default case", slog.String("pre", pre))
 		}
 	}
-	node.LogStateSlog(pre, s.logger) //打印 node
+	s.LogStateSlog(pre, s.logger) //打印 node
 	if node.State == Triggered || node.State == Permanent {
 		return
 	}
@@ -239,7 +247,7 @@ func (s *Scaler) evaluateScaling() {
 	default:
 		s.logger.Warn("unhandled default case", slog.String("pre", pre))
 	}
-	node.LogStateSlog(pre, s.logger) //打印 node
+	s.LogStateSlog(pre, s.logger) //打印 node
 	return
 }
 
@@ -304,11 +312,11 @@ func (s *Scaler) triggerScaling2(pre string) bool {
 
 	var ip, setState string
 	//找到睡眠的vm获取 ip
-	if len(s.node.ScaledVMs) <= 0 {
+	if len(s.Node.ScaledVMs) <= 0 {
 		s.logger.Error("No scaled VMs found", slog.String("pre", pre))
 		return false
 	}
-	vm := s.node.ScaledVMs[0]
+	vm := s.Node.ScaledVMs[0]
 	ip = vm.PublicIP
 	setState = "on"
 
@@ -322,11 +330,11 @@ func (s *Scaler) triggerDormant(pre string) bool {
 
 	var ip, setState string
 	//找到睡眠的vm获取 ip
-	if len(s.node.ScaledVMs) <= 0 {
+	if len(s.Node.ScaledVMs) <= 0 {
 		s.logger.Error("No scaled VMs found", slog.String("pre", pre))
 		return false
 	}
-	vm := s.node.ScaledVMs[0]
+	vm := s.Node.ScaledVMs[0]
 	ip = vm.PublicIP
 	setState = "off"
 
@@ -342,11 +350,11 @@ func (s *Scaler) triggerRelease(pre string) bool {
 	s.logger.Info("triggerRelease", slog.String("pre", pre))
 
 	//找到睡眠的vm获取 ip
-	if len(s.node.ScaledVMs) <= 0 {
+	if len(s.Node.ScaledVMs) <= 0 {
 		s.logger.Error("No scaled VMs found", slog.String("pre", pre))
 		return false
 	}
-	vm := s.node.ScaledVMs[0]
+	vm := s.Node.ScaledVMs[0]
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
@@ -368,21 +376,21 @@ func (s *Scaler) calculateRetention(pre string) (time.Time, NodeStatus) {
 	now := s.now()
 	var activationPotential float64
 
-	for _, evt := range s.node.ScaleHistory {
+	for _, evt := range s.Node.ScaleHistory {
 		// 只考虑 tau 内的触发事件
 		delta := now.Sub(evt.Time)
-		if delta > s.config.RetentionDecay {
+		if delta > s.Config.RetentionDecay {
 			continue
 		}
-		activationPotential += float64(evt.Amount) * expDecay(delta, s.config.RetentionDecay)
+		activationPotential += float64(evt.Amount) * expDecay(delta, s.Config.RetentionDecay)
 	}
 
 	// 计算 Retention 时间长度
-	retentionDuration := s.config.BaseRetentionTime + time.Duration(s.config.RetentionAmplifier*activationPotential)
+	retentionDuration := s.Config.BaseRetentionTime + time.Duration(s.Config.RetentionAmplifier*activationPotential)
 
 	// 如果超过永久阈值，直接返回永久时间
-	if retentionDuration >= s.config.PermanentThreshold {
-		return now.Add(s.config.PermanentDuration), Permanent
+	if retentionDuration >= s.Config.PermanentThreshold {
+		return now.Add(s.Config.PermanentDuration), Permanent
 	}
 
 	// 返回节点保持活跃的绝对时间点

@@ -24,73 +24,75 @@ const (
 // ScaleConfig 定义弹性伸缩相关参数
 type ScaleConfig struct {
 	// 队列与波动相关
-	VolatilityWeight    float64 // w^V_i 默认为 1
-	QueueWeight         float64 // w^S_i 默认为 1
-	DecayFactor         float64 // γ_i
-	VolatilityThreshold float64 // C^V，扰动阈值，小波动会被忽略
+	VolatilityWeight    float64 `json:"volatility_weight"`
+	QueueWeight         float64 `json:"queue_weight"`
+	DecayFactor         float64 `json:"decay_factor"`
+	VolatilityThreshold float64 `json:"volatility_threshold"`
 
 	// DPP 控制参数
-	CostWeight float64 // V_i^S，控制成本敏感度，默认可设为 1
+	CostWeight float64 `json:"cost_weight"`
 
 	// 成本相关
-	ScalingCostFixed    float64 // C_fc
-	ScalingCostVariable float64 // β_i
-	ScalingRatio        float64 // α 设定为 0.1 大多数情况下都是扩容 1台机器
+	ScalingCostFixed    float64 `json:"scaling_cost_fixed"`
+	ScalingCostVariable float64 `json:"scaling_cost_variable"`
+	ScalingRatio        float64 `json:"scaling_ratio"`
 
 	// 保留机制
-	BaseRetentionTime  time.Duration // T0
-	RetentionAmplifier float64       // λ
-	RetentionDecay     time.Duration // τ
-	PermanentThreshold time.Duration // T_threshold
-	PermanentDuration  time.Duration // T_permanent
+	BaseRetentionTime  time.Duration `json:"base_retention_time"`
+	RetentionAmplifier float64       `json:"retention_amplifier"`
+	RetentionDecay     time.Duration `json:"retention_decay"`
+	PermanentThreshold time.Duration `json:"permanent_threshold"`
+	PermanentDuration  time.Duration `json:"permanent_duration"`
 
 	// 定时任务
-	TickerInterval time.Duration // 定时检查间隔
+	TickerInterval time.Duration `json:"ticker_interval"`
 }
 
 // NodeState 表示每个节点的弹性伸缩状态
 type NodeState struct {
-	ID string
+	ID string `json:"id"`
 
-	// 波动队列（累积短期扰动）
-	VolatilityQueue *util.FixedQueue // 可用 Snapshot() 获取历史扰动
+	// 波动队列（只暴露 snapshot）
+	VolatilityQueue *util.FixedQueue `json:"volatility_queue,omitempty"`
 
-	Z float64 // 当前 Volatility Queue 值，即 \widetilde Z_i(t)
+	Z float64 `json:"z"`
 
-	// 节点资源状态（UNSCALED / SCALED + 子状态）
-	State NodeStatus // e.g., "Inactive", "Dormant", "Triggered", "Permanent"
+	State NodeStatus `json:"state"`
 
-	// 新增：最近扩容事件记录
-	ScaleHistory []ScaleEvent
+	ScaleHistory []ScaleEvent `json:"scale_history,omitempty"`
 
-	ScaledVMs []VM // 扩容触发时间，用于保留机制计算
+	ScaledVMs []VM `json:"scaled_vms,omitempty"`
 
-	// 最近触发时间，用于保留机制计算
-	RetainTime time.Time //类似于 i 时间
+	RetainTime time.Time `json:"retain_time"`
 
-	// 其他统计/控制量，可选
-	P float64 // 当前扰动 \widetilde P_i(t)
+	P float64 `json:"p"`
 }
 
 type ScaleEvent struct {
-	Time     time.Time // 扩容触发时间
-	Amount   int       // 扩容数量
-	ScaledVM VM        // 扩容的 VM 信息
+	Time     time.Time `json:"time"`
+	Amount   int       `json:"amount"`
+	ScaledVM VM        `json:"scaled_vm,omitempty"`
 }
 
 type VM struct {
-	PublicIP  string // VM 的 IP 地址
-	VMName    string
-	StartTime time.Time // VM 启动时间
-	Status    NodeStatus
+	PublicIP  string     `json:"public_ip"`
+	VMName    string     `json:"vm_name"`
+	StartTime time.Time  `json:"start_time"`
+	Status    NodeStatus `json:"status"`
+}
+
+type ScalerOverride struct {
+	Now        *time.Time  `json:"now,omitempty"`
+	Delta      *float64    `json:"delta,omitempty"`
+	State      *NodeStatus `json:"state,omitempty"`
+	RetainTime *time.Time  `json:"retain_time,omitempty"`
 }
 
 // Scaler 弹性伸缩控制器
 type Scaler struct {
-	config *ScaleConfig
-
+	Config *ScaleConfig `json:"config"`
 	// 单节点状态
-	node *NodeState
+	Node *NodeState `json:"node"`
 
 	// 定时任务停止通道
 	stopChan chan struct{}
@@ -101,10 +103,7 @@ type Scaler struct {
 	mu sync.Mutex
 
 	// ====== 测试 / 模拟用 ======
-	nowFn               func() time.Time
-	mockDelta           *float64
-	mockTriggerScaling1 *bool
-	mockTriggerScaling2 *bool
+	Override *ScalerOverride `json:"override,omitempty"`
 }
 
 // NewDefaultScaleConfig 返回带默认值的 ScaleConfig
@@ -163,19 +162,19 @@ func NewScaler(nodeID string, config *ScaleConfig, queue *util.FixedQueue, pre s
 	}
 
 	return &Scaler{
-		config:   config,
-		node:     NewNodeState(nodeID, queue),
+		Config:   config,
+		Node:     NewNodeState(nodeID, queue),
 		stopChan: make(chan struct{}),
 		logger:   logger,
 	}
 }
 
-func (n *NodeState) LogStateSlog(pre string, logger *slog.Logger) {
+func (s *Scaler) LogStateSlog(pre string, logger *slog.Logger) {
+	n := s.Node
 	history := make([]string, len(n.ScaleHistory))
 	for i, evt := range n.ScaleHistory {
 		history[i] = fmt.Sprintf("{Time: %s, Amount: %d}", evt.Time.Format(time.RFC3339), evt.Amount)
 	}
-
 	logger.Info("NodeState",
 		slog.String("pre", pre),
 		"ID", n.ID,
@@ -186,11 +185,30 @@ func (n *NodeState) LogStateSlog(pre string, logger *slog.Logger) {
 		"ScaleHistory", history,
 		"VolatilityQueue", n.VolatilityQueue.SnapshotLatestFirst(),
 	)
+
+	b, _ := json.Marshal(s.Node)
+	s.logger.Info("calculate delta", slog.String("pre", pre),
+		slog.String("node", string(b)), slog.Float64("delta", delta))
 }
 
 func (s *Scaler) now() time.Time {
-	if s.nowFn != nil {
-		return s.nowFn()
+	now := time.Now()
+	if s.Override.Now != nil {
+		now = *s.Override.Now
 	}
-	return time.Now()
+	return now
+}
+
+func (s *Scaler) getRetainTime() time.Time {
+	if s.Override.RetainTime != nil {
+		return *s.Override.RetainTime
+	}
+	return s.Node.RetainTime
+}
+
+func (s *Scaler) getState() NodeStatus {
+	if s.Override.State != nil {
+		return *s.Override.State
+	}
+	return s.Node.State
 }
