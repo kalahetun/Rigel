@@ -3,7 +3,6 @@ package scaling_vm
 import (
 	"control-plane/util"
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -81,6 +80,7 @@ type VM struct {
 	Status    NodeStatus `json:"status"`
 }
 
+// mock interface
 type ScalerOverride struct {
 	Now        *time.Time  `json:"now,omitempty"`
 	Delta      *float64    `json:"delta,omitempty"`
@@ -90,13 +90,17 @@ type ScalerOverride struct {
 
 // Scaler 弹性伸缩控制器
 type Scaler struct {
+
+	// 配置
 	Config *ScaleConfig `json:"config"`
+
 	// 单节点状态
 	Node *NodeState `json:"node"`
 
 	// 定时任务停止通道
 	stopChan chan struct{}
 
+	//日志
 	logger *slog.Logger
 
 	// 读写锁，保护 node 状态并发访问
@@ -150,12 +154,13 @@ func NewNodeState(id string, queue *util.FixedQueue) *NodeState {
 }
 
 // NewScaler 初始化 Scaler 控制器
-func NewScaler(nodeID string, config *ScaleConfig, queue *util.FixedQueue, pre string, logger *slog.Logger) *Scaler {
+func NewScaler(nodeID string, config *ScaleConfig, queue *util.FixedQueue,
+	pre string, logger *slog.Logger) *Scaler {
 
 	configJSON, _ := json.Marshal(config)
-	queueJSON, _ := json.Marshal(queue)
+	//queueJSON, _ := json.Marshal(queue)
 	logger.Info("NewScaler", slog.String("pre", pre),
-		"nodeID", nodeID, "config", configJSON, "queue", queueJSON)
+		"nodeID", nodeID, "config", configJSON)
 
 	if config == nil {
 		config = NewDefaultScaleConfig()
@@ -169,26 +174,16 @@ func NewScaler(nodeID string, config *ScaleConfig, queue *util.FixedQueue, pre s
 	}
 }
 
-func (s *Scaler) LogStateSlog(pre string, logger *slog.Logger) {
-	n := s.Node
-	history := make([]string, len(n.ScaleHistory))
-	for i, evt := range n.ScaleHistory {
-		history[i] = fmt.Sprintf("{Time: %s, Amount: %d}", evt.Time.Format(time.RFC3339), evt.Amount)
-	}
-	logger.Info("NodeState",
-		slog.String("pre", pre),
-		"ID", n.ID,
-		"State", n.State,
-		"Z", n.Z,
-		"P", n.P,
-		"RetainTime", n.RetainTime.Format(time.RFC3339),
-		"ScaleHistory", history,
-		"VolatilityQueue", n.VolatilityQueue.SnapshotLatestFirst(),
-	)
+func (s *Scaler) ScalerDump(pre string, logger *slog.Logger) {
 
-	b, _ := json.Marshal(s.Node)
-	s.logger.Info("calculate delta", slog.String("pre", pre),
-		slog.String("node", string(b)), slog.Float64("delta", delta))
+	configJSON, _ := json.Marshal(s.Config)
+	nodeJSON, _ := json.Marshal(s.Node)
+	overrideJSON, _ := json.Marshal(s.Override)
+
+	s.logger.Info("scalar dump", slog.String("pre", pre),
+		slog.String("config", string(configJSON)),
+		slog.String("node", string(nodeJSON)),
+		slog.String("override", string(overrideJSON)))
 }
 
 func (s *Scaler) now() time.Time {

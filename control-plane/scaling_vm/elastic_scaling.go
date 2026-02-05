@@ -145,12 +145,11 @@ func (s *Scaler) evaluateScaling() {
 	}
 	defer s.mu.Unlock()
 
-	s.LogStateSlog(pre, s.logger) //打印 node
+	//-----------------------------------------------------------------------------------------------------------------/
 
+	// 1️⃣ 判断当前节点状态，如果不需要扩容则直接返回
+	s.ScalerDump(pre, s.logger) //打印 node
 	node := s.Node
-	b, _ := json.Marshal(node)
-	s.logger.Info("evaluating scaling", slog.String("pre", pre), slog.String("node", string(b)))
-
 	switch s.getState() {
 	case ScalingUp:
 		s.logger.Info("node is scaling up", slog.String("pre", pre))
@@ -180,16 +179,14 @@ func (s *Scaler) evaluateScaling() {
 		s.logger.Warn("unhandled default case", slog.String("pre", pre))
 	}
 
+	//-----------------------------------------------------------------------------------------------------------------
+
 	// 1️⃣ 计算当前扰动量 P 和波动值 Z
 	node.P = s.calculatePerturbation(pre)
 	node.Z = s.calculateVolatilityAccumulation()
 	delta := s.calculateDelta(s.Node)
-	//s.logger.Info("calculate delta", slog.String("pre", pre), slog.Float64("P", node.P),
-	//	slog.Float64("Z", node.Z), slog.Float64("delta", delta))
-	b, _ = json.Marshal(node)
-	s.logger.Info("calculate delta", slog.String("pre", pre),
-		slog.String("node", string(b)), slog.Float64("delta", delta))
-
+	s.ScalerDump(pre, s.logger)
+	s.logger.Info("calculate delta", slog.String("pre", pre), slog.Float64("delta", delta))
 	// 2️⃣ 判断是否需要触发扩容
 	if delta < 0 {
 		switch s.getState() {
@@ -224,16 +221,17 @@ func (s *Scaler) evaluateScaling() {
 			s.logger.Warn("unhandled default case", slog.String("pre", pre))
 		}
 	}
-	s.LogStateSlog(pre, s.logger) //打印 node
+	s.ScalerDump(pre, s.logger) //打印 node
 	if node.State == Triggered || node.State == Permanent {
 		return
 	}
 
+	//-----------------------------------------------------------------------------------------------------------------/
+
 	// 3️⃣ 如果没有触发扩容，根据当前状态处理
-	switch node.State {
+	switch s.getState() {
 	case Dormant, Permanent:
-		s.logger.Info("node is dormant or permanent, and retention time reached",
-			slog.String("pre", pre))
+		s.logger.Info("node is dormant or permanent, and retention time reached", slog.String("pre", pre))
 		node.State = Releasing
 		s.triggerRelease(pre)
 		node.State = Inactive
@@ -242,12 +240,12 @@ func (s *Scaler) evaluateScaling() {
 		node.RetainTime = retain
 		node.State = Dormant
 		s.triggerDormant(pre)
-		s.logger.Info("the state of node is changed to dormant from scaling up",
-			slog.String("pre", pre))
+		s.logger.Info("the state of node is changed to dormant from scaling up", slog.String("pre", pre))
 	default:
 		s.logger.Warn("unhandled default case", slog.String("pre", pre))
 	}
-	s.LogStateSlog(pre, s.logger) //打印 node
+	s.ScalerDump(pre, s.logger) //打印 node
+
 	return
 }
 
