@@ -111,14 +111,12 @@ func CalcClusterWeightedAvg(fs *FileStorage, interval time.Duration,
 			totalActiveConn += activeConn
 			//探测任务copy
 			for _, v := range report.LinksCongestion {
-				_, ok := totalLinksCong[v.TargetIP]
-				if !ok {
+				if _, ok := totalLinksCong[v.TargetIP]; !ok {
 					t := tempLinksCongStruct{}
 					t.TargetIP = v.TargetIP
 					t.ProbeTask = v.Target
 					totalLinksCong[t.TargetIP] = t
 				}
-				break
 			}
 			//处理链路
 			for _, v := range report.LinksCongestion {
