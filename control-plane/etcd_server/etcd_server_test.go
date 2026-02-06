@@ -28,7 +28,7 @@ func TestStartEmbeddedEtcd(t *testing.T) {
 	os.RemoveAll(dataDir)
 
 	// 启动嵌入式 etcd
-	etcdServer, err := StartEmbeddedEtcd(serverList, serverIP, dataDir, nodeName, logger)
+	etcdServer, err := StartEmbeddedEtcd(serverList, serverIP, dataDir, nodeName, "", logger)
 	if err != nil {
 		t.Fatalf("Failed to start embedded etcd: %v", err)
 	}

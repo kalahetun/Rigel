@@ -13,7 +13,7 @@ import (
 // serverIP: 当前节点 IP
 // dataDir: 数据目录
 // name: 当前节点名称
-func StartEmbeddedEtcd(serverList []string, serverIP, dataDir, name string, logger *slog.Logger) (*embed.Etcd, error) {
+func StartEmbeddedEtcd(serverList []string, serverIP, dataDir, name, pre string, logger *slog.Logger) (*embed.Etcd, error) {
 	cfg := embed.NewConfig()
 	cfg.Dir = dataDir
 	cfg.Name = name
@@ -45,6 +45,7 @@ func StartEmbeddedEtcd(serverList []string, serverIP, dataDir, name string, logg
 	<-e.Server.ReadyNotify()
 	logger.Info(
 		"Embedded etcd started",
+		slog.String("pre", pre),
 		slog.String("name", name),
 		slog.String("endpoint", serverIP+":2379"),
 	)

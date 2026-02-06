@@ -81,7 +81,8 @@ func main() {
 		// 清理残留数据
 		_ = os.RemoveAll(uu.DataDir)
 		// 启动 etcd server
-		etcdServer, err := etcd_server.StartEmbeddedEtcd(uu.ServerList, uu.ServerIP, uu.DataDir, nodeName, logger)
+		etcdServer, err := etcd_server.StartEmbeddedEtcd(uu.ServerList, uu.ServerIP,
+			uu.DataDir, nodeName, logPre, logger)
 		if err != nil {
 			logger.Error("Failed to start embedded etcd",
 				slog.String("pre", logPre),
@@ -123,7 +124,7 @@ func main() {
 
 	//获取全量前缀信息 然后初始化 routing map
 	r := routing.NewGraphManager(logger)
-	nodeMap, err := etcd_client.GetPrefixAll(cli, "/routing/", logger)
+	nodeMap, err := etcd_client.GetPrefixAll(cli, "/routing/", logPre, logger)
 	if err != nil {
 		logger.Warn("获取全量前缀信息失败", slog.String("pre", logPre), slog.Any("err", err))
 	} else {

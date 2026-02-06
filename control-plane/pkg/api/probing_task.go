@@ -96,8 +96,10 @@ func (h *NodeProbeAPIHandler) GetProbeTasks(c *gin.Context) {
 		Data: nil,
 	}
 
+	pre := util.GenerateRandomLetters(5)
+
 	// 1. 从Etcd获取所有节点
-	nodeMap, err := etcd_client.GetPrefixAll(h.etcdClient, "/routing/", h.logger)
+	nodeMap, err := etcd_client.GetPrefixAll(h.etcdClient, "/routing/", pre, h.logger)
 	if err != nil {
 		resp.Code = 500
 		resp.Msg = "获取节点信息失败：" + err.Error()
@@ -112,7 +114,8 @@ func (h *NodeProbeAPIHandler) GetProbeTasks(c *gin.Context) {
 	for k, nodeJson := range nodeMap {
 		var telemetry storage.NetworkTelemetry
 		if err := json.Unmarshal([]byte(nodeJson), &telemetry); err != nil {
-			h.logger.Warn("解析节点JSON失败，跳过", slog.String("ip", k), slog.Any("error", err))
+			h.logger.Warn("解析节点JSON失败，跳过", slog.String("pre", pre),
+				slog.String("ip", k), slog.Any("error", err))
 			continue
 		}
 

@@ -36,11 +36,11 @@ func PutKey(cli *clientv3.Client, key, value, pre string, logger *slog.Logger) {
 }
 
 // PutKeyWithLease 简化版：写入 key + TTL lease，不打印日志，也不保活
-func PutKeyWithLease(cli *clientv3.Client, key, value string, ttlSeconds int64, logger *slog.Logger) error {
+func PutKeyWithLease(cli *clientv3.Client, key, value string, ttlSeconds int64, pre string, logger *slog.Logger) error {
 	// 1. 创建 lease
 	leaseResp, err := cli.Grant(context.Background(), ttlSeconds)
 	if err != nil {
-		logger.Error("Put error:", err)
+		logger.Error("Put error", slog.String("pre", pre), slog.Any("err", err))
 		return err
 	}
 
@@ -50,7 +50,7 @@ func PutKeyWithLease(cli *clientv3.Client, key, value string, ttlSeconds int64, 
 
 	_, err = cli.Put(ctx, key, value, clientv3.WithLease(leaseResp.ID))
 	if err != nil {
-		logger.Error("Put error:", err)
+		logger.Error("Put error", slog.String("pre", pre), slog.Any("err", err))
 		return err
 	}
 
@@ -136,7 +136,7 @@ func WatchPrefix(cli *clientv3.Client, prefix string, callback func(eventType, k
 //
 //	map[string]string: 前缀下所有 Key-Value 键值对（Key 为完整 Etcd Key，Value 为对应值）
 //	error:  查询过程中的错误（如连接超时、Etcd 服务异常等）
-func GetPrefixAll(cli *clientv3.Client, prefix string, logger *slog.Logger) (map[string]string, error) {
+func GetPrefixAll(cli *clientv3.Client, prefix, pre string, logger *slog.Logger) (map[string]string, error) {
 	// 1. 构建超时上下文，避免阻塞
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel() // 函数退出释放上下文资源
@@ -145,12 +145,14 @@ func GetPrefixAll(cli *clientv3.Client, prefix string, logger *slog.Logger) (map
 	// clientv3.WithPrefix()：匹配所有以 prefix 开头的 Key
 	resp, err := cli.Get(ctx, prefix, clientv3.WithPrefix())
 	if err != nil {
-		logger.Error("Get prefix all error:", slog.Any("err", err), slog.String("prefix", prefix))
+		logger.Error("Get prefix all error", slog.String("pre", pre),
+			slog.Any("err", err), slog.String("prefix", prefix))
 		return nil, err
 	}
 
 	if len(resp.Kvs) == 0 {
-		logger.Info("No keys found for prefix", slog.String("prefix", prefix))
+		logger.Info("No keys found for prefix", slog.String("pre", pre),
+			slog.String("prefix", prefix))
 		return nil, nil
 	}
 
@@ -169,11 +171,12 @@ func GetPrefixAll(cli *clientv3.Client, prefix string, logger *slog.Logger) (map
 		compact := new(bytes.Buffer)
 		err := json.Compact(compact, []byte(value))
 		if err != nil {
-			logger.Warn("压缩 JSON 失败", slog.Any("err", err))
+			logger.Warn("压缩 JSON 失败", slog.String("pre", pre), slog.Any("err", err))
 			compact.WriteString(value) // 失败就直接原值
 		}
 
 		logger.Info("Get prefix data",
+			slog.String("pre", pre),
 			slog.String("key", key),
 			slog.String("value", compact.String()),
 		)
@@ -181,9 +184,10 @@ func GetPrefixAll(cli *clientv3.Client, prefix string, logger *slog.Logger) (map
 
 	// 5. 日志提示前缀下数据总量
 	if len(prefixData) == 0 {
-		logger.Warn("No data found under prefix", slog.String("prefix", prefix))
+		logger.Warn("No data found under prefix", slog.String("pre", pre), slog.String("prefix", prefix))
 	} else {
-		logger.Info("Get prefix all success", slog.String("prefix", prefix), slog.Int("data_count", len(prefixData)))
+		logger.Info("Get prefix all success", slog.String("pre", pre),
+			slog.String("prefix", prefix), slog.Int("data_count", len(prefixData)))
 	}
 
 	return prefixData, nil
