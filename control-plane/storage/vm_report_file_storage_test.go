@@ -19,7 +19,7 @@ func TestNewFileStorage(t *testing.T) {
 	defer os.RemoveAll(testStorageDir)
 
 	// 测试正常初始化
-	storage, err := NewFileStorage(testStorageDir, 5, nil)
+	storage, err := NewFileStorage(testStorageDir, 5, "", nil)
 	if err != nil {
 		t.Fatalf("初始化存储实例失败: %v", err)
 	}
@@ -31,7 +31,7 @@ func TestNewFileStorage(t *testing.T) {
 	}
 
 	// 测试自定义过期时长
-	storage2, err := NewFileStorage(testStorageDir, 10, nil)
+	storage2, err := NewFileStorage(testStorageDir, 10, "", nil)
 	if err != nil {
 		t.Fatalf("初始化自定义过期时长失败: %v", err)
 	}
@@ -45,7 +45,7 @@ func TestFileStorage_Put(t *testing.T) {
 	defer os.RemoveAll(testStorageDir)
 
 	// 初始化存储
-	storage, err := NewFileStorage(testStorageDir, 5, nil)
+	storage, err := NewFileStorage(testStorageDir, 5, "", nil)
 	if err != nil {
 		t.Fatalf("初始化存储失败: %v", err)
 	}
@@ -60,7 +60,7 @@ func TestFileStorage_Put(t *testing.T) {
 	}
 
 	// 测试正常存储
-	reportID, err := storage.Put(testReport)
+	reportID, err := storage.Put(testReport, "")
 	if err != nil {
 		t.Fatalf("存储数据失败: %v", err)
 	}
@@ -84,11 +84,11 @@ func TestFileStorage_Put(t *testing.T) {
 	}
 
 	// 测试空数据存储（入参校验）
-	_, err = storage.Put(nil)
+	_, err = storage.Put(nil, "")
 	if err == nil {
 		t.Error("存储空数据未返回错误，不符合预期")
 	}
-	_, err = storage.Put(&model.VMReport{VMID: ""})
+	_, err = storage.Put(&model.VMReport{VMID: ""}, "")
 	if err == nil {
 		t.Error("存储空VMID数据未返回错误，不符合预期")
 	}
@@ -101,20 +101,20 @@ func TestFileStorage_Get(t *testing.T) {
 	defer os.RemoveAll(testStorageDir)
 
 	// 初始化存储
-	storage, err := NewFileStorage(testStorageDir, 5, nil)
+	storage, err := NewFileStorage(testStorageDir, 5, "", nil)
 	if err != nil {
 		t.Fatalf("初始化存储失败: %v", err)
 	}
 	defer storage.Close()
 
 	// 测试读取不存在的VMID
-	_, err = storage.Get("vm-not-exist")
+	_, err = storage.Get("vm-not-exist", "")
 	if err == nil {
 		t.Error("读取不存在的VMID未返回错误，不符合预期")
 	}
 
 	// 测试空VMID读取
-	_, err = storage.Get("")
+	_, err = storage.Get("", "")
 	if err == nil {
 		t.Error("读取空VMID未返回错误，不符合预期")
 	}
@@ -131,18 +131,18 @@ func TestFileStorage_Get(t *testing.T) {
 		ReportID:    "report-002",
 		CollectTime: time.Now(), // 新数据
 	}
-	_, err = storage.Put(report1)
+	_, err = storage.Put(report1, "")
 	if err != nil {
 		t.Fatalf("存储report1失败: %v", err)
 	}
 	time.Sleep(100 * time.Millisecond) // 确保时间戳不同
-	_, err = storage.Put(report2)
+	_, err = storage.Put(report2, "")
 	if err != nil {
 		t.Fatalf("存储report2失败: %v", err)
 	}
 
 	// 读取最新数据
-	latestReport, err := storage.Get(vmID)
+	latestReport, err := storage.Get(vmID, "")
 	if err != nil {
 		t.Fatalf("读取最新数据失败: %v", err)
 	}
@@ -158,7 +158,7 @@ func TestFileStorage_CleanupExpiredFiles(t *testing.T) {
 	defer os.RemoveAll(testStorageDir)
 
 	// 初始化存储（过期时长1秒，便于测试）
-	storage, err := NewFileStorage(testStorageDir, 1, nil)
+	storage, err := NewFileStorage(testStorageDir, 1, "", nil)
 	if err != nil {
 		t.Fatalf("初始化存储失败: %v", err)
 	}
@@ -170,7 +170,7 @@ func TestFileStorage_CleanupExpiredFiles(t *testing.T) {
 		VMID:     vmID,
 		ReportID: "report-001",
 	}
-	_, err = storage.Put(report)
+	_, err = storage.Put(report, "")
 	if err != nil {
 		t.Fatalf("存储数据失败: %v", err)
 	}
@@ -186,7 +186,7 @@ func TestFileStorage_CleanupExpiredFiles(t *testing.T) {
 
 	// 等待过期+清理（清理协程每分钟执行，手动触发一次）
 	time.Sleep(2 * time.Second)
-	err = storage.cleanupExpiredFiles()
+	err = storage.cleanupExpiredFiles("")
 	if err != nil {
 		t.Fatalf("手动清理过期文件失败: %v", err)
 	}
@@ -208,7 +208,7 @@ func TestFileStorage_Concurrent(t *testing.T) {
 	defer os.RemoveAll(testStorageDir)
 
 	// 初始化存储
-	storage, err := NewFileStorage(testStorageDir, 5, nil)
+	storage, err := NewFileStorage(testStorageDir, 5, "", nil)
 	if err != nil {
 		t.Fatalf("初始化存储失败: %v", err)
 	}
@@ -229,7 +229,7 @@ func TestFileStorage_Concurrent(t *testing.T) {
 				ReportID:    "report-" + string(idx),
 				CollectTime: time.Now(),
 			}
-			_, err := storage.Put(report)
+			_, err := storage.Put(report, "")
 			if err != nil {
 				t.Errorf("并发写入失败（idx:%d）: %v", idx, err)
 			}
@@ -251,7 +251,7 @@ func TestFileStorage_Concurrent(t *testing.T) {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
-			_, err := storage.Get(vmID)
+			_, err := storage.Get(vmID, "")
 			if err != nil {
 				t.Errorf("并发读取失败（idx:%d）: %v", idx, err)
 			}
@@ -267,7 +267,7 @@ func TestFileStorage_Save(t *testing.T) {
 	defer os.RemoveAll(testStorageDir)
 
 	// 初始化存储
-	storage, err := NewFileStorage(testStorageDir, 5, nil)
+	storage, err := NewFileStorage(testStorageDir, 5, "", nil)
 	if err != nil {
 		t.Fatalf("初始化存储失败: %v", err)
 	}
@@ -278,7 +278,7 @@ func TestFileStorage_Save(t *testing.T) {
 		VMID:     "vm-test-004",
 		ReportID: "report-001",
 	}
-	reportID, err := storage.Save(testReport)
+	reportID, err := storage.Save(testReport, "")
 	if err != nil {
 		t.Fatalf("Save方法失败: %v", err)
 	}
