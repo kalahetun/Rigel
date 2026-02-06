@@ -73,6 +73,13 @@ func CalcClusterWeightedAvg(fs *FileStorage, interval time.Duration,
 	logger.Info("定时加权计算启动成功", slog.String("pre", logPre),
 		slog.Duration("间隔", interval), slog.String("存储目录", fs.storageDir))
 
+	type tempLinksCongStruct struct {
+		TargetIP         string
+		PacketLosses     []float64
+		AverageLatencies []float64
+		ProbeTask        util.ProbeTask
+	}
+
 	// 3. 无限循环，定时触发核心逻辑（复用GetAll()）
 	for {
 		// 监听定时器信号，到达间隔执行计算
@@ -92,13 +99,9 @@ func CalcClusterWeightedAvg(fs *FileStorage, interval time.Duration,
 		var (
 			totalWeightedCache float64 // 总加权缓存：Σ(ActiveConnections*AvgCachePerConn)
 			totalActiveConn    float64 // 总活跃连接数：Σ(ActiveConnections)
-			totalLinksCong     map[string][]float64
-			totalLinksCong_    map[string]util.ProbeTask
+			totalLinksCong     map[string]tempLinksCongStruct
 		)
-		
-		totalLinksCong = make(map[string][]float64)
-		totalLinksCong_ = make(map[string]util.ProbeTask)
-		var averageLatency float64 = 0
+		totalLinksCong = make(map[string]tempLinksCongStruct)
 
 		// 6. 遍历GetAll()结果，累加统计值
 		for _, report := range allReports {
@@ -107,17 +110,22 @@ func CalcClusterWeightedAvg(fs *FileStorage, interval time.Duration,
 			totalWeightedCache += activeConn * avgCache
 			totalActiveConn += activeConn
 
+			t := tempLinksCongStruct{}
+
 			//探测任务copy
 			for _, v := range report.LinksCongestion {
-				totalLinksCong_[v.TargetIP] = v.Target
-				averageLatency = v.AverageLatency
+				t.TargetIP = v.TargetIP
+				t.ProbeTask = v.Target
 				break
 			}
 
 			//处理链路
 			for _, v := range report.LinksCongestion {
-				totalLinksCong[v.TargetIP] = append(totalLinksCong[v.TargetIP], v.PacketLoss)
+				t.PacketLosses = append(t.PacketLosses, v.PacketLoss)
+				t.AverageLatencies = append(t.AverageLatencies, v.AverageLatency)
 			}
+
+			totalLinksCong[t.TargetIP] = t
 		}
 
 		// 7. 避免除以0，输出计算结果
@@ -132,15 +140,24 @@ func CalcClusterWeightedAvg(fs *FileStorage, interval time.Duration,
 		//简单求均值
 		linkMap := make(map[string]LinkCongestionInfo)
 		for k, vs := range totalLinksCong {
-			var avg float64 = 0
-			for _, v := range vs {
-				avg += v
+			var avgLoss float64 = 0
+			for _, v := range vs.PacketLosses {
+				avgLoss += v
 			}
-			if avg != 0 && len(vs) > 0 {
-				avg = avg / float64(len(vs))
+			if avgLoss != 0 && len(vs.PacketLosses) > 0 {
+				avgLoss = avgLoss / float64(len(vs.PacketLosses))
 			}
-			linkMap[k] = LinkCongestionInfo{TargetIP: k, PacketLoss: avg,
-				Target: totalLinksCong_[k], AverageLatency: averageLatency}
+
+			var avgLatency float64 = 0
+			for _, v := range vs.AverageLatencies {
+				avgLatency += v
+			}
+			if avgLatency != 0 && len(vs.AverageLatencies) > 0 {
+				avgLatency = avgLatency / float64(len(vs.AverageLatencies))
+			}
+
+			linkMap[k] = LinkCongestionInfo{TargetIP: k, PacketLoss: avgLoss,
+				Target: vs.ProbeTask, AverageLatency: avgLatency}
 		}
 
 		// 填充结果结构体
