@@ -73,11 +73,12 @@ func CalcClusterWeightedAvg(fs *FileStorage, interval time.Duration,
 	logger.Info("定时加权计算启动成功", slog.String("pre", logPre),
 		slog.Duration("间隔", interval), slog.String("存储目录", fs.storageDir))
 
+	// 临时链路统计结构体，补充json tag适配JSON解析/序列化
 	type tempLinksCongStruct struct {
-		TargetIP         string
-		PacketLosses     []float64
-		AverageLatencies []float64
-		ProbeTask        util.ProbeTask
+		TargetIP         string         `json:"target_ip"`
+		PacketLosses     []float64      `json:"packet_losses"`     // 若为单个丢包率则用packet_loss，数组用packet_losses
+		AverageLatencies []float64      `json:"average_latencies"` // 单个延迟则用average_latency，数组用average_latencies
+		ProbeTask        util.ProbeTask `json:"probe_task"`
 	}
 
 	// 3. 无限循环，定时触发核心逻辑（复用GetAll()）
@@ -124,6 +125,10 @@ func CalcClusterWeightedAvg(fs *FileStorage, interval time.Duration,
 				t.PacketLosses = append(t.PacketLosses, v.PacketLoss)
 				t.AverageLatencies = append(t.AverageLatencies, v.AverageLatency)
 			}
+
+			b, _ := json.Marshal(t)
+			logger.Info("totalLinksCong info", slog.String("pre", logPre),
+				slog.String("data", string(b)))
 
 			totalLinksCong[t.TargetIP] = t
 		}

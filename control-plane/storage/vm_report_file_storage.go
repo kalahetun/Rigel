@@ -19,9 +19,9 @@ const (
 
 // -------------------------- 存储抽象接口（保持不变） --------------------------
 type Storage interface {
-	Save(report *model.VMReport) (string, error)
-	Put(report *model.VMReport) (string, error)
-	Get(vmID string) (*model.VMReport, error)
+	Save(report *model.VMReport, pre string) (string, error)
+	Put(report *model.VMReport, pre string) (string, error)
+	Get(vmID, pre string) (*model.VMReport, error)
 	// 新增：获取所有存储的VM上报数据
 	GetAll(logPre string) ([]*model.VMReport, error)
 	// 新增：关闭存储（停止清理协程）
@@ -42,7 +42,7 @@ type FileStorage struct {
 //
 //	storageDir: 存储根目录
 //	expireMinutes: 文件过期分钟数（传0则使用默认5分钟）
-func NewFileStorage(storageDir string, expireMinutes int, l *slog.Logger) (*FileStorage, error) {
+func NewFileStorage(storageDir string, expireMinutes int, pre string, l *slog.Logger) (*FileStorage, error) {
 	// 创建存储目录
 	if err := os.MkdirAll(storageDir, 0755); err != nil {
 		return nil, fmt.Errorf("创建存储目录失败: %w", err)
@@ -62,14 +62,14 @@ func NewFileStorage(storageDir string, expireMinutes int, l *slog.Logger) (*File
 	}
 
 	// 启动后台清理协程
-	go fs.startCleanupWorker()
+	go fs.startCleanupWorker(pre)
 
 	return fs, nil
 }
 
 // Put 存储VM上报数据（生成新文件，不覆盖旧文件）
 // 文件名规则：VMID_时间戳(毫秒).json
-func (fs *FileStorage) Put(report *model.VMReport) (string, error) {
+func (fs *FileStorage) Put(report *model.VMReport, pre string) (string, error) {
 	// 入参校验
 	if report == nil || report.VMID == "" {
 		return "", errors.New("VMReport不能为空且VMID必须非空")
@@ -90,6 +90,7 @@ func (fs *FileStorage) Put(report *model.VMReport) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("JSON序列化失败: %w", err)
 	}
+	fs.l.Info("put file data", slog.String("pre", pre), slog.String("data", string(data)))
 
 	// 写入临时文件（权限0644）
 	if err := os.WriteFile(tmpFilePath, data, 0644); err != nil {
@@ -107,7 +108,7 @@ func (fs *FileStorage) Put(report *model.VMReport) (string, error) {
 
 // Get 根据VMID读取最新的上报数据
 // 逻辑：遍历VMID相关文件，按时间戳排序取最新的一个
-func (fs *FileStorage) Get(vmID string) (*model.VMReport, error) {
+func (fs *FileStorage) Get(vmID, pre string) (*model.VMReport, error) {
 	if vmID == "" {
 		return nil, errors.New("VMID不能为空")
 	}
@@ -178,8 +179,8 @@ func (fs *FileStorage) Get(vmID string) (*model.VMReport, error) {
 }
 
 // Save 兼容API层（内部调用Put）
-func (fs *FileStorage) Save(report *model.VMReport) (string, error) {
-	return fs.Put(report)
+func (fs *FileStorage) Save(report *model.VMReport, pre string) (string, error) {
+	return fs.Put(report, pre)
 }
 
 // Close 关闭存储（停止定时清理）
@@ -191,18 +192,18 @@ func (fs *FileStorage) Close() {
 
 // -------------------------- 私有方法：过期文件清理 --------------------------
 // startCleanupWorker 启动后台清理协程
-func (fs *FileStorage) startCleanupWorker() {
+func (fs *FileStorage) startCleanupWorker(pre string) {
 	defer fs.cleanupTicker.Stop()
 
 	for range fs.cleanupTicker.C {
-		if err := fs.cleanupExpiredFiles(); err != nil {
-			fs.l.Error("清理过期文件失败", slog.Any("err", err))
+		if err := fs.cleanupExpiredFiles(pre); err != nil {
+			fs.l.Error("清理过期文件失败", slog.String("pre", pre), slog.Any("err", err))
 		}
 	}
 }
 
 // cleanupExpiredFiles 清理过期文件
-func (fs *FileStorage) cleanupExpiredFiles() error {
+func (fs *FileStorage) cleanupExpiredFiles(pre string) error {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
 
@@ -227,7 +228,8 @@ func (fs *FileStorage) cleanupExpiredFiles() error {
 		// 获取文件修改时间
 		fileInfo, err := file.Info()
 		if err != nil {
-			fs.l.Error("获取文件信息失败", slog.String("fileName", file.Name()), slog.Any("err", err))
+			fs.l.Error("获取文件信息失败", slog.String("pre", pre),
+				slog.String("fileName", file.Name()), slog.Any("err", err))
 			continue
 		}
 
@@ -235,9 +237,11 @@ func (fs *FileStorage) cleanupExpiredFiles() error {
 		if fileInfo.ModTime().Before(expireTime) {
 			filePath := filepath.Join(fs.storageDir, file.Name())
 			if err := os.Remove(filePath); err != nil {
-				fs.l.Error("删除过期文件失败", slog.String("filePath", filePath), slog.Any("err", err))
+				fs.l.Error("删除过期文件失败", slog.String("pre", pre),
+					slog.String("filePath", filePath), slog.Any("err", err))
 			} else {
-				fs.l.Info("清理过期文件", slog.String("filePath", filePath))
+				fs.l.Info("清理过期文件", slog.String("pre", pre),
+					slog.String("filePath", filePath))
 			}
 		}
 	}

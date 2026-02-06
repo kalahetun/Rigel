@@ -198,7 +198,7 @@ func main() {
 		slog.String("pre", logPre),
 		slog.String("storageDir", storageDir),
 	)
-	s, _ := storage.NewFileStorage(storageDir, 0, logger)
+	s, _ := storage.NewFileStorage(storageDir, 0, logPre, logger)
 	queue := util.NewFixedQueue(20, logger)
 	go storage.CalcClusterWeightedAvg(s, 30*time.Second, cli, queue, logPre, logger)
 
