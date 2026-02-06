@@ -156,10 +156,10 @@ func (g *GraphManager) AddNode(node *storage.NetworkTelemetry, logPre string) {
 	// 2. 添加虚拟边（in->out）
 	in := InNode(node.PublicIP)
 	out := OutNode(node.PublicIP)
-	line := in + "->" + out
+	line_ := in + "->" + out
 	r := EdgeRisk(node.NodeCongestion.AvgWeightedCache, 0, 0,
-		logPre+"-"+line, g.logger)
-	g.edges[line] = &Edge{
+		logPre+"-"+line_, g.logger)
+	g.edges[line_] = &Edge{
 		SourceIp:        in,
 		DestinationIp:   out,
 		SourceProvider:  node.Provider,
@@ -173,9 +173,9 @@ func (g *GraphManager) AddNode(node *storage.NetworkTelemetry, logPre string) {
 		if v.Target.TargetType == "cloud_storage" {
 			pp, _ := util.GetBandwidthPrice(node.Provider, node.Continent, v.Target.Region, g.logger)
 			cloudFull := fmt.Sprintf("%s_%s_%s", v.Target.Provider, v.Target.Region, v.Target.City)
-			line := out + "->" + cloudFull
-			r = EdgeRisk(0, pp, v.PacketLoss, logPre+"-"+line, g.logger)
-			g.edges[line] = &Edge{
+			line_ := out + "->" + cloudFull
+			r = EdgeRisk(0, pp, v.PacketLoss, logPre+"-"+line_, g.logger)
+			g.edges[line_] = &Edge{
 				SourceIp:        out,
 				DestinationIp:   cloudFull,
 				SourceProvider:  node.Provider,
@@ -197,9 +197,9 @@ func (g *GraphManager) AddNode(node *storage.NetworkTelemetry, logPre string) {
 			ll = val.PacketLoss
 		}
 		// 新节点 out -> 老节点 in
-		line := out + "->" + InNode(id)
-		r = EdgeRisk(0, pp, ll, logPre+"-"+line, g.logger)
-		g.edges[line] = &Edge{
+		line_ := out + "->" + InNode(id)
+		r = EdgeRisk(0, pp, ll, logPre+"-"+line_, g.logger)
+		g.edges[line_] = &Edge{
 			SourceIp:        out,
 			DestinationIp:   InNode(id),
 			SourceProvider:  node.Provider,
@@ -214,9 +214,9 @@ func (g *GraphManager) AddNode(node *storage.NetworkTelemetry, logPre string) {
 		//	ll_ = val.PacketLoss
 		//}
 		// 老节点 out -> 新节点 in
-		line = OutNode(id) + "->" + in
-		r = EdgeRisk(0, pp_, ll, logPre+"-"+line, g.logger)
-		g.edges[line] = &Edge{
+		line_ = OutNode(id) + "->" + in
+		r = EdgeRisk(0, pp_, ll, logPre+"-"+line_, g.logger)
+		g.edges[line_] = &Edge{
 			SourceIp:        OutNode(id),
 			DestinationIp:   in,
 			SourceProvider:  other.Provider,
@@ -233,11 +233,11 @@ func (g *GraphManager) DumpGraph(logPre string) {
 	//打印整个拓扑图 的 节点和边
 	g.logger.Info("DumpGraph", slog.String("pre", logPre))
 	for _, node := range g.GetNodes() {
-		b, _ := json.MarshalIndent(node, "", "  ")
+		b, _ := json.Marshal(node)
 		g.logger.Info("Graph Node", slog.String("pre", logPre), slog.String("node", string(b)))
 	}
 	for _, edge := range g.GetEdges() {
-		b, _ := json.MarshalIndent(edge, "", "  ")
+		b, _ := json.Marshal(edge)
 		g.logger.Info("Graph Edge", slog.String("pre", logPre), slog.String("edge", string(b)))
 	}
 }

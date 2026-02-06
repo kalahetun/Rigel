@@ -95,8 +95,10 @@ func CalcClusterWeightedAvg(fs *FileStorage, interval time.Duration,
 			totalLinksCong     map[string][]float64
 			totalLinksCong_    map[string]util.ProbeTask
 		)
+		
 		totalLinksCong = make(map[string][]float64)
 		totalLinksCong_ = make(map[string]util.ProbeTask)
+		var averageLatency float64 = 0
 
 		// 6. 遍历GetAll()结果，累加统计值
 		for _, report := range allReports {
@@ -108,6 +110,7 @@ func CalcClusterWeightedAvg(fs *FileStorage, interval time.Duration,
 			//探测任务copy
 			for _, v := range report.LinksCongestion {
 				totalLinksCong_[v.TargetIP] = v.Target
+				averageLatency = v.AverageLatency
 				break
 			}
 
@@ -136,7 +139,8 @@ func CalcClusterWeightedAvg(fs *FileStorage, interval time.Duration,
 			if avg != 0 && len(vs) > 0 {
 				avg = avg / float64(len(vs))
 			}
-			linkMap[k] = LinkCongestionInfo{TargetIP: k, PacketLoss: avg, Target: totalLinksCong_[k]}
+			linkMap[k] = LinkCongestionInfo{TargetIP: k, PacketLoss: avg,
+				Target: totalLinksCong_[k], AverageLatency: averageLatency}
 		}
 
 		// 填充结果结构体
