@@ -148,14 +148,16 @@ func main() {
 			//日志跟踪
 			logPre := util.GenerateRandomLetters(5)
 
-			compact := new(bytes.Buffer)
-			err := json.Compact(compact, []byte(val))
-			if err != nil {
-				logger.Warn("压缩 JSON 失败",
-					slog.String("pre", logPre),
-					slog.Any("err", err),
-				)
-				compact.WriteString(val) // 失败就直接原值
+			if len(val) > 0 {
+				compact := new(bytes.Buffer)
+				err := json.Compact(compact, []byte(val))
+				if err != nil {
+					logger.Warn("压缩 JSON 失败",
+						slog.String("pre", logPre),
+						slog.Any("err", err),
+					)
+					compact.WriteString(val) // 失败就直接原值
+				}
 			}
 
 			logger.Info("[WATCH] event",
@@ -165,7 +167,9 @@ func main() {
 				slog.String("value", val),
 			)
 			var tel storage.NetworkTelemetry
-			if err := json.Unmarshal([]byte(val), &tel); err != nil {
+
+			err = json.Unmarshal([]byte(val), &tel)
+			if len(val) > 0 && err != nil {
 				logger.Warn("解析节点JSON失败，跳过", slog.String("pre", logPre),
 					slog.String("ip", key), slog.Any("error", err))
 			} else {

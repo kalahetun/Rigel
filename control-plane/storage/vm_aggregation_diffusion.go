@@ -187,7 +187,7 @@ func CalcClusterWeightedAvg(fs *FileStorage, interval time.Duration,
 		logger.Info("结构体JSON序列化成功", slog.String("pre", logPre),
 			slog.String("data", string(jsonData)))
 
-		//// 5. 发送（写入）数据到Etcd（*clientv3.Client核心操作）
+		// 5. 发送（写入）数据到Etcd（*clientv3.Client核心操作）
 		ip, _ := util.GetPublicIP()
 		key := fmt.Sprintf("/routing/%s", ip)
 		etcd_client.PutKey(etcdClient, key, string(jsonData), logPre, logger)
