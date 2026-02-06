@@ -109,7 +109,8 @@ func (h *VmReportAPIHandler) PostVMReport(c *gin.Context) {
 	}
 
 	// 6. 保存数据到存储层
-	if _, err := h.storage.Save(&reportData); err != nil {
+	pre := util.GenerateRandomLetters(5)
+	if _, err := h.storage.Save(&reportData, pre); err != nil {
 		resp.Code = 500
 		resp.Msg = "数据保存失败：" + err.Error()
 		c.JSON(http.StatusOK, resp)
