@@ -91,8 +91,7 @@ func CalcClusterWeightedAvg(fs *FileStorage, interval time.Duration,
 		// 4. 复用GetAll()获取所有VMReport数据
 		allReports, err := fs.GetAll(logPre)
 		if err != nil {
-			logger.Warn("调用GetAll失败，跳过本次计算",
-				slog.String("pre", logPre), slog.Any("err", err))
+			logger.Warn("调用GetAll失败，跳过本次计算", slog.String("pre", logPre), slog.Any("err", err))
 			continue
 		}
 
@@ -100,9 +99,9 @@ func CalcClusterWeightedAvg(fs *FileStorage, interval time.Duration,
 		var (
 			totalWeightedCache float64 // 总加权缓存：Σ(ActiveConnections*AvgCachePerConn)
 			totalActiveConn    float64 // 总活跃连接数：Σ(ActiveConnections)
-			totalLinksCong     map[string]tempLinksCongStruct
+			totalLinksCong     map[string]*tempLinksCongStruct
 		)
-		totalLinksCong = make(map[string]tempLinksCongStruct)
+		totalLinksCong = make(map[string]*tempLinksCongStruct)
 
 		// 6. 遍历GetAll()结果，累加统计值
 		for _, report := range allReports {
@@ -110,28 +109,27 @@ func CalcClusterWeightedAvg(fs *FileStorage, interval time.Duration,
 			avgCache := report.Congestion.AvgCachePerConn
 			totalWeightedCache += activeConn * avgCache
 			totalActiveConn += activeConn
-
-			t := tempLinksCongStruct{}
-
 			//探测任务copy
 			for _, v := range report.LinksCongestion {
-				t.TargetIP = v.TargetIP
-				t.ProbeTask = v.Target
+				_, ok := totalLinksCong[v.TargetIP]
+				if ok {
+					t := tempLinksCongStruct{}
+					t.TargetIP = v.TargetIP
+					t.ProbeTask = v.Target
+					totalLinksCong[t.TargetIP] = &t
+				}
 				break
 			}
-
 			//处理链路
 			for _, v := range report.LinksCongestion {
+				t := totalLinksCong[v.TargetIP]
 				t.PacketLosses = append(t.PacketLosses, v.PacketLoss)
 				t.AverageLatencies = append(t.AverageLatencies, v.AverageLatency)
 			}
-
-			b, _ := json.Marshal(t)
-			logger.Info("totalLinksCong info", slog.String("pre", logPre),
-				slog.String("data", string(b)))
-
-			totalLinksCong[t.TargetIP] = t
 		}
+		b, _ := json.Marshal(totalLinksCong)
+		logger.Info("totalLinksCong info", slog.String("pre", logPre),
+			slog.String("data", string(b)))
 
 		// 7. 避免除以0，输出计算结果
 		var avgWeightedCache float64 = 0
@@ -187,6 +185,8 @@ func CalcClusterWeightedAvg(fs *FileStorage, interval time.Duration,
 				slog.String("pre", logPre), slog.Any("错误", err))
 			continue
 		}
+		logger.Info("结构体JSON序列化成功", slog.String("pre", logPre),
+			slog.String("data", string(jsonData)))
 
 		//// 5. 发送（写入）数据到Etcd（*clientv3.Client核心操作）
 		ip, _ := util.GetPublicIP()
