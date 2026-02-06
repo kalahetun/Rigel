@@ -142,58 +142,10 @@ func main() {
 	}
 
 	// 监听 /routing/ 前缀 更新routing map
-	etcd_client.WatchPrefix(
-		cli, "/routing/",
+	etcd_client.WatchPrefix(cli, "/routing/",
 		func(eventType, key, val string, logger *slog.Logger) {
-
-			//日志跟踪
-			logPre := util.GenerateRandomLetters(5)
-
-			if len(val) > 0 {
-				compact := new(bytes.Buffer)
-				err := json.Compact(compact, []byte(val))
-				if err != nil {
-					logger.Warn("压缩 JSON 失败",
-						slog.String("pre", logPre),
-						slog.Any("err", err),
-					)
-					compact.WriteString(val) // 失败就直接原值
-				}
-			}
-
-			logger.Info("[WATCH] event",
-				slog.String("pre", logPre),
-				slog.String("eventType", eventType),
-				slog.String("key", key),
-				slog.String("value", val),
-			)
-			var tel storage.NetworkTelemetry
-
-			err = json.Unmarshal([]byte(val), &tel)
-			if len(val) > 0 && err != nil {
-				logger.Warn("解析节点JSON失败，跳过", slog.String("pre", logPre),
-					slog.String("ip", key), slog.Any("error", err))
-			} else {
-				switch eventType {
-				case "CREATE":
-					r.AddNode(&tel, logPre)
-					r.DumpGraph(logPre)
-				case "UPDATE":
-					r.AddNode(&tel, logPre)
-					r.DumpGraph(logPre)
-				case "DELETE":
-					r.RemoveNode(tel.PublicIP, logPre)
-					r.DumpGraph(logPre)
-				default:
-					logger.Warn("[WATCH] UNKNOWN eventType",
-						slog.String("pre", logPre),
-						slog.String("eventType", eventType),
-						slog.String("key", key),
-					)
-				}
-			}
-		}, logger,
-	)
+			HandleRoutingWatchEvent(r, eventType, key, val, logger)
+		}, logger)
 
 	//启动virtual queue逻辑
 	exe, _ := os.Executable()
@@ -247,4 +199,62 @@ func main() {
 	}
 
 	return
+}
+
+func HandleRoutingWatchEvent(
+	r *routing.GraphManager,
+	eventType string,
+	key string,
+	val string,
+	logger *slog.Logger,
+) {
+	// 日志追踪 ID
+	logPre := util.GenerateRandomLetters(5)
+
+	// JSON 压缩（仅用于日志可读性）
+	if len(val) > 0 {
+		compact := new(bytes.Buffer)
+		if err := json.Compact(compact, []byte(val)); err != nil {
+			logger.Warn("压缩 JSON 失败",
+				slog.String("pre", logPre),
+				slog.Any("err", err),
+			)
+		}
+	}
+
+	logger.Info("[WATCH] event",
+		slog.String("pre", logPre),
+		slog.String("eventType", eventType),
+		slog.String("key", key),
+		slog.String("value", val),
+	)
+
+	var tel storage.NetworkTelemetry
+	if len(val) > 0 {
+		if err := json.Unmarshal([]byte(val), &tel); err != nil {
+			logger.Warn("解析节点JSON失败，跳过",
+				slog.String("pre", logPre),
+				slog.String("ip", key),
+				slog.Any("error", err),
+			)
+			return
+		}
+	}
+
+	switch eventType {
+	case "CREATE", "UPDATE":
+		r.AddNode(&tel, logPre)
+		r.DumpGraph(logPre)
+
+	case "DELETE":
+		r.RemoveNode(tel.PublicIP, logPre)
+		r.DumpGraph(logPre)
+
+	default:
+		logger.Warn("[WATCH] UNKNOWN eventType",
+			slog.String("pre", logPre),
+			slog.String("eventType", eventType),
+			slog.String("key", key),
+		)
+	}
 }
