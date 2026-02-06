@@ -99,9 +99,9 @@ func CalcClusterWeightedAvg(fs *FileStorage, interval time.Duration,
 		var (
 			totalWeightedCache float64 // 总加权缓存：Σ(ActiveConnections*AvgCachePerConn)
 			totalActiveConn    float64 // 总活跃连接数：Σ(ActiveConnections)
-			totalLinksCong     map[string]*tempLinksCongStruct
+			totalLinksCong     map[string]tempLinksCongStruct
 		)
-		totalLinksCong = make(map[string]*tempLinksCongStruct)
+		totalLinksCong = make(map[string]tempLinksCongStruct)
 
 		// 6. 遍历GetAll()结果，累加统计值
 		for _, report := range allReports {
@@ -116,7 +116,7 @@ func CalcClusterWeightedAvg(fs *FileStorage, interval time.Duration,
 					t := tempLinksCongStruct{}
 					t.TargetIP = v.TargetIP
 					t.ProbeTask = v.Target
-					totalLinksCong[t.TargetIP] = &t
+					totalLinksCong[t.TargetIP] = t
 				}
 				break
 			}
