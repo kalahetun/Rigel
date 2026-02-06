@@ -112,7 +112,7 @@ func CalcClusterWeightedAvg(fs *FileStorage, interval time.Duration,
 			//探测任务copy
 			for _, v := range report.LinksCongestion {
 				_, ok := totalLinksCong[v.TargetIP]
-				if ok {
+				if !ok {
 					t := tempLinksCongStruct{}
 					t.TargetIP = v.TargetIP
 					t.ProbeTask = v.Target
@@ -125,6 +125,7 @@ func CalcClusterWeightedAvg(fs *FileStorage, interval time.Duration,
 				t := totalLinksCong[v.TargetIP]
 				t.PacketLosses = append(t.PacketLosses, v.PacketLoss)
 				t.AverageLatencies = append(t.AverageLatencies, v.AverageLatency)
+				totalLinksCong[v.TargetIP] = t
 			}
 		}
 		b, _ := json.Marshal(totalLinksCong)
