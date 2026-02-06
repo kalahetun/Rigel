@@ -24,6 +24,6 @@ proxy:
 
 gcp:
   projectID: "civil-honor-480405-e0"      # 替换为你的 GCP 项目 ID
-  zone: "us-west1-c"                   # 机房
+  zone: "europe-west4-b"                   # 机房
   vmPrefix: "scaling-vm-"                     # VM 名称前缀（不是具体名字）
   credFile: "/home/matth/civil-honor-480405-e0-e62b994bbc27.json"  # GCP 凭证文件路径
