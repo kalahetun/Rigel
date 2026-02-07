@@ -547,7 +547,12 @@ func (s *Scaler) deployAndAttachVM(
 		binaryProxy,
 		logger,
 	); err != nil {
+		s.logger.Error("deployAndAttachVM failed", slog.String("pre", pre),
+			slog.String("binaryPlane", binaryPlane), slog.String("vm", string(b)), slog.Any("err", err))
 		return err
+	} else {
+		s.logger.Info("deployAndAttachVM success", slog.String("pre", pre),
+			slog.String("binaryPlane", binaryPlane), slog.String("vm", string(b)))
 	}
 
 	if err := deployBinaryToServer(
@@ -559,13 +564,25 @@ func (s *Scaler) deployAndAttachVM(
 		binaryPlane,
 		logger,
 	); err != nil {
+		s.logger.Error("deployAndAttachVM failed", slog.String("pre", pre),
+			slog.String("binaryPlane", binaryPlane), slog.String("vm", string(b)), slog.Any("err", err))
 		return err
+	} else {
+		s.logger.Info("deployAndAttachVM success", slog.String("pre", pre),
+			slog.String("binaryPlane", binaryPlane), slog.String("vm", string(b)))
 	}
 
-	_, err := sendAddTargetIpsRequest([]envoy_manager.EnvoyTargetAddr{
+	if _, err := sendAddTargetIpsRequest([]envoy_manager.EnvoyTargetAddr{
 		{vm.PublicIP, 8095},
-	})
-	return err
+	}); err != nil {
+		s.logger.Error("sendAddTargetIpsRequest failed", slog.String("pre", pre),
+			slog.String("vm", string(b)), slog.Any("err", err))
+		return err
+	} else {
+		s.logger.Info("sendAddTargetIpsRequest success", slog.String("pre", pre),
+			slog.String("vm", string(b)))
+	}
+	return nil
 }
 
 func (s *Scaler) triggerScaling1_(n int, vm_ VM, pre string, logger *slog.Logger) (bool, VM) {
