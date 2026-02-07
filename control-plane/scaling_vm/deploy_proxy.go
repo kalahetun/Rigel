@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
-	"golang.org/x/crypto/ssh/agent"
 	"io"
 	"log/slog"
 	"net"
@@ -88,7 +87,9 @@ type SSHConfig struct {
 //	return nil
 //}
 
-func sshToDeployBinary(config *SSHConfig, localPath, remotePath, binaryString, pre string, logger *slog.Logger) error {
+func sshToDeployBinary(config *SSHConfig, localPath, remotePath, binaryString,
+	pre string, logger *slog.Logger) error {
+
 	logger.Info("sshToDeployBinary", slog.String("pre", pre))
 
 	// === 1. 读取本地私钥文件 ===
@@ -97,14 +98,16 @@ func sshToDeployBinary(config *SSHConfig, localPath, remotePath, binaryString, p
 		return fmt.Errorf("read private key failed: %v", err)
 	}
 
-	logger.Info("read private key success", slog.String("pre", pre))
+	logger.Info("read private key success", slog.String("pre", pre),
+		slog.String("binaryString", binaryString))
 
 	signer, err := ssh.ParsePrivateKey(key)
 	if err != nil {
 		return fmt.Errorf("parse private key failed: %v", err)
 	}
 
-	logger.Info("parse private key success", slog.String("pre", pre))
+	logger.Info("parse private key success", slog.String("pre", pre),
+		slog.String("binaryString", binaryString))
 
 	clientConfig := &ssh.ClientConfig{
 		User: config.Username,
@@ -121,7 +124,8 @@ func sshToDeployBinary(config *SSHConfig, localPath, remotePath, binaryString, p
 		return fmt.Errorf("failed to dial TCP: %v", err)
 	}
 
-	logger.Info("tcp Dial success", slog.String("pre", pre))
+	logger.Info("tcp Dial success", slog.String("pre", pre),
+		slog.String("binaryString", binaryString))
 
 	// === 3. 建立 SSH 连接 ===
 	conn, chans, reqs, err := ssh.NewClientConn(tcpConn, net.JoinHostPort(config.Host, config.Port), clientConfig)
@@ -130,19 +134,22 @@ func sshToDeployBinary(config *SSHConfig, localPath, remotePath, binaryString, p
 	}
 	defer conn.Close()
 
-	logger.Info("ssh Dial success", slog.String("pre", pre))
+	logger.Info("ssh Dial success", slog.String("pre", pre),
+		slog.String("binaryString", binaryString))
 
 	client := ssh.NewClient(conn, chans, reqs)
 	defer client.Close()
 
-	logger.Info("ssh Dial success", slog.String("pre", pre))
+	logger.Info("ssh Dial success", slog.String("pre", pre),
+		slog.String("binaryString", binaryString))
 
 	// === 4. 上传文件 ===
 	err = UploadDirSFTP(client, localPath, remotePath)
 	if err != nil {
 		return fmt.Errorf("failed to upload binary: %v", err)
 	}
-	logger.Info("UploadDirSFTP success", slog.String("pre", pre))
+	logger.Info("UploadDirSFTP success", slog.String("pre", pre),
+		slog.String("binaryString", binaryString))
 
 	// === 5. 启动远程二进制文件 ===
 	session, err := client.NewSession()
@@ -151,50 +158,52 @@ func sshToDeployBinary(config *SSHConfig, localPath, remotePath, binaryString, p
 	}
 	defer session.Close()
 
-	logger.Info("NewSession success", slog.String("pre", pre))
+	logger.Info("NewSession success", slog.String("pre", pre),
+		slog.String("binaryString", binaryString))
 
-	err = startBinaryInBackground(session, remotePath, binaryString, logger)
+	err = startBinaryInBackground(session, remotePath, binaryString, pre, logger)
 	if err != nil {
 		return fmt.Errorf("failed to start binary: %v", err)
 	}
-	logger.Info("startBinaryInBackground success", slog.String("pre", pre))
+	logger.Info("startBinaryInBackground success", slog.String("pre", pre),
+		slog.String("binaryString", binaryString))
 
 	return nil
 }
 
-// agentCallback 用于获取默认 SSH agent 中的密钥
-func agentCallback() func() ([]ssh.Signer, error) {
-	// 返回一个闭包函数，符合 PublicKeysCallback 的要求
-	return func() ([]ssh.Signer, error) {
-		// 获取 SSH agent
-		sshAgent := agent.NewClient(os.Stdin) // 使用 os.Stdin 连接到默认的 SSH agent
-		if sshAgent == nil {
-			return nil, fmt.Errorf("failed to connect to SSH agent")
-		}
-
-		// 获取密钥列表
-		keys, err := sshAgent.List()
-		if err != nil {
-			return nil, fmt.Errorf("failed to list keys: %v", err)
-		}
-
-		if len(keys) == 0 {
-			return nil, fmt.Errorf("no keys found in the agent")
-		}
-
-		// 将 ssh.Key 转换为 ssh.Signer
-		var signers []ssh.Signer
-		for _, key := range keys {
-			signer, err := ssh.NewSignerFromKey(key)
-			if err != nil {
-				return nil, fmt.Errorf("failed to create signer: %v", err)
-			}
-			signers = append(signers, signer)
-		}
-
-		return signers, nil
-	}
-}
+//// agentCallback 用于获取默认 SSH agent 中的密钥
+//func agentCallback() func() ([]ssh.Signer, error) {
+//	// 返回一个闭包函数，符合 PublicKeysCallback 的要求
+//	return func() ([]ssh.Signer, error) {
+//		// 获取 SSH agent
+//		sshAgent := agent.NewClient(os.Stdin) // 使用 os.Stdin 连接到默认的 SSH agent
+//		if sshAgent == nil {
+//			return nil, fmt.Errorf("failed to connect to SSH agent")
+//		}
+//
+//		// 获取密钥列表
+//		keys, err := sshAgent.List()
+//		if err != nil {
+//			return nil, fmt.Errorf("failed to list keys: %v", err)
+//		}
+//
+//		if len(keys) == 0 {
+//			return nil, fmt.Errorf("no keys found in the agent")
+//		}
+//
+//		// 将 ssh.Key 转换为 ssh.Signer
+//		var signers []ssh.Signer
+//		for _, key := range keys {
+//			signer, err := ssh.NewSignerFromKey(key)
+//			if err != nil {
+//				return nil, fmt.Errorf("failed to create signer: %v", err)
+//			}
+//			signers = append(signers, signer)
+//		}
+//
+//		return signers, nil
+//	}
+//}
 
 // uploadBinaryToRemote 上传二进制文件到远程服务器
 func UploadDirSFTP(sshClient *ssh.Client, localDir, remoteDir string) error {
@@ -262,6 +271,7 @@ func startBinaryInBackground(
 	session *ssh.Session,
 	remotePath string,
 	binaryString string,
+	pre string,
 	logger *slog.Logger,
 ) error {
 
@@ -277,16 +287,14 @@ func startBinaryInBackground(
 		binaryString,
 	)
 
-	logger.Info("Starting remote binary",
-		"workdir", remotePath,
-		"binary", binaryString,
-	)
+	logger.Info("Starting remote binary", slog.String("pre", pre),
+		"workdir", remotePath, "binary", binaryString)
 
 	if err := session.Run(cmd); err != nil {
 		return fmt.Errorf("failed to start binary in background: %w", err)
 	}
 
-	logger.Info("Binary started successfully in background")
+	logger.Info("Binary started successfully in background", slog.String("pre", pre))
 	return nil
 }
 

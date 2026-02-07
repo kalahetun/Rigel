@@ -451,7 +451,7 @@ func setHealthState(apiHost, setState, pre string, logger *slog.Logger) bool {
 }
 
 // sendRequest 向指定的 API 路由发送请求
-func sendAddTargetIpsRequest(targetIps []envoy_manager.EnvoyTargetAddr) (*envoy_manager.APICommonResp, error) {
+func sendAddTargetIpsRequest(targetIps []envoy_manager.EnvoyTargetAddr, pre string) (*envoy_manager.APICommonResp, error) {
 	// 构建请求体
 	url := "http://127.0.0.1:8081/envoy/port/setTargetIps" // API URL
 	body, err := json.Marshal(targetIps)                   // 将目标地址数据编码为 JSON
@@ -574,9 +574,8 @@ func (s *Scaler) deployAndAttachVM(
 			slog.String("binaryPlane", binaryPlane), slog.String("vm", string(b)))
 	}
 
-	if _, err := sendAddTargetIpsRequest([]envoy_manager.EnvoyTargetAddr{
-		{vm.PublicIP, 8095},
-	}); err != nil {
+	if _, err := sendAddTargetIpsRequest(
+		[]envoy_manager.EnvoyTargetAddr{{vm.PublicIP, 8095}}, pre); err != nil {
 		s.logger.Error("sendAddTargetIpsRequest failed", slog.String("pre", pre),
 			slog.String("vm", string(b)), slog.Any("err", err))
 		return err
