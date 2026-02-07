@@ -185,10 +185,14 @@ func (s *Scaler) autoScaling() {
 		switch s.getState() {
 		case Inactive:
 			node.State = ScalingUp
-			if ok, vm := s.triggerScaling1(1, pre, s.logger); ok {
+			ok, vm := s.triggerScaling1_(1, VM{}, pre, s.logger)
+			if vm.PublicIP != "" {
+				node.ScaledVMs = append(node.ScaledVMs, vm)
+			}
+			if ok {
 				node.State = Triggered
 				node.ScaleHistory = append(node.ScaleHistory, ScaleEvent{Time: s.now(), Amount: 1, ScaledVM: vm})
-				node.ScaledVMs = append(node.ScaledVMs, vm)
+				//node.ScaledVMs = append(node.ScaledVMs, vm)
 				retain, state := s.calculateRetention(pre)
 				node.RetainTime = retain
 				if state == Permanent {
@@ -199,7 +203,7 @@ func (s *Scaler) autoScaling() {
 			}
 		case Dormant:
 			node.State = Triggered
-			if s.triggerScaling2(pre) {
+			if s.triggerScaling2(VM{}, pre) {
 				node.State = Triggered
 				node.ScaleHistory = append(node.ScaleHistory, ScaleEvent{Time: s.now(), Amount: 1})
 				retain, state := s.calculateRetention(pre)
@@ -215,7 +219,7 @@ func (s *Scaler) autoScaling() {
 		}
 	}
 	s.ScalerDump(pre+"-3", s.logger) //打印 node
-	if node.State == Triggered || node.State == Permanent {
+	if node.State == ScalingUp || node.State == Triggered || node.State == Permanent {
 		return
 	}
 
@@ -226,13 +230,13 @@ func (s *Scaler) autoScaling() {
 	case Dormant, Permanent:
 		s.logger.Info("node is dormant or permanent, and retention time reached", slog.String("pre", pre))
 		node.State = Releasing
-		s.triggerRelease(pre)
+		s.triggerRelease(VM{}, pre)
 		node.State = Inactive
 	case ScalingUp:
 		retain, _ := s.calculateRetention(pre)
 		node.RetainTime = retain
 		node.State = Dormant
-		s.triggerDormant(pre)
+		s.triggerDormant(VM{}, pre)
 		s.logger.Info("the state of node is changed to dormant from scaling up", slog.String("pre", pre))
 	default:
 		s.logger.Warn("unhandled default case", slog.String("pre", pre))
@@ -243,72 +247,80 @@ func (s *Scaler) autoScaling() {
 }
 
 // triggerScaling 模拟扩容动作
-func (s *Scaler) triggerScaling1(n int, pre string, logger *slog.Logger) (bool, VM) {
+//func (s *Scaler) triggerScaling1(n int, pre string, logger *slog.Logger) (bool, VM) {
+//
+//	logger.Info("triggerScaling1", slog.String("pre", pre), "n", n)
+//
+//	//获取本节点配置信息
+//	//扩容
+//	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
+//	defer cancel() // 确保上下文最终被释放
+//
+//	gcp := util.Config_.GCP
+//	vmName := gcp.VMPrefix + util.GenerateRandomLetters1(5)
+//	err := CreateVM(ctx, gcp.ProjectID, gcp.Zone, vmName, gcp.CredFile, pre, logger)
+//
+//	if err != nil {
+//		logger.Error("创建 VM 失败", slog.String("pre", pre), "error", err)
+//		return false, VM{}
+//	}
+//
+//	// 在创建虚拟机后等待一定时间，确保 VM 启动完成
+//	logger.Info("Waiting for VM to start...", slog.String("pre", pre), "vmName", vmName)
+//	time.Sleep(3 * time.Minute) // 等待 10 分钟
+//
+//	//获取ip等信息用于管理
+//	ip, err := GetVMExternalIP(ctx, logger, gcp.ProjectID, gcp.Zone, vmName, gcp.CredFile, pre)
+//	if err != nil {
+//		logger.Error("获取 VM 外部 IP 失败", slog.String("pre", pre), "error", err)
+//		return false, VM{}
+//	}
+//
+//	logger.Info("Scaling node", slog.String("pre", pre), slog.String("zone", gcp.Zone),
+//		slog.String("vm name", vmName), slog.String("ip", ip))
+//
+//	//安装环境 启动 触发envoy
+//	err = deployBinaryToServer(username, ip, "22", localPathProxy, remotePathProxy, binaryProxy, logger)
+//	if err != nil {
+//		logger.Error("部署二进制文件失败", slog.String("pre", pre),
+//			slog.String("remote proxy", remotePathProxy), "error", err)
+//		return false, VM{}
+//	}
+//	err = deployBinaryToServer(username, ip, "22", localPathPlane, remotePathPlane, binaryPlane, logger)
+//	if err != nil {
+//		logger.Error("部署二进制文件失败", slog.String("pre", pre),
+//			slog.String("remote proxy", remotePathProxy), "error", err)
+//		return false, VM{}
+//	}
+//
+//	//关联到envoy
+//	_, err = sendAddTargetIpsRequest([]envoy_manager.EnvoyTargetAddr{envoy_manager.EnvoyTargetAddr{ip, 8095}})
+//	if err != nil {
+//		logger.Error("关联到envoy失败", "error", err)
+//		return false, VM{}
+//	}
+//
+//	return true, VM{ip, vmName, s.now(), Triggered}
+//}
 
-	logger.Info("triggerScaling1", slog.String("pre", pre), "n", n)
+func (s *Scaler) triggerScaling2(vm_ VM, pre string) bool {
 
-	//获取本节点配置信息
-	//扩容
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
-	defer cancel() // 确保上下文最终被释放
-
-	gcp := util.Config_.GCP
-	vmName := gcp.VMPrefix + util.GenerateRandomLetters1(5)
-	err := CreateVM(ctx, gcp.ProjectID, gcp.Zone, vmName, gcp.CredFile, pre, logger)
-
-	if err != nil {
-		logger.Error("创建 VM 失败", slog.String("pre", pre), "error", err)
-		return false, VM{}
-	}
-
-	// 在创建虚拟机后等待一定时间，确保 VM 启动完成
-	logger.Info("Waiting for VM to start...", slog.String("pre", pre), "vmName", vmName)
-	time.Sleep(5 * time.Minute) // 等待 10 分钟
-
-	//获取ip等信息用于管理
-	ip, err := GetVMExternalIP(ctx, logger, gcp.ProjectID, gcp.Zone, vmName, gcp.CredFile, pre)
-	if err != nil {
-		logger.Error("获取 VM 外部 IP 失败", slog.String("pre", pre), "error", err)
-		return false, VM{}
-	}
-
-	logger.Info("Scaling node", slog.String("pre", pre), slog.String("zone", gcp.Zone),
-		slog.String("vm name", vmName), slog.String("ip", ip))
-
-	//安装环境 启动 触发envoy
-	err = deployBinaryToServer(username, ip, "22", localPathProxy, remotePathProxy, binaryProxy, logger)
-	if err != nil {
-		logger.Error("部署二进制文件失败", slog.String("pre", pre),
-			slog.String("remote proxy", remotePathProxy), "error", err)
-		return false, VM{}
-	}
-	err = deployBinaryToServer(username, ip, "22", localPathPlane, remotePathPlane, binaryPlane, logger)
-	if err != nil {
-		logger.Error("部署二进制文件失败", slog.String("pre", pre),
-			slog.String("remote proxy", remotePathProxy), "error", err)
-		return false, VM{}
-	}
-
-	//关联到envoy
-	_, err = sendAddTargetIpsRequest([]envoy_manager.EnvoyTargetAddr{envoy_manager.EnvoyTargetAddr{ip, 8095}})
-	if err != nil {
-		logger.Error("关联到envoy失败", "error", err)
-		return false, VM{}
-	}
-
-	return true, VM{ip, vmName, s.now(), Triggered}
-}
-
-func (s *Scaler) triggerScaling2(pre string) bool {
+	s.logger.Info("triggerScaling2", slog.String("pre", pre), slog.Any("vm", vm_))
 
 	var ip, setState string
-	//找到睡眠的vm获取 ip
-	if len(s.Node.ScaledVMs) <= 0 {
-		s.logger.Error("No scaled VMs found", slog.String("pre", pre))
-		return false
+
+	if vm_.PublicIP != "" {
+		ip = vm_.PublicIP
+	} else {
+		//找到睡眠的vm获取 ip
+		if len(s.Node.ScaledVMs) <= 0 {
+			s.logger.Error("No scaled VMs found", slog.String("pre", pre))
+			return false
+		}
+		vm := s.Node.ScaledVMs[0]
+		ip = vm.PublicIP
 	}
-	vm := s.Node.ScaledVMs[0]
-	ip = vm.PublicIP
+
 	setState = "on"
 
 	if b := setHealthState(ip, setState, pre, s.logger); b == false {
@@ -317,16 +329,24 @@ func (s *Scaler) triggerScaling2(pre string) bool {
 	return true
 }
 
-func (s *Scaler) triggerDormant(pre string) bool {
+func (s *Scaler) triggerDormant(vm_ VM, pre string) bool {
+
+	s.logger.Info("triggerDormant", slog.String("pre", pre), slog.Any("vm", vm_))
 
 	var ip, setState string
-	//找到睡眠的vm获取 ip
-	if len(s.Node.ScaledVMs) <= 0 {
-		s.logger.Error("No scaled VMs found", slog.String("pre", pre))
-		return false
+
+	if vm_.PublicIP != "" {
+		ip = vm_.PublicIP
+	} else {
+		//找到睡眠的vm获取 ip
+		if len(s.Node.ScaledVMs) <= 0 {
+			s.logger.Error("No scaled VMs found", slog.String("pre", pre))
+			return false
+		}
+		vm := s.Node.ScaledVMs[0]
+		ip = vm.PublicIP
 	}
-	vm := s.Node.ScaledVMs[0]
-	ip = vm.PublicIP
+
 	setState = "off"
 
 	if b := setHealthState(ip, setState, pre, s.logger); b == false {
@@ -336,19 +356,24 @@ func (s *Scaler) triggerDormant(pre string) bool {
 }
 
 // triggerRelease 模拟释放动作
-func (s *Scaler) triggerRelease(pre string) bool {
+func (s *Scaler) triggerRelease(vm_ VM, pre string) bool {
 
-	s.logger.Info("triggerRelease", slog.String("pre", pre))
+	s.logger.Info("triggerRelease", slog.String("pre", pre), slog.Any("vm", vm_))
 
-	//找到睡眠的vm获取 ip
-	if len(s.Node.ScaledVMs) <= 0 {
-		s.logger.Error("No scaled VMs found", slog.String("pre", pre))
-		return false
+	var vm VM
+	if vm_.PublicIP != "" {
+		vm = vm_
+	} else {
+		//找到睡眠的vm获取 ip
+		if len(s.Node.ScaledVMs) <= 0 {
+			s.logger.Error("No scaled VMs found", slog.String("pre", pre))
+			return false
+		}
+		vm = s.Node.ScaledVMs[0]
 	}
-	vm := s.Node.ScaledVMs[0]
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel() // 确保上下文最终被释放
 
 	gcp := util.Config_.GCP
@@ -357,8 +382,7 @@ func (s *Scaler) triggerRelease(pre string) bool {
 		s.logger.Error("删除 VM 失败", slog.String("pre", pre), "error", err)
 	}
 
-	s.logger.Info("Releasing node", slog.String("pre", pre),
-		slog.String("vm name", vm.VMName))
+	s.logger.Info("Releasing node", slog.String("pre", pre), slog.String("vm name", vm.VMName))
 	return true
 }
 
@@ -450,4 +474,136 @@ func sendAddTargetIpsRequest(targetIps []envoy_manager.EnvoyTargetAddr) (*envoy_
 
 	// 返回响应
 	return &response, nil
+}
+
+func (s *Scaler) createVM(
+	ctx context.Context,
+	pre string,
+	logger *slog.Logger,
+) (VM, error) {
+
+	gcp := util.Config_.GCP
+	vmName := gcp.VMPrefix + util.GenerateRandomLetters1(5)
+
+	logger.Info("creating VM",
+		slog.String("pre", pre),
+		slog.String("vmName", vmName),
+		slog.String("zone", gcp.Zone),
+	)
+
+	if err := CreateVM(
+		ctx,
+		gcp.ProjectID,
+		gcp.Zone,
+		vmName,
+		gcp.CredFile,
+		pre,
+		logger,
+	); err != nil {
+		return VM{}, err
+	}
+
+	logger.Info("waiting for VM startup",
+		slog.String("pre", pre),
+		slog.String("vmName", vmName),
+	)
+
+	time.Sleep(2 * time.Minute)
+
+	ip, err := GetVMExternalIP(
+		ctx,
+		logger,
+		gcp.ProjectID,
+		gcp.Zone,
+		vmName,
+		gcp.CredFile,
+		pre,
+	)
+	if err != nil {
+		return VM{}, err
+	}
+
+	return VM{ip, vmName, s.now()}, nil
+}
+
+func (s *Scaler) deployAndAttachVM(
+	vm VM,
+	pre string,
+	logger *slog.Logger,
+) error {
+
+	b, _ := json.Marshal(vm)
+	logger.Info("deploying binaries to VM",
+		slog.String("pre", pre),
+		slog.String("vm", string(b)),
+	)
+
+	if err := deployBinaryToServer(
+		username,
+		vm.PublicIP,
+		"22",
+		localPathProxy,
+		remotePathProxy,
+		binaryProxy,
+		logger,
+	); err != nil {
+		return err
+	}
+
+	if err := deployBinaryToServer(
+		username,
+		vm.PublicIP,
+		"22",
+		localPathPlane,
+		remotePathPlane,
+		binaryPlane,
+		logger,
+	); err != nil {
+		return err
+	}
+
+	_, err := sendAddTargetIpsRequest([]envoy_manager.EnvoyTargetAddr{
+		{vm.PublicIP, 8095},
+	})
+	return err
+}
+
+func (s *Scaler) triggerScaling1_(n int, vm_ VM, pre string, logger *slog.Logger) (bool, VM) {
+
+	logger.Info("triggerScaling1_", slog.String("pre", pre), "n", n, slog.Any("vm", vm_))
+
+	vm := VM{}
+	var err error
+
+	if vm_.PublicIP != "" {
+		s.logger.Info("specific vm action", slog.String("pre", pre))
+		vm = vm_
+	} else {
+		if len(s.Node.ScaledVMs) == 0 {
+			s.logger.Info("crete new vm", slog.String("pre", pre))
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer cancel() // 确保上下文最终被释放
+			vm, err = s.createVM(ctx, pre, logger)
+			if err != nil {
+				s.logger.Error("createVM failed", slog.String("pre", pre), slog.Any("err", err))
+				return false, VM{}
+			}
+		} else {
+			vm = s.Node.ScaledVMs[0]
+			s.logger.Info("already exist vm", slog.String("pre", pre))
+		}
+	}
+
+	b, _ := json.Marshal(vm)
+	logger.Info("createVM success", slog.String("pre", pre), slog.String("vm", string(b)))
+
+	err = s.deployAndAttachVM(vm, pre, logger)
+	if err != nil {
+		s.logger.Error("deployAndAttachVM failed", slog.String("pre", pre), slog.Any("err", err))
+		return false, vm
+	}
+
+	s.logger.Info("deployAndAttachVM success", slog.String("pre", pre), slog.String("vm", string(b)))
+
+	return true, vm
 }

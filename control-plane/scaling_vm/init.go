@@ -74,10 +74,10 @@ type ScaleEvent struct {
 }
 
 type VM struct {
-	PublicIP  string     `json:"public_ip"`
-	VMName    string     `json:"vm_name"`
-	StartTime time.Time  `json:"start_time"`
-	Status    NodeStatus `json:"status"`
+	PublicIP  string    `json:"public_ip"`
+	VMName    string    `json:"vm_name"`
+	StartTime time.Time `json:"start_time"`
+	//Status    NodeStatus `json:"status"`
 }
 
 // mock interface

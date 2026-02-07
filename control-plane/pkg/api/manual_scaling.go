@@ -13,7 +13,9 @@ import (
 
 // ManualScalingRequest HTTP请求体
 type ManualScalingRequest struct {
-	Action string `json:"action"` // scale_up, start, sleep, release, attach_envoy
+	Action   string `json:"action"` // scale_up, start, sleep, release, attach_envoy
+	PublicIP string `json:"public_ip"`
+	VMName   string `json:"vm_name"`
 	//Count  int    `json:"count,omitempty"` // 扩容数量，仅 scale_up 使用
 }
 
@@ -50,7 +52,7 @@ func (h *ManualScalingAPIHandler) PostManualScaling(c *gin.Context) {
 	h.Logger.Info("ManualScalingRequest", slog.String("pre", pre), slog.String("data", string(b)))
 
 	// 执行手动操作
-	h.Scaler.ManualScaling(pre, req.Action)
+	h.Scaler.ManualScaling(pre, req.Action, req.PublicIP, req.VMName)
 
 	// 返回结果
 	c.JSON(http.StatusOK, resp)

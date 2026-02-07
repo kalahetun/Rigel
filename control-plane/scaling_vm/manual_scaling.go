@@ -7,7 +7,7 @@ import (
 
 //init | scale_up | deploy_proxy | deploy_plane | attach_envoy | sleep | start | release
 
-func (s *Scaler) ManualScaling(pre, action string) {
+func (s *Scaler) ManualScaling(pre, action, ip, vmName string) {
 
 	// 尝试获取锁，若获取不到则直接返回
 	if !s.tryLock(1 * time.Second) {
@@ -19,24 +19,34 @@ func (s *Scaler) ManualScaling(pre, action string) {
 	defer s.mu.Unlock()
 
 	//---------------------------------------------------------------
+	vm_ := VM{}
+	if ip != "" && vmName != "" {
+		s.logger.Info("ManualScaling", slog.String("pre", pre),
+			slog.String("ip", ip), slog.String("vmName", vmName))
+		vm_.VMName = vmName
+		vm_.PublicIP = ip
+	}
 
-	node := s.Node
 	switch action {
 	case "scale_up":
-		if ok, vm := s.triggerScaling1(1, pre, s.logger); ok {
-			node.ScaledVMs = append(node.ScaledVMs, vm)
-		} else {
-			s.logger.Error("triggerScaling1 failed", slog.String("pre", pre))
+		ok, vm := s.triggerScaling1_(1, vm_, pre, s.logger)
+		if vm.PublicIP == "" {
+			s.logger.Error("create vm failed", slog.String("pre", pre))
+		} else if vm.PublicIP != "" && !ok {
+			s.logger.Warn("create vm success but deploy failed",
+				slog.String("pre", pre), slog.String("vm", vm.PublicIP))
+		} else if vm.PublicIP != "" && ok {
+			s.logger.Info("triggerScaling1_ success", slog.String("pre", pre))
 		}
 
 	case "sleep":
-		s.triggerDormant(pre)
+		s.triggerDormant(vm_, pre)
 
 	case "start":
-		s.triggerScaling2(pre)
+		s.triggerScaling2(vm_, pre)
 
 	case "release":
-		s.triggerRelease(pre)
+		s.triggerRelease(vm_, pre)
 
 	default:
 		s.logger.Warn("the action is nonexist", slog.String("pre", pre), slog.String("odd action", action))
