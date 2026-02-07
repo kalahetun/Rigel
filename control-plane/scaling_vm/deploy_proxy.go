@@ -7,8 +7,10 @@ import (
 	"golang.org/x/crypto/ssh/agent"
 	"io"
 	"log/slog"
+	"net"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 const (
@@ -21,37 +23,129 @@ const (
 	localPathPlane  = "./install/data-plane"   // 本地 Go 编译后的二进制文件路径
 	remotePathPlane = "/home/matth/data-plane" // 远程服务器目标路径
 	binaryPlane     = "./data-plane"           // 二进制文件名
+	privateKey      = "/home/matth/.ssh/id_rsa"
 )
 
 // SSHConfig 包含 SSH 连接所需的配置信息
 type SSHConfig struct {
-	Username string
-	Host     string
-	Port     string
+	Username   string
+	Host       string
+	Port       string
+	PrivateKey string // 私钥文件路径
 }
 
 // sshToMatthAndDeployBinary SSH 连接到服务器，上传二进制文件并启动它
-func sshToDeployBinary(config *SSHConfig, localPath, remotePath, binaryString, pre string, logger *slog.Logger) error {
-	// 创建 SSH 客户端配置，使用系统默认的 SSH 配置
-	clientConfig := &ssh.ClientConfig{
-		User:            config.Username,
-		Auth:            []ssh.AuthMethod{ssh.PublicKeysCallback(agentCallback())}, // 使用默认 SSH 密钥
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),                               // 忽略主机密钥验证（生产环境中应谨慎）
-	}
+//func sshToDeployBinary(config *SSHConfig, localPath, remotePath, binaryString, pre string, logger *slog.Logger) error {
+//	// 创建 SSH 客户端配置，使用系统默认的 SSH 配置
+//	clientConfig := &ssh.ClientConfig{
+//		User:            config.Username,
+//		Auth:            []ssh.AuthMethod{ssh.PublicKeysCallback(agentCallback())}, // 使用默认 SSH 密钥
+//		HostKeyCallback: ssh.InsecureIgnoreHostKey(),                               // 忽略主机密钥验证（生产环境中应谨慎）
+//	}
+//
+//	logger.Info("sshToDeployBinary", slog.String("pre", pre))
+//
+//	// 连接到 SSH 服务器
+//	conn, err := ssh.Dial("tcp", fmt.Sprintf("%s:%s", config.Host, config.Port), clientConfig)
+//	if err != nil {
+//		return fmt.Errorf("failed to dial: %v", err)
+//	}
+//	defer conn.Close()
+//
+//	logger.Info("ssh Dial success", slog.String("pre", pre))
+//
+//	// 打开远程会话
+//	session, err := conn.NewSession()
+//	if err != nil {
+//		return fmt.Errorf("failed to create session: %v", err)
+//	}
+//	defer session.Close()
+//
+//	logger.Info("NewSession success", slog.String("pre", pre))
+//
+//	// 读取本地二进制文件
+//	//data, err := ioutil.ReadFile(localBinaryPath)
+//	//if err != nil {
+//	//	return fmt.Errorf("failed to read binary file: %v", err)
+//	//}
+//
+//	// 上传二进制文件到远程服务器的 /home/matth 目录
+//	err = UploadDirSFTP(conn, localPath, remotePath)
+//	if err != nil {
+//		return fmt.Errorf("failed to upload binary: %v", err)
+//	}
+//
+//	logger.Info("UploadDirSFTP success", slog.String("pre", pre))
+//
+//	// 执行远程命令来启动二进制文件
+//	err = startBinaryInBackground(session, remotePath, binaryString, logger)
+//	if err != nil {
+//		return fmt.Errorf("failed to start binary: %v", err)
+//	}
+//
+//	logger.Info("startBinaryInBackground success", slog.String("pre", pre))
+//
+//	return nil
+//}
 
+func sshToDeployBinary(config *SSHConfig, localPath, remotePath, binaryString, pre string, logger *slog.Logger) error {
 	logger.Info("sshToDeployBinary", slog.String("pre", pre))
 
-	// 连接到 SSH 服务器
-	conn, err := ssh.Dial("tcp", fmt.Sprintf("%s:%s", config.Host, config.Port), clientConfig)
+	// === 1. 读取本地私钥文件 ===
+	key, err := os.ReadFile(config.PrivateKey)
 	if err != nil {
-		return fmt.Errorf("failed to dial: %v", err)
+		return fmt.Errorf("read private key failed: %v", err)
+	}
+
+	logger.Info("read private key success", slog.String("pre", pre))
+
+	signer, err := ssh.ParsePrivateKey(key)
+	if err != nil {
+		return fmt.Errorf("parse private key failed: %v", err)
+	}
+
+	logger.Info("parse private key success", slog.String("pre", pre))
+
+	clientConfig := &ssh.ClientConfig{
+		User: config.Username,
+		Auth: []ssh.AuthMethod{
+			ssh.PublicKeys(signer),
+		},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // 生产环境请改为验证 host key
+	}
+
+	// === 2. TCP Dial 加 5s 超时 ===
+	dialer := &net.Dialer{Timeout: 3 * time.Second}
+	tcpConn, err := dialer.Dial("tcp", net.JoinHostPort(config.Host, config.Port))
+	if err != nil {
+		return fmt.Errorf("failed to dial TCP: %v", err)
+	}
+
+	logger.Info("tcp Dial success", slog.String("pre", pre))
+
+	// === 3. 建立 SSH 连接 ===
+	conn, chans, reqs, err := ssh.NewClientConn(tcpConn, net.JoinHostPort(config.Host, config.Port), clientConfig)
+	if err != nil {
+		return fmt.Errorf("failed to create SSH client: %v", err)
 	}
 	defer conn.Close()
 
 	logger.Info("ssh Dial success", slog.String("pre", pre))
 
-	// 打开远程会话
-	session, err := conn.NewSession()
+	client := ssh.NewClient(conn, chans, reqs)
+	defer client.Close()
+
+	logger.Info("ssh Dial success", slog.String("pre", pre))
+
+	// === 4. 上传文件 ===
+	err = UploadDirSFTP(client, localPath, remotePath)
+	if err != nil {
+		return fmt.Errorf("failed to upload binary: %v", err)
+	}
+	logger.Info("UploadDirSFTP success", slog.String("pre", pre))
+
+	// === 5. 启动远程二进制文件 ===
+	session, err := client.NewSession()
 	if err != nil {
 		return fmt.Errorf("failed to create session: %v", err)
 	}
@@ -59,26 +153,10 @@ func sshToDeployBinary(config *SSHConfig, localPath, remotePath, binaryString, p
 
 	logger.Info("NewSession success", slog.String("pre", pre))
 
-	// 读取本地二进制文件
-	//data, err := ioutil.ReadFile(localBinaryPath)
-	//if err != nil {
-	//	return fmt.Errorf("failed to read binary file: %v", err)
-	//}
-
-	// 上传二进制文件到远程服务器的 /home/matth 目录
-	err = UploadDirSFTP(conn, localPath, remotePath)
-	if err != nil {
-		return fmt.Errorf("failed to upload binary: %v", err)
-	}
-
-	logger.Info("UploadDirSFTP success", slog.String("pre", pre))
-
-	// 执行远程命令来启动二进制文件
 	err = startBinaryInBackground(session, remotePath, binaryString, logger)
 	if err != nil {
 		return fmt.Errorf("failed to start binary: %v", err)
 	}
-
 	logger.Info("startBinaryInBackground success", slog.String("pre", pre))
 
 	return nil
@@ -216,9 +294,10 @@ func startBinaryInBackground(
 func deployBinaryToServer(username, host, port, localPath, remotePath, binaryString, pre string, logger *slog.Logger) error {
 	// 创建 SSH 配置
 	config := &SSHConfig{
-		Username: username,
-		Host:     host,
-		Port:     port,
+		Username:   username,
+		Host:       host,
+		Port:       port,
+		PrivateKey: privateKey,
 	}
 	// 调用 SSH 连接并部署二进制文件
 	return sshToDeployBinary(config, localPath, remotePath, binaryString, pre, logger)
