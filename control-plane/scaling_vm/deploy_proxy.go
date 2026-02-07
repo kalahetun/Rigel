@@ -288,13 +288,14 @@ func startBinaryInBackground(
 	)
 
 	logger.Info("Starting remote binary", slog.String("pre", pre),
-		"workdir", remotePath, "binary", binaryString)
+		"workdir", remotePath, "binary", binaryString, slog.String("cmd", cmd))
 
 	if err := session.Run(cmd); err != nil {
 		return fmt.Errorf("failed to start binary in background: %w", err)
 	}
 
-	logger.Info("Binary started successfully in background", slog.String("pre", pre))
+	logger.Info("Binary started successfully in background", slog.String("pre", pre),
+		slog.String("binaryString", binaryString))
 	return nil
 }
 
