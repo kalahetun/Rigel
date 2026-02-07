@@ -253,7 +253,7 @@ func (s *Scaler) triggerScaling1(n int, pre string, logger *slog.Logger) (bool, 
 	defer cancel() // 确保上下文最终被释放
 
 	gcp := util.Config_.GCP
-	vmName := gcp.VMPrefix + util.GenerateRandomLetters(5)
+	vmName := gcp.VMPrefix + util.GenerateRandomLetters1(5)
 	err := CreateVM(ctx, gcp.ProjectID, gcp.Zone, vmName, gcp.CredFile, pre, logger)
 
 	if err != nil {
