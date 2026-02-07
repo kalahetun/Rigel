@@ -39,6 +39,8 @@ func sshToDeployBinary(config *SSHConfig, localPath, remotePath, binaryString, p
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),                               // 忽略主机密钥验证（生产环境中应谨慎）
 	}
 
+	logger.Info("sshToDeployBinary", slog.String("pre", pre))
+
 	// 连接到 SSH 服务器
 	conn, err := ssh.Dial("tcp", fmt.Sprintf("%s:%s", config.Host, config.Port), clientConfig)
 	if err != nil {
