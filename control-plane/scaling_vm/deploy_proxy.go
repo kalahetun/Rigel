@@ -31,7 +31,7 @@ type SSHConfig struct {
 }
 
 // sshToMatthAndDeployBinary SSH 连接到服务器，上传二进制文件并启动它
-func sshToMatthAndDeployBinary(config *SSHConfig, localPath, remotePath, binaryString string, logger *slog.Logger) error {
+func sshToDeployBinary(config *SSHConfig, localPath, remotePath, binaryString, pre string, logger *slog.Logger) error {
 	// 创建 SSH 客户端配置，使用系统默认的 SSH 配置
 	clientConfig := &ssh.ClientConfig{
 		User:            config.Username,
@@ -46,12 +46,16 @@ func sshToMatthAndDeployBinary(config *SSHConfig, localPath, remotePath, binaryS
 	}
 	defer conn.Close()
 
+	logger.Info("ssh Dial success", slog.String("pre", pre))
+
 	// 打开远程会话
 	session, err := conn.NewSession()
 	if err != nil {
 		return fmt.Errorf("failed to create session: %v", err)
 	}
 	defer session.Close()
+
+	logger.Info("NewSession success", slog.String("pre", pre))
 
 	// 读取本地二进制文件
 	//data, err := ioutil.ReadFile(localBinaryPath)
@@ -65,11 +69,15 @@ func sshToMatthAndDeployBinary(config *SSHConfig, localPath, remotePath, binaryS
 		return fmt.Errorf("failed to upload binary: %v", err)
 	}
 
+	logger.Info("UploadDirSFTP success", slog.String("pre", pre))
+
 	// 执行远程命令来启动二进制文件
 	err = startBinaryInBackground(session, remotePath, binaryString, logger)
 	if err != nil {
 		return fmt.Errorf("failed to start binary: %v", err)
 	}
+
+	logger.Info("startBinaryInBackground success", slog.String("pre", pre))
 
 	return nil
 }
@@ -203,7 +211,7 @@ func startBinaryInBackground(
 }
 
 // deployBinaryToServer 这个函数将配置与文件路径作为输入，执行 SSH 连接、文件上传和启动操作
-func deployBinaryToServer(username, host, port, localPath, remotePath, binaryString string, logger *slog.Logger) error {
+func deployBinaryToServer(username, host, port, localPath, remotePath, binaryString, pre string, logger *slog.Logger) error {
 	// 创建 SSH 配置
 	config := &SSHConfig{
 		Username: username,
@@ -211,5 +219,5 @@ func deployBinaryToServer(username, host, port, localPath, remotePath, binaryStr
 		Port:     port,
 	}
 	// 调用 SSH 连接并部署二进制文件
-	return sshToMatthAndDeployBinary(config, localPath, remotePath, binaryString, logger)
+	return sshToDeployBinary(config, localPath, remotePath, binaryString, pre, logger)
 }

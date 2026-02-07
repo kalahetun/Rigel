@@ -545,6 +545,7 @@ func (s *Scaler) deployAndAttachVM(
 		localPathProxy,
 		remotePathProxy,
 		binaryProxy,
+		pre,
 		logger,
 	); err != nil {
 		s.logger.Error("deployAndAttachVM failed", slog.String("pre", pre),
@@ -562,6 +563,7 @@ func (s *Scaler) deployAndAttachVM(
 		localPathPlane,
 		remotePathPlane,
 		binaryPlane,
+		pre,
 		logger,
 	); err != nil {
 		s.logger.Error("deployAndAttachVM failed", slog.String("pre", pre),
