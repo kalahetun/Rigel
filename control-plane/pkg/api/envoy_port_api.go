@@ -166,7 +166,7 @@ func InitEnvoyAPIRouter(router *gin.Engine, operator *envoymanager2.EnvoyOperato
 	}
 	envoyGroup1 := router.Group("/envoy/cfg")
 	{
-		envoyGroup1.GET("/setTargetIps", handler.UpdateGlobalTargetAddrsHandler)
+		envoyGroup1.POST("/setTargetIps", handler.UpdateGlobalTargetAddrsHandler)
 		envoyGroup1.GET("/query", handler.HandleEnvoyCfgQuery)
 	}
 	envoyGroup2 := router.Group("/config")
