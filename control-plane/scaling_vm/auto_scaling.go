@@ -453,8 +453,8 @@ func setHealthState(apiHost, setState, pre string, logger *slog.Logger) bool {
 // sendRequest 向指定的 API 路由发送请求
 func sendAddTargetIpsRequest(targetIps []envoy_manager.EnvoyTargetAddr) (*envoy_manager.APICommonResp, error) {
 	// 构建请求体
-	url := "http://127.0.0.1:8081/setTargetIps" // API URL
-	body, err := json.Marshal(targetIps)        // 将目标地址数据编码为 JSON
+	url := "http://127.0.0.1:8081/envoy/port/setTargetIps" // API URL
+	body, err := json.Marshal(targetIps)                   // 将目标地址数据编码为 JSON
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request body: %v", err)
 	}
