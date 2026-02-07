@@ -2,6 +2,7 @@ package api
 
 import (
 	envoymanager2 "control-plane/pkg/envoy_manager"
+	"control-plane/util"
 	"github.com/gin-gonic/gin"
 	"log/slog"
 	"net/http"
@@ -102,10 +103,14 @@ func (h *EnvoyPortAPIHandler) HandleEnvoyCfgQuery(c *gin.Context) {
 }
 
 func (o *EnvoyPortAPIHandler) UpdateGlobalTargetAddrsHandler(c *gin.Context) {
+
+	pre := util.GenerateRandomLetters(5)
+	o.logger.Info("Update envoy target addrs", slog.String("pre", pre))
+
 	// 1. 绑定并校验请求体
 	var req []envoymanager2.EnvoyTargetAddr
 	if err := c.ShouldBindJSON(&req); err != nil {
-		o.logger.Error("Invalid request body", "error", err)
+		o.logger.Error("Invalid request body", slog.String("pre", pre), "error", err)
 		c.JSON(http.StatusOK, envoymanager2.APICommonResp{
 			Code:    400,
 			Message: "参数错误：" + err.Error(),
@@ -115,8 +120,8 @@ func (o *EnvoyPortAPIHandler) UpdateGlobalTargetAddrsHandler(c *gin.Context) {
 	}
 
 	// 2. 调用核心方法更新配置
-	if err := o.operator.UpdateGlobalTargetAddrs(req, o.logger); err != nil {
-		o.logger.Error("Failed to update target addrs", "error", err)
+	if err := o.operator.UpdateGlobalTargetAddrs(req, pre, o.logger); err != nil {
+		o.logger.Error("Failed to update target addrs", slog.String("pre", pre), "error", err)
 		c.JSON(http.StatusInternalServerError, envoymanager2.APICommonResp{
 			Code:    500,
 			Message: "更新后端地址失败：" + err.Error(),
@@ -126,7 +131,7 @@ func (o *EnvoyPortAPIHandler) UpdateGlobalTargetAddrsHandler(c *gin.Context) {
 	}
 
 	// 3. 返回成功响应
-	o.logger.Info("Update envoy target addrs success", "target_addrs", req)
+	o.logger.Info("Update envoy target addrs success", slog.String("pre", pre), "target_addrs", req)
 	c.JSON(http.StatusOK, envoymanager2.APICommonResp{
 		Code:    0,
 		Message: "更新后端地址成功",

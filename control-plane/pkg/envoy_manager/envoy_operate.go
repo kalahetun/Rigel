@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"control-plane/util"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -26,8 +27,8 @@ type EnvoyOperator struct {
 	AdminAddr  string // 管理地址（固定为http://127.0.0.1:9901）
 	ConfigPath string // 配置文件路径（固定为/home/matth/envoy.yaml）
 	GlobalCfg  *EnvoyGlobalConfig
-	flag       bool         //flag == flase 系统不能服务 8083没有ip
-	mu         sync.RWMutex // 读写锁：读多写少场景更高效
+	//flag       bool         //flag == flase 系统不能服务 8083没有ip
+	mu sync.RWMutex // 读写锁：读多写少场景更高效
 }
 
 // slogWriter 自定义Writer，解析Envoy日志真实级别后写入slog
@@ -137,8 +138,8 @@ func NewEnvoyOperator(adminAddr, configPath string) *EnvoyOperator {
 	return &EnvoyOperator{
 		AdminAddr:  adminAddr,
 		ConfigPath: absPath,
-		flag:       false,
-		mu:         sync.RWMutex{}, // 初始化锁
+		//flag:       false,
+		mu: sync.RWMutex{}, // 初始化锁
 	}
 }
 
@@ -248,7 +249,8 @@ func (o *EnvoyOperator) DisableEnvoyPort(port int, logger, logger1 *slog.Logger)
 }
 
 // UpdateGlobalTargetAddrs 更新后端地址（写锁）
-func (o *EnvoyOperator) UpdateGlobalTargetAddrs(targetAddrs []EnvoyTargetAddr, logger *slog.Logger) error {
+func (o *EnvoyOperator) UpdateGlobalTargetAddrs(targetAddrs []EnvoyTargetAddr,
+	pre string, logger *slog.Logger) error {
 	// 写锁：修改TargetAddrs，独占锁
 	o.mu.Lock()
 	defer o.mu.Unlock()
@@ -260,10 +262,18 @@ func (o *EnvoyOperator) UpdateGlobalTargetAddrs(targetAddrs []EnvoyTargetAddr, l
 		return errors.New("target addrs cannot be empty")
 	}
 
-	logger.Info("UpdateGlobalTargetAddrs", "targetAddrs", targetAddrs)
+	logger.Info("UpdateGlobalTargetAddrs", slog.String("pre", pre), "targetAddrs", targetAddrs)
+
+	b, _ := json.Marshal(o.GlobalCfg)
+	logger.Info("UpdateGlobalTargetAddrs, old config",
+		slog.String("pre", pre), "config", string(b))
 
 	// 更新后端地址
 	o.GlobalCfg.TargetAddrs = append(o.GlobalCfg.TargetAddrs, targetAddrs...)
+
+	b, _ = json.Marshal(o.GlobalCfg)
+	logger.Info("UpdateGlobalTargetAddrs, new config",
+		slog.String("pre", pre), "config", string(b))
 
 	// 渲染配置
 	if err := RenderEnvoyYamlConfig(o.GlobalCfg, o.ConfigPath); err != nil {
@@ -271,12 +281,12 @@ func (o *EnvoyOperator) UpdateGlobalTargetAddrs(targetAddrs []EnvoyTargetAddr, l
 	}
 
 	// 2. 重新渲染配置到matth目录
-	if err := RenderEnvoyYamlConfig(o.GlobalCfg, o.ConfigPath); err != nil {
-		return fmt.Errorf("渲染禁用端口配置失败: %w", err)
-	}
+	//if err := RenderEnvoyYamlConfig(o.GlobalCfg, o.ConfigPath); err != nil {
+	//	return fmt.Errorf("渲染禁用端口配置失败: %w", err)
+	//}
 
-	o.flag = true
-	logger.Info("UpdateGlobalTargetAddrs, flag changed to true")
+	//o.flag = true
+	logger.Info("UpdateGlobalTargetAddrs, flag changed to true", slog.String("pre", pre))
 
 	return nil
 }
