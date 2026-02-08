@@ -18,10 +18,10 @@ const (
 	//port = "22"
 	localPathProxy  = "./install/data-proxy"   // 本地 Go 编译后的二进制文件路径
 	remotePathProxy = "/home/matth/data-proxy" // 远程服务器目标路径
-	binaryProxy     = "./data-proxy"           // 二进制文件名
+	binaryProxy     = "data-proxy"             // 二进制文件名
 	localPathPlane  = "./install/data-plane"   // 本地 Go 编译后的二进制文件路径
 	remotePathPlane = "/home/matth/data-plane" // 远程服务器目标路径
-	binaryPlane     = "./data-plane"           // 二进制文件名
+	binaryPlane     = "data-plane"             // 二进制文件名
 	privateKey      = "/home/matth/.ssh/id_rsa"
 )
 
@@ -281,10 +281,17 @@ func startBinaryInBackground(
 	}
 
 	// 构造安全一点的命令
+	//cmd := fmt.Sprintf(
+	//	"cd %q && nohup ./%q > /dev/null 2>&1 &",
+	//	remotePath,
+	//	binaryString,
+	//)
+
 	cmd := fmt.Sprintf(
-		"cd %q && nohup ./%q > /dev/null 2>&1 &",
+		"cd %q && test -x %q && nohup ./%q > nohup.out 2>&1 &",
 		remotePath,
-		binaryString,
+		binaryPlane,
+		binaryPlane,
 	)
 
 	logger.Info("Starting remote binary", slog.String("pre", pre),

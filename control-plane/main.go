@@ -165,8 +165,8 @@ func main() {
 	// 2. 创建Envoy操作器（固定管理地址+matth配置路径）
 	operator := envoymanager2.NewEnvoyOperator("http://127.0.0.1:9901", configPath)
 	// 初始化全局配置（管理端口9901）
-	_ = operator.InitEnvoyGlobalConfig(uu, 9901)
-	err = operator.StartFirstEnvoy(logger, logger1)
+	_ = operator.InitEnvoyGlobalConfig(uu, 9901, logPre, logger)
+	err = operator.StartFirstEnvoy(logPre, logger, logger1)
 	if err != nil {
 		logger.Error("启动第一个Envoy失败", slog.String("pre", logPre), "error", err)
 		return

@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -133,8 +132,7 @@ func NewEnvoyLogWriter(logger *slog.Logger, stream string, console io.Writer) io
 func NewEnvoyOperator(adminAddr, configPath string) *EnvoyOperator {
 	// 标准化配置文件路径（确保是绝对路径）
 	absPath, _ := filepath.Abs(configPath)
-	// 初始化时检查当前运行用户是否为matth
-	checkCurrentUserIsMatth()
+
 	return &EnvoyOperator{
 		AdminAddr:  adminAddr,
 		ConfigPath: absPath,
@@ -144,7 +142,8 @@ func NewEnvoyOperator(adminAddr, configPath string) *EnvoyOperator {
 }
 
 // InitEnvoyGlobalConfig 初始化Envoy全局配置
-func (o *EnvoyOperator) InitEnvoyGlobalConfig(uu *util.Config, adminPort int) error {
+func (o *EnvoyOperator) InitEnvoyGlobalConfig(uu *util.Config, adminPort int,
+	pre string, logger *slog.Logger) error {
 
 	o.mu.Lock()
 	defer o.mu.Unlock()
@@ -166,6 +165,10 @@ func (o *EnvoyOperator) InitEnvoyGlobalConfig(uu *util.Config, adminPort int) er
 		Ports:       ports,
 		TargetAddrs: targetAddresses,
 	}
+
+	b, _ := json.Marshal(o.GlobalCfg)
+	logger.Info("初始化Envoy全局配置", slog.String("pre", pre), "config", string(b))
+
 	return nil
 }
 
@@ -208,7 +211,7 @@ func (o *EnvoyOperator) CreateOrUpdateEnvoyPort(req EnvoyPortCreateReq,
 
 	// 5. 先检查是否有运行的Envoy，没有则首次启动，有则热重启
 	if !o.IsEnvoyRunning() {
-		if err := o.StartFirstEnvoy(logger, logger1); err != nil {
+		if err := o.StartFirstEnvoy(pre, logger, logger1); err != nil {
 			return EnvoyPortConfig{}, fmt.Errorf("首次启动Envoy失败: %w", err)
 		}
 	} else {
@@ -321,7 +324,7 @@ func (o *EnvoyOperator) GetCurrentConfig() (*EnvoyGlobalConfig, error) {
 }
 
 // StartFirstEnvoy 首次启动Envoy（epoch=0）
-func (o *EnvoyOperator) StartFirstEnvoy(logger, logger1 *slog.Logger) error {
+func (o *EnvoyOperator) StartFirstEnvoy(pre string, logger, logger1 *slog.Logger) error {
 
 	// 4. 渲染配置文件到matth目录
 	if err := RenderEnvoyYamlConfig(o.GlobalCfg, o.ConfigPath); err != nil {
@@ -367,7 +370,7 @@ func (o *EnvoyOperator) StartFirstEnvoy(logger, logger1 *slog.Logger) error {
 	}
 
 	// 启动进程
-	logger.Info("🚀 首次启动Envoy（epoch=0）")
+	logger.Info("首次启动Envoy（epoch=0）", slog.String("pre", pre))
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("启动失败: %w", err)
 	}
@@ -380,19 +383,18 @@ func (o *EnvoyOperator) StartFirstEnvoy(logger, logger1 *slog.Logger) error {
 
 	// 初始化epoch文件
 	if err := os.WriteFile("/tmp/envoy_epoch", []byte("0"), 0644); err != nil {
-		logger.Error("⚠️ 写入epoch文件警告: %v", err)
+		logger.Error("写入epoch文件警告", slog.String("pre", pre), slog.Any("err", err))
 	}
 
 	// 后台等待进程（防止僵尸）
 	go func() {
 		if err := cmd.Wait(); err != nil {
-			log.Printf("Envoy进程退出: %v", err)
+			logger.Error("Envoy进程退出", slog.String("pre", pre), slog.Any("err", err))
 		}
 	}()
 
 	logger.Info(
-		"Envoy 首次启动成功",
-		slog.Int("pid", cmd.Process.Pid),
+		"Envoy 首次启动成功", slog.String("pre", pre), slog.Int("pid", cmd.Process.Pid),
 	)
 	return nil
 }
@@ -488,15 +490,6 @@ func (o *EnvoyOperator) IsEnvoyRunning() bool {
 		return false
 	}
 	return strings.TrimSpace(string(output)) != ""
-}
-
-// -------------------------- 私有辅助函数 --------------------------
-// checkCurrentUserIsMatth 检查当前运行用户是否为matth
-func checkCurrentUserIsMatth() {
-	//currentUser := os.Getenv("USER")
-	//if currentUser != "matth" {
-	//	log.Fatalf("❌ 必须以matth用户运行此程序（当前用户：%s）", currentUser)
-	//}
 }
 
 // isProcessAlive 检查进程是否存活
