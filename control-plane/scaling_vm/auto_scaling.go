@@ -556,6 +556,9 @@ func (s *Scaler) deployAndAttachVM(
 			slog.String("binaryPlane", binaryPlane), slog.String("vm", string(b)))
 	}
 
+	//确保proxy启动完
+	time.Sleep(2 * time.Second)
+
 	if err := deployBinaryToServer(
 		username,
 		vm.PublicIP,
