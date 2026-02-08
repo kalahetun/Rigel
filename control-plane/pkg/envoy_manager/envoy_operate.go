@@ -170,7 +170,8 @@ func (o *EnvoyOperator) InitEnvoyGlobalConfig(uu *util.Config, adminPort int) er
 }
 
 // CreateOrUpdateEnvoyPort 新增/更新Envoy端口配置
-func (o *EnvoyOperator) CreateOrUpdateEnvoyPort(req EnvoyPortCreateReq, logger, logger1 *slog.Logger) (EnvoyPortConfig, error) {
+func (o *EnvoyOperator) CreateOrUpdateEnvoyPort(req EnvoyPortCreateReq,
+	pre string, logger, logger1 *slog.Logger) (EnvoyPortConfig, error) {
 
 	o.mu.Lock()
 	defer o.mu.Unlock()
@@ -197,7 +198,8 @@ func (o *EnvoyOperator) CreateOrUpdateEnvoyPort(req EnvoyPortCreateReq, logger, 
 		o.GlobalCfg.Ports = append(o.GlobalCfg.Ports, newPortCfg)
 	}
 
-	logger.Info("CreateOrUpdateEnvoyPort, port:%d", req.Port)
+	logger.Info("CreateOrUpdateEnvoyPort", slog.String("pre", pre),
+		slog.Int("port", req.Port))
 
 	// 4. 渲染配置文件到matth目录
 	if err := RenderEnvoyYamlConfig(o.GlobalCfg, o.ConfigPath); err != nil {
@@ -210,7 +212,7 @@ func (o *EnvoyOperator) CreateOrUpdateEnvoyPort(req EnvoyPortCreateReq, logger, 
 			return EnvoyPortConfig{}, fmt.Errorf("首次启动Envoy失败: %w", err)
 		}
 	} else {
-		if err := o.HotReloadEnvoyConfig(logger, logger1); err != nil {
+		if err := o.HotReloadEnvoyConfig(pre, logger, logger1); err != nil {
 			return EnvoyPortConfig{}, fmt.Errorf("热加载配置失败: %w", err)
 		}
 	}
@@ -219,7 +221,7 @@ func (o *EnvoyOperator) CreateOrUpdateEnvoyPort(req EnvoyPortCreateReq, logger, 
 }
 
 // DisableEnvoyPort 禁用Envoy端口
-func (o *EnvoyOperator) DisableEnvoyPort(port int, logger, logger1 *slog.Logger) error {
+func (o *EnvoyOperator) DisableEnvoyPort(port int, pre string, logger, logger1 *slog.Logger) error {
 
 	o.mu.Lock()
 	defer o.mu.Unlock()
@@ -245,12 +247,12 @@ func (o *EnvoyOperator) DisableEnvoyPort(port int, logger, logger1 *slog.Logger)
 	}
 
 	// 3. 热加载配置
-	return o.HotReloadEnvoyConfig(logger, logger1)
+	return o.HotReloadEnvoyConfig(pre, logger, logger1)
 }
 
 // UpdateGlobalTargetAddrs 更新后端地址（写锁）
 func (o *EnvoyOperator) UpdateGlobalTargetAddrs(targetAddrs []EnvoyTargetAddr,
-	pre string, logger *slog.Logger) error {
+	pre string, logger, logger1 *slog.Logger) error {
 	// 写锁：修改TargetAddrs，独占锁
 	o.mu.Lock()
 	defer o.mu.Unlock()
@@ -271,6 +273,16 @@ func (o *EnvoyOperator) UpdateGlobalTargetAddrs(targetAddrs []EnvoyTargetAddr,
 	// 更新后端地址
 	o.GlobalCfg.TargetAddrs = append(o.GlobalCfg.TargetAddrs, targetAddrs...)
 
+	targetAddrMap := make(map[string]EnvoyTargetAddr)
+	for _, v := range o.GlobalCfg.TargetAddrs {
+		targetAddrMap[v.IP] = v
+	}
+	for _, v := range targetAddrs {
+		if _, exist := targetAddrMap[v.IP]; !exist {
+			o.GlobalCfg.TargetAddrs = append(o.GlobalCfg.TargetAddrs, v)
+		}
+	}
+
 	b, _ = json.Marshal(o.GlobalCfg)
 	logger.Info("UpdateGlobalTargetAddrs, new config",
 		slog.String("pre", pre), "config", string(b))
@@ -280,10 +292,12 @@ func (o *EnvoyOperator) UpdateGlobalTargetAddrs(targetAddrs []EnvoyTargetAddr,
 		return fmt.Errorf("render target addrs failed: %w", err)
 	}
 
-	// 2. 重新渲染配置到matth目录
-	//if err := RenderEnvoyYamlConfig(o.GlobalCfg, o.ConfigPath); err != nil {
-	//	return fmt.Errorf("渲染禁用端口配置失败: %w", err)
-	//}
+	logger.Info("RenderEnvoyYamlConfig success", slog.String("pre", pre))
+
+	err := o.HotReloadEnvoyConfig(pre, logger, logger1)
+	if err != nil {
+		return fmt.Errorf("hot reload envoy config failed: %w", err)
+	}
 
 	//o.flag = true
 	logger.Info("UpdateGlobalTargetAddrs, flag changed to true", slog.String("pre", pre))
@@ -384,7 +398,7 @@ func (o *EnvoyOperator) StartFirstEnvoy(logger, logger1 *slog.Logger) error {
 }
 
 // HotReloadEnvoyConfig 修复后的热重启函数
-func (o *EnvoyOperator) HotReloadEnvoyConfig(logger, logger1 *slog.Logger) error {
+func (o *EnvoyOperator) HotReloadEnvoyConfig(pre string, logger, logger1 *slog.Logger) error {
 	// 前置检查：确保Envoy正在运行
 	if !o.IsEnvoyRunning() {
 		return errors.New("Envoy未运行，无法热重启")
@@ -447,7 +461,7 @@ func (o *EnvoyOperator) HotReloadEnvoyConfig(logger, logger1 *slog.Logger) error
 	// 后台等待新进程（防止僵尸）
 	go func() {
 		if err := cmd.Wait(); err != nil {
-			logger.Error("新Envoy进程退出: %v", err)
+			logger.Error("新Envoy进程退出", slog.String("pre", pre), slog.Any("err", err))
 		}
 	}()
 
@@ -460,7 +474,8 @@ func (o *EnvoyOperator) HotReloadEnvoyConfig(logger, logger1 *slog.Logger) error
 		return fmt.Errorf("写入epoch文件失败: %w", err)
 	}
 
-	logger.Info("✅ Envoy热重启成功，旧epoch: %d → 新epoch: %d", epoch, newEpoch)
+	logger.Info("Envoy热重启成功", slog.String("pre", pre),
+		slog.Int("旧epoch", epoch), slog.Int("新epoch", newEpoch))
 	return nil
 }
 

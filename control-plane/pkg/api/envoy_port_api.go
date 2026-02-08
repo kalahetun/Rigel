@@ -26,6 +26,10 @@ func NewEnvoyPortAPIHandler(operator *envoymanager2.EnvoyOperator, logger *slog.
 // HandleEnvoyPortCreate 处理创建Envoy端口请求（POST /envoy/port/create）
 func (h *EnvoyPortAPIHandler) HandleEnvoyPortCreate(c *gin.Context) {
 	var req envoymanager2.EnvoyPortCreateReq
+
+	pre := util.GenerateRandomLetters(5)
+	h.logger.Info("HandleEnvoyPortCreate", slog.String("pre", pre))
+
 	if err := c.ShouldBindJSON(&req); err != nil {
 		h.logger.Error("绑定创建端口请求失败", "error", err)
 		c.JSON(http.StatusBadRequest, envoymanager2.APICommonResp{
@@ -36,7 +40,7 @@ func (h *EnvoyPortAPIHandler) HandleEnvoyPortCreate(c *gin.Context) {
 	}
 
 	// 创建/更新端口（配置文件写入/home/matth/envoy.yaml）
-	portCfg, err := h.operator.CreateOrUpdateEnvoyPort(req, h.logger, h.logger1)
+	portCfg, err := h.operator.CreateOrUpdateEnvoyPort(req, pre, h.logger, h.logger1)
 	if err != nil {
 		h.logger.Error("创建Envoy端口失败", "port", req.Port, "error", err)
 		c.JSON(http.StatusInternalServerError, envoymanager2.APICommonResp{
@@ -55,6 +59,10 @@ func (h *EnvoyPortAPIHandler) HandleEnvoyPortCreate(c *gin.Context) {
 
 // HandleEnvoyPortDisable 处理禁用Envoy端口请求（POST /envoy/port/disable）
 func (h *EnvoyPortAPIHandler) HandleEnvoyPortDisable(c *gin.Context) {
+
+	pre := util.GenerateRandomLetters(5)
+	h.logger.Info("HandleEnvoyPortDisable", slog.String("pre", pre))
+
 	var req envoymanager2.EnvoyPortDisableReq
 	if err := c.ShouldBindJSON(&req); err != nil {
 		h.logger.Error("绑定禁用端口请求失败", "error", err)
@@ -66,7 +74,7 @@ func (h *EnvoyPortAPIHandler) HandleEnvoyPortDisable(c *gin.Context) {
 	}
 
 	// 禁用端口
-	if err := h.operator.DisableEnvoyPort(req.Port, h.logger, h.logger1); err != nil {
+	if err := h.operator.DisableEnvoyPort(req.Port, pre, h.logger, h.logger1); err != nil {
 		h.logger.Error("禁用Envoy端口失败", "port", req.Port, "error", err)
 		c.JSON(http.StatusInternalServerError, envoymanager2.APICommonResp{
 			Code:    500,
@@ -120,7 +128,7 @@ func (o *EnvoyPortAPIHandler) UpdateGlobalTargetAddrsHandler(c *gin.Context) {
 	}
 
 	// 2. 调用核心方法更新配置
-	if err := o.operator.UpdateGlobalTargetAddrs(req, pre, o.logger); err != nil {
+	if err := o.operator.UpdateGlobalTargetAddrs(req, pre, o.logger, o.logger1); err != nil {
 		o.logger.Error("Failed to update target addrs", slog.String("pre", pre), "error", err)
 		c.JSON(http.StatusInternalServerError, envoymanager2.APICommonResp{
 			Code:    500,

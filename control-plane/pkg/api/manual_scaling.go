@@ -21,13 +21,14 @@ type ManualScalingRequest struct {
 
 // ManualScalingHandler 封装manual scaling API逻辑
 type ManualScalingAPIHandler struct {
-	Scaler *scaling_vm.Scaler
-	Logger *slog.Logger
+	Scaler  *scaling_vm.Scaler
+	Logger  *slog.Logger
+	logger1 *slog.Logger
 }
 
 // NewManualScalingAPIHandler 初始化Handler
-func NewManualScalingAPIHandler(s *scaling_vm.Scaler, logger *slog.Logger) *ManualScalingAPIHandler {
-	return &ManualScalingAPIHandler{Scaler: s, Logger: logger}
+func NewManualScalingAPIHandler(s *scaling_vm.Scaler, logger, logger1 *slog.Logger) *ManualScalingAPIHandler {
+	return &ManualScalingAPIHandler{Scaler: s, Logger: logger, logger1: logger1}
 }
 
 // PostManualScaling 处理 POST /api/v1/scaling/manual
@@ -59,13 +60,13 @@ func (h *ManualScalingAPIHandler) PostManualScaling(c *gin.Context) {
 }
 
 // InitManualScalingRouter 注册manual scaling路由
-func InitManualScalingRouter(router *gin.Engine, s *scaling_vm.Scaler, logger *slog.Logger) *gin.Engine {
+func InitManualScalingRouter(router *gin.Engine, s *scaling_vm.Scaler, logger, logger1 *slog.Logger) *gin.Engine {
 	r := router
 	apiV1 := r.Group("/api/v1")
 	{
 		scalingGroup := apiV1.Group("/scaling")
 		{
-			handler := NewManualScalingAPIHandler(s, logger)
+			handler := NewManualScalingAPIHandler(s, logger, logger1)
 			scalingGroup.POST("", handler.PostManualScaling)
 		}
 	}

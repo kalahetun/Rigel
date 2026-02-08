@@ -189,7 +189,7 @@ func main() {
 	//client获取 bulk transfer path信息的接口
 	api.InitUserRoutingRouter(router, r, logger)
 	//手动控制scaling的接口
-	api.InitManualScalingRouter(router, es, logger)
+	api.InitManualScalingRouter(router, es, logger, logger1)
 
 	logger.Info("Envoy端口管理API启动", slog.String("pre", logPre), "addr", ":8081") // 启动API服务
 	if err := router.Run(":8081"); err != nil {
