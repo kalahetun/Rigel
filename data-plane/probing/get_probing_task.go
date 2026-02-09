@@ -22,7 +22,7 @@ const (
 //	City       string // cloud storage 用，node 可为空
 //}
 
-func GetProbeTasks(controlHost string) ([]util.ProbeTask, error) {
+func GetProbeTasks(pre, controlHost string) ([]util.ProbeTask, error) {
 
 	url := controlHost + ProbingTaskURL
 

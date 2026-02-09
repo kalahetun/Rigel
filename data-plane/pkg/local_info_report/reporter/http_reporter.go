@@ -3,6 +3,7 @@ package reporter
 import (
 	"bytes"
 	"data-plane/pkg/local_info_report/collector"
+	"data-plane/util"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -80,7 +81,7 @@ func FormatUTCTime(t time.Time) string {
 	return t.Format(time.RFC3339)
 }
 
-func ReportCycle(controlHost string, logger *slog.Logger) {
+func ReportCycle(controlHost, pre string, logger *slog.Logger) {
 	// 1. 初始化采集器和上报器
 	vmCollector := collector.NewVMCollector()
 	httpReporter := NewHTTPReporter()
@@ -90,7 +91,7 @@ func ReportCycle(controlHost string, logger *slog.Logger) {
 	defer ticker.Stop()
 
 	logger.Info(
-		"数据平面启动，开始定时上报",
+		"数据平面启动，开始定时上报", slog.String("pre", pre),
 		slog.Duration("report_interval", ReportInterval),
 		slog.String("report_url", controlHost+ReportURL),
 	)
@@ -105,23 +106,26 @@ func ReportCycle(controlHost string, logger *slog.Logger) {
 
 // reportOnce 单次上报逻辑
 func reportOnce(controlHost string, collector *collector.VMCollector, reporter *HTTPReporter, logger *slog.Logger) {
+
+	pre := util.GenerateRandomLetters(5)
+
 	// 1. 采集信息
-	logger.Info("开始采集VM信息...")
-	vmReport, err := collector.Collect(logger)
+	logger.Info("开始采集VM信息...", slog.String("pre", pre))
+	vmReport, err := collector.Collect(pre, logger)
 	if err != nil {
-		logger.Error("采集失败", slog.Any("err", err))
+		logger.Error("采集失败", slog.String("pre", pre), slog.Any("err", err))
 		return
 	}
 
 	// 2. 上报信息
 	b, _ := json.Marshal(vmReport)
-	logger.Info("开始上报VM信息", slog.String("data", string(b)))
+	logger.Info("开始上报VM信息", slog.String("pre", pre), slog.String("data", string(b)))
 
-	err = reporter.Report(controlHost, vmReport)
+	err = reporter.Report(controlHost, pre, vmReport)
 	if err != nil {
-		logger.Error("上报失败", slog.Any("err", err))
+		logger.Error("上报失败", slog.String("pre", pre), slog.Any("err", err))
 		return
 	}
 
-	logger.Info("上报成功", slog.String("ReportID", vmReport.ReportID))
+	logger.Info("上报成功", slog.String("pre", pre), slog.String("ReportID", vmReport.ReportID))
 }

@@ -33,6 +33,9 @@ func NewVmReportAPIHandler(s storage.Storage, l *slog.Logger) *VmReportAPIHandle
 // PostVMReport 处理POST /api/v1/vm/report请求
 // 核心：请求体是ApiResponse（Data=VMReport），响应体也是ApiResponse（Data=填充后的VMReport）
 func (h *VmReportAPIHandler) PostVMReport(c *gin.Context) {
+
+	pre := util.GenerateRandomLetters(5)
+
 	// 1. 初始化响应体（默认失败，后续覆盖）
 	resp := model.ApiResponse{
 		Code: 500,

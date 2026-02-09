@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/tls"
 	"data-proxy/config"
+	"data-proxy/util"
 	"data-proxy/virtual_queue"
 	"github.com/gin-gonic/gin"
 	"io"
@@ -96,6 +97,9 @@ func getClient(target string, scheme string) *http.Client {
 // handler 返回 http.HandlerFunc
 func handler(logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
+		pre := util.GenerateRandomLetters(5)
+
 		hopsStr := r.Header.Get(HeaderHops)
 		indexStr := r.Header.Get(HeaderIndex)
 		if indexStr == "" {
@@ -109,27 +113,23 @@ func handler(logger *slog.Logger) http.HandlerFunc {
 		}
 		hopsLen := len(hops)
 
-		logger.Info("Received request",
-			"hops", hops,
-			"current_index", currentIndex,
-			"method", r.Method,
-			"path", r.URL.Path,
+		logger.Info("Received request", slog.String("pre", pre),
+			"hops", hops, "current_index", currentIndex,
+			"method", r.Method, "path", r.URL.Path,
 			//"active_transfers", atomic.LoadInt64(&virtual_queue.ActiveTransfers),
 		)
 
 		if hopsLen == 0 {
 			http.Error(w, "Missing x-hops header", http.StatusBadRequest)
-			logger.Warn("Missing x-hops header")
+			logger.Warn("Missing x-hops header", slog.String("pre", pre))
 			return
 		}
 
 		newIndex := currentIndex + 1
 		if newIndex > hopsLen {
 			http.Error(w, "Forward index out of range", ServerErrorCode)
-			logger.Warn("Forward index out of range",
-				"new_index", newIndex,
-				"hops_len", hopsLen,
-			)
+			logger.Warn("Forward index out of range", slog.String("pre", pre),
+				"new_index", newIndex, "hops_len", hopsLen)
 			return
 		}
 
@@ -137,7 +137,7 @@ func handler(logger *slog.Logger) http.HandlerFunc {
 		parts := strings.Split(targetHop, ":")
 		if len(parts) != 2 {
 			http.Error(w, "Invalid target hop format", http.StatusBadRequest)
-			logger.Warn("Invalid target hop format", "target_hop", targetHop)
+			logger.Warn("Invalid target hop format", slog.String("pre", pre), "target_hop", targetHop)
 			return
 		}
 		targetIP := parts[0]
@@ -152,7 +152,7 @@ func handler(logger *slog.Logger) http.HandlerFunc {
 		}
 
 		targetURL := scheme + "://" + targetIP + ":" + targetPort + r.URL.RequestURI()
-		logger.Info("Forwarding to target", "target_url", targetURL)
+		logger.Info("Forwarding to target", slog.String("pre", pre), "target_url", targetURL)
 
 		target := targetIP + ":" + targetPort
 		client := getClient(target, scheme)
@@ -160,23 +160,23 @@ func handler(logger *slog.Logger) http.HandlerFunc {
 		req, err := http.NewRequest(method, targetURL, r.Body)
 		if err != nil {
 			http.Error(w, "Failed to create request", http.StatusInternalServerError)
-			logger.Error("Failed to create request", "error", err)
+			logger.Error("Failed to create request", slog.String("pre", pre), "error", err)
 			return
 		}
 		req.Header = r.Header.Clone()
 		req.Header.Set(HeaderIndex, strconv.Itoa(newIndex))
 
-		logger.Info("Forwarded request headers", req.Header)
+		logger.Info("Forwarded request headers", slog.String("pre", pre), slog.Any("header", req.Header))
 
 		resp, err := client.Do(req)
 		if err != nil {
 			http.Error(w, "Failed to forward request", ServerErrorCode)
-			logger.Error("Failed to forward request", "error", err)
+			logger.Error("Failed to forward request", slog.String("pre", pre), slog.Any("err", err))
 			return
 		}
 		defer resp.Body.Close()
 
-		logger.Info("Forwarded response headers", resp.Header)
+		logger.Info("Forwarded response headers", slog.String("pre", pre), slog.Any("header", resp.Header))
 
 		for key, values := range resp.Header {
 			for _, v := range values {
@@ -193,13 +193,11 @@ func handler(logger *slog.Logger) http.HandlerFunc {
 		atomic.AddInt64(&virtual_queue.ActiveTransfers, -1)
 
 		if err != nil {
-			logger.Error("Error copying response body", "error", err)
+			logger.Error("Error copying response body", slog.String("pre", pre), slog.Any("err", err))
 		}
 
-		logger.Info("Request completed",
-			"target_hop", targetHop,
-			"status", resp.StatusCode,
-			"protocol", scheme,
+		logger.Info("Request completed", slog.String("pre", pre),
+			"target_hop", targetHop, "status", resp.StatusCode, "protocol", scheme,
 			//"active_transfers", atomic.LoadInt64(&virtual_queue.ActiveTransfers),
 		)
 	}
@@ -237,8 +235,15 @@ func main() {
 	router := gin.Default()
 
 	router.GET("/healthStateChange", func(c *gin.Context) {
+
+		pre := util.GenerateRandomLetters(5)
+
+		logger.Info("healthStateChange", slog.String("pre", pre))
+
 		// 获取查询参数 "set"
 		set := c.DefaultQuery("set", "on") // 默认值为 "on"，即默认返回 200
+
+		logger.Info("get switch val", slog.String("pre", pre))
 
 		// 锁住状态修改操作，保证并发安全
 		statusLock.Lock()
@@ -257,9 +262,14 @@ func main() {
 
 	router.GET("/health", func(c *gin.Context) {
 
+		pre := util.GenerateRandomLetters(5)
+
 		// 锁住状态修改操作，保证并发安全
 		statusLock.Lock()
 		defer statusLock.Unlock()
+
+		logger.Info("health", slog.String("pre", pre), slog.String("status", status))
+
 		if status == "off" {
 			c.JSON(http.StatusInternalServerError, "error")
 			return

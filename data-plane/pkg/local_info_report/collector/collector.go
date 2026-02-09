@@ -2,6 +2,7 @@ package collector
 
 import (
 	model "data-plane/pkg/local_info_report"
+	"encoding/json"
 	"log/slog"
 	"time"
 )
@@ -15,7 +16,7 @@ func NewVMCollector() *VMCollector {
 }
 
 // Collect 采集所有VM信息并组装为VMReport
-func (c *VMCollector) Collect(logger *slog.Logger) (*model.VMReport, error) {
+func (c *VMCollector) Collect(pre string, logger *slog.Logger) (*model.VMReport, error) {
 	// 1. 采集各维度信息
 	cpuInfo, err := collectCPU()
 	if err != nil {
@@ -59,8 +60,7 @@ func (c *VMCollector) Collect(logger *slog.Logger) (*model.VMReport, error) {
 		logger.Error("获取congestion信息失败：%v\n", err)
 	}
 
-	// 2. 组装VMReport（ReportID由上报器生成，此处留空）
-	return &model.VMReport{
+	val := &model.VMReport{
 		VMID:        "vm-" + networkInfo.PublicIP + "-001", // 固定VMID（可根据实际场景替换）
 		CollectTime: time.Now().UTC(),
 		ReportID:    "", // 上报时由服务端/上报器填充
@@ -73,5 +73,11 @@ func (c *VMCollector) Collect(logger *slog.Logger) (*model.VMReport, error) {
 		//EnvoyMem:    envoyMemInfo,
 		Congestion:      cong,
 		LinksCongestion: linksCong,
-	}, nil
+	}
+
+	b, _ := json.Marshal(val)
+	logger.Info("", slog.String("pre", pre), slog.String("report val", string(b)))
+
+	// 2. 组装VMReport（ReportID由上报器生成，此处留空）
+	return val, nil
 }

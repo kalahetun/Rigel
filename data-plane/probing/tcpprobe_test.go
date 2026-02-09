@@ -29,7 +29,7 @@ func TestStartProbePeriodically(t *testing.T) {
 	defer cancel()
 
 	// 启动周期探测（无限循环，但有ctx超时）
-	StartProbePeriodically(ctx, "http://127.0.0.1:8080", cfg, logger)
+	StartProbePeriodically(ctx, "http://127.0.0.1:8080", cfg, "", logger)
 
 	// 每秒检查一次最新结果
 	ticker := time.NewTicker(1 * time.Second)

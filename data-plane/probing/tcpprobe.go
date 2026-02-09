@@ -63,7 +63,7 @@ func GetLatestResults() map[string]Result {
 // controlHost: 探测任务来源接口（返回目标节点列表）
 // cfg: 配置
 // logger: 日志
-func StartProbePeriodically(ctx context.Context, controlHost string, cfg Config, logger *slog.Logger) {
+func StartProbePeriodically(ctx context.Context, controlHost string, cfg Config, pre string, logger *slog.Logger) {
 	if cfg.Concurrency <= 0 {
 		cfg.Concurrency = 4
 	}
@@ -77,6 +77,8 @@ func StartProbePeriodically(ctx context.Context, controlHost string, cfg Config,
 		cfg.Attempts = 5
 	}
 
+	logger.Info("StartProbePeriodically", slog.String("pre", pre))
+
 	go func() {
 		ticker := time.NewTicker(cfg.Interval)
 		defer ticker.Stop()
@@ -89,20 +91,19 @@ func StartProbePeriodically(ctx context.Context, controlHost string, cfg Config,
 			default:
 			}
 
+			pre_ := util.GenerateRandomLetters(5)
+
 			// 获取探测任务
-			targets, err := GetProbeTasks(controlHost)
+			targets, err := GetProbeTasks(pre, controlHost)
 			if err != nil {
 				logger.Error("获取探测任务失败", slog.Any("err", err))
 				time.Sleep(time.Second) // 防止死循环快速重试
 				continue
 			}
-			logger.Info(
-				"get probing tasks",
-				slog.Any("targets", targets),
-			)
+			logger.Info("get probing tasks", slog.String("pre", pre_), slog.Any("targets", targets))
 
 			// 执行一轮探测
-			doProbeLossRTT(targets, cfg, logger)
+			doProbeLossRTT(targets, cfg, pre, logger)
 
 			// 等待下一个周期
 			select {
@@ -116,7 +117,7 @@ func StartProbePeriodically(ctx context.Context, controlHost string, cfg Config,
 
 // ----------------- 单轮探测函数 -----------------
 
-func doProbeLossRTT(targets []util.ProbeTask, cfg Config, logger *slog.Logger) {
+func doProbeLossRTT(targets []util.ProbeTask, cfg Config, pre string, logger *slog.Logger) {
 	jobs := make(chan util.ProbeTask)
 	var wg sync.WaitGroup
 	roundResults := make([]Result, 0, len(targets))
@@ -190,7 +191,7 @@ func doProbeLossRTT(targets []util.ProbeTask, cfg Config, logger *slog.Logger) {
 				}
 
 				logger.Info(
-					"probe result",
+					"probe result", slog.String("pre", pre),
 					slog.String("ip", result.Target.IP),
 					slog.Int("port", result.Target.Port),
 					slog.String("provider", result.Target.Provider),
