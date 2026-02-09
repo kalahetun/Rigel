@@ -275,7 +275,7 @@ func startBinaryInBackground(
 	logger *slog.Logger,
 ) error {
 
-	// 基本防御：避免空值
+	// 基本防御
 	if remotePath_ == "" || binaryString_ == "" {
 		return fmt.Errorf("remotePath or binaryString is empty")
 	}
@@ -287,15 +287,39 @@ func startBinaryInBackground(
 		binaryString_,
 	)
 
-	logger.Info("Starting remote binary", slog.String("pre", pre),
-		"workdir", remotePath_, "binary", binaryString_, slog.String("cmd", cmd))
+	logger.Info("Starting remote binary",
+		slog.String("pre", pre),
+		slog.String("workdir", remotePath_),
+		slog.String("binary", binaryString_),
+		slog.String("cmd", cmd),
+	)
 
-	if err := session.Run(cmd); err != nil {
-		return fmt.Errorf("failed to start binary in background: %w", err)
+	// 用 goroutine 包一层，防止 SSH 永久阻塞
+	errCh := make(chan error, 1)
+
+	go func() {
+		// Run 可能永远不返回
+		errCh <- session.Run(cmd)
+	}()
+
+	select {
+	case err := <-errCh:
+		if err != nil {
+			return fmt.Errorf("failed to start binary in background: %w", err)
+		}
+		logger.Info("Binary started (ssh session returned)",
+			slog.String("pre", pre),
+			slog.String("binary", binaryString_),
+		)
+
+	case <-time.After(3 * time.Second):
+		// 🚑 超时放行 —— 这是预期行为
+		logger.Warn("SSH session did not return, assume binary started",
+			slog.String("pre", pre),
+			slog.String("binary", binaryString_),
+		)
 	}
 
-	logger.Info("Binary started successfully in background", slog.String("pre", pre),
-		slog.String("binaryString", binaryString_))
 	return nil
 }
 
