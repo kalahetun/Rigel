@@ -280,22 +280,8 @@ func startBinaryInBackground(
 		return fmt.Errorf("remotePath or binaryString is empty")
 	}
 
-	// 构造安全一点的命令
-	//cmd := fmt.Sprintf(
-	//	"cd %q && nohup ./%q > /dev/null 2>&1 &",
-	//	remotePath,
-	//	binaryString,
-	//)
-
-	//cmd := fmt.Sprintf(
-	//	"cd %q && test -x %q && nohup ./%q > nohup.out 2>&1 &",
-	//	remotePath_,
-	//	binaryString_,
-	//	binaryString_,
-	//)
-
 	cmd := fmt.Sprintf(
-		`cd %q && test -x %q && nohup ./%q > nohup.out 2>&1 < /dev/null &`,
+		`cd %q && test -x %q && nohup ./%q > nohup.out 2>&1 < /dev/null & >/dev/null 2>&1`,
 		remotePath_,
 		binaryString_,
 		binaryString_,
