@@ -87,7 +87,7 @@ type SSHConfig struct {
 //	return nil
 //}
 
-func sshToDeployBinary(config *SSHConfig, localPath, remotePath, binaryString,
+func sshToDeployBinary(config *SSHConfig, localPath_, remotePath_, binaryString_,
 	pre string, logger *slog.Logger) error {
 
 	logger.Info("sshToDeployBinary", slog.String("pre", pre))
@@ -99,7 +99,7 @@ func sshToDeployBinary(config *SSHConfig, localPath, remotePath, binaryString,
 	}
 
 	logger.Info("read private key success", slog.String("pre", pre),
-		slog.String("binaryString", binaryString))
+		slog.String("binaryString", binaryString_))
 
 	signer, err := ssh.ParsePrivateKey(key)
 	if err != nil {
@@ -107,7 +107,7 @@ func sshToDeployBinary(config *SSHConfig, localPath, remotePath, binaryString,
 	}
 
 	logger.Info("parse private key success", slog.String("pre", pre),
-		slog.String("binaryString", binaryString))
+		slog.String("binaryString", binaryString_))
 
 	clientConfig := &ssh.ClientConfig{
 		User: config.Username,
@@ -125,7 +125,7 @@ func sshToDeployBinary(config *SSHConfig, localPath, remotePath, binaryString,
 	}
 
 	logger.Info("tcp Dial success", slog.String("pre", pre),
-		slog.String("binaryString", binaryString))
+		slog.String("binaryString", binaryString_))
 
 	// === 3. 建立 SSH 连接 ===
 	conn, chans, reqs, err := ssh.NewClientConn(tcpConn, net.JoinHostPort(config.Host, config.Port), clientConfig)
@@ -135,21 +135,21 @@ func sshToDeployBinary(config *SSHConfig, localPath, remotePath, binaryString,
 	defer conn.Close()
 
 	logger.Info("ssh Dial success", slog.String("pre", pre),
-		slog.String("binaryString", binaryString))
+		slog.String("binaryString", binaryString_))
 
 	client := ssh.NewClient(conn, chans, reqs)
 	defer client.Close()
 
-	logger.Info("ssh Dial success", slog.String("pre", pre),
-		slog.String("binaryString", binaryString))
+	logger.Info("ssh new NewClient", slog.String("pre", pre),
+		slog.String("binaryString", binaryString_))
 
 	// === 4. 上传文件 ===
-	err = UploadDirSFTP(client, localPath, remotePath)
+	err = UploadDirSFTP(client, localPath_, remotePath_)
 	if err != nil {
 		return fmt.Errorf("failed to upload binary: %v", err)
 	}
 	logger.Info("UploadDirSFTP success", slog.String("pre", pre),
-		slog.String("binaryString", binaryString))
+		slog.String("binaryString", binaryString_))
 
 	// === 5. 启动远程二进制文件 ===
 	session, err := client.NewSession()
@@ -159,14 +159,14 @@ func sshToDeployBinary(config *SSHConfig, localPath, remotePath, binaryString,
 	defer session.Close()
 
 	logger.Info("NewSession success", slog.String("pre", pre),
-		slog.String("binaryString", binaryString))
+		slog.String("binaryString", binaryString_))
 
-	err = startBinaryInBackground(session, remotePath, binaryString, pre, logger)
+	err = startBinaryInBackground(session, remotePath_, binaryString_, pre, logger)
 	if err != nil {
 		return fmt.Errorf("failed to start binary: %v", err)
 	}
 	logger.Info("startBinaryInBackground success", slog.String("pre", pre),
-		slog.String("binaryString", binaryString))
+		slog.String("binaryString", binaryString_))
 
 	return nil
 }
@@ -269,14 +269,14 @@ func UploadDirSFTP(sshClient *ssh.Client, localDir, remoteDir string) error {
 // startBinaryInBackground 在远程服务器上启动二进制文件，且不阻塞
 func startBinaryInBackground(
 	session *ssh.Session,
-	remotePath string,
-	binaryString string,
+	remotePath_ string,
+	binaryString_ string,
 	pre string,
 	logger *slog.Logger,
 ) error {
 
 	// 基本防御：避免空值
-	if remotePath == "" || binaryString == "" {
+	if remotePath_ == "" || binaryString_ == "" {
 		return fmt.Errorf("remotePath or binaryString is empty")
 	}
 
@@ -289,20 +289,20 @@ func startBinaryInBackground(
 
 	cmd := fmt.Sprintf(
 		"cd %q && test -x %q && nohup ./%q > nohup.out 2>&1 &",
-		remotePath,
-		binaryPlane,
-		binaryPlane,
+		remotePath_,
+		binaryString_,
+		binaryString_,
 	)
 
 	logger.Info("Starting remote binary", slog.String("pre", pre),
-		"workdir", remotePath, "binary", binaryString, slog.String("cmd", cmd))
+		"workdir", remotePath_, "binary", binaryString_, slog.String("cmd", cmd))
 
 	if err := session.Run(cmd); err != nil {
 		return fmt.Errorf("failed to start binary in background: %w", err)
 	}
 
 	logger.Info("Binary started successfully in background", slog.String("pre", pre),
-		slog.String("binaryString", binaryString))
+		slog.String("binaryString", binaryString_))
 	return nil
 }
 
