@@ -287,8 +287,15 @@ func startBinaryInBackground(
 	//	binaryString,
 	//)
 
+	//cmd := fmt.Sprintf(
+	//	"cd %q && test -x %q && nohup ./%q > nohup.out 2>&1 &",
+	//	remotePath_,
+	//	binaryString_,
+	//	binaryString_,
+	//)
+
 	cmd := fmt.Sprintf(
-		"cd %q && test -x %q && nohup ./%q > nohup.out 2>&1 &",
+		`cd %q && test -x %q && nohup ./%q > nohup.out 2>&1 < /dev/null &`,
 		remotePath_,
 		binaryString_,
 		binaryString_,
