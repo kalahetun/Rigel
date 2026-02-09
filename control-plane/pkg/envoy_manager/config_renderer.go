@@ -70,16 +70,16 @@ static_resources:
                           route:
                             cluster: target_cluster
 
-                http_filters:
-                  - name: envoy.filters.http.lua
-                    typed_config:
-                      "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
-                      default_source_code:
-                        filename: "/home/matth/access_router.lua"
+                #http_filters:
+                #  - name: envoy.filters.http.lua
+                #    typed_config:
+                #      "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
+                #      default_source_code:
+                #        filename: "/home/matth/access_router.lua"
 
-                  - name: envoy.filters.http.router
-                    typed_config:
-                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+                #  - name: envoy.filters.http.router
+                #    typed_config:
+                #      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
 {{- end }}
 {{- end }}
 
