@@ -1,61 +1,69 @@
-# Rigel
+# Rigel: Global Cross-Cloud Bulk Data Transfer Platform
 
 ## Overview
-Rigel is a distributed system designed for scalable and resilient global data forwarding, built on a two-level resource abstraction and a decoupled control–data plane architecture. This document outlines the core implementation details and system architecture.
+Rigel is a high-performance bulk data transfer platform built on a global cross-cloud network, designed to address the key pain points of existing cloud-based data transfer solutions: high costs, single-cloud lock-in, and poor scalability across providers.
+
+The platform is optimized for cloud-based analytics, storage, and media services, with core innovations in dynamic routing and elastic scaling to ensure stable, high-throughput data transfer even under resource saturation.
 
 ---
 
-## Two-Level Resource Abstraction
-Rigel's resource model follows the natural hierarchy of cloud infrastructure:
-
-- **Virtual Machines (VMs)**: Represent individual cloud instances (e.g., `instance-20260202-081825`). They serve as the fundamental execution unit for data forwarding and network measurement.
-- **Nodes**: Group multiple VMs and typically map to a cloud region (e.g., `europe-west4-b`). Nodes act as the basic unit for resource management and scheduling decisions.
+## Core Challenges Solved
+Existing bulk data transfer solutions suffer from:
+- **High bandwidth costs**: Lack of optimization for fixed-bandwidth subscription models (the most cost-effective option for file transfer).
+- **Single-cloud limitation**: Cannot scale seamlessly across multiple cloud providers.
+- **Poor stability under saturation**: System bottlenecks and throughput drops when cloud resources approach full utilization.
+- **Resource volatility**: Inability to adapt to dynamic changes in cloud resource availability.
 
 ---
 
-## Architecture Design
+## Key Technical Innovations
 
-### Vertical Control–Data Plane Separation
-Rigel is organized into two distinct planes with clear responsibility boundaries:
+### 1. Lyapunov-based Universal Max-Weight Routing
+- **Core Function**: Tackles cloud resource volatility and large-scale routing optimization.
+- **Benefit**: Ensures system stability and high resource utilization even under saturated network links, maximizing the value of fixed-bandwidth subscription models.
 
-1. **Control Plane**
-    - **Core Responsibilities**: Routing optimization, elastic scaling, and regional decision coordination.
-    - **Deployment Rule**: Exactly one `control-plane` instance runs per node to manage intra-region logic.
-    - **State Storage**: Relies on `etcd` for persistent and consistent state management across the system.
+### 2. Backpressure-aware Elastic Scaling
+- **Core Function**: Dynamically adjusts cloud resources in real time as resources approach saturation.
+- **Benefit**: Alleviates system bottlenecks and maintains smooth, high-throughput data flow during bulk transfers.
 
-2. **Data Plane**
-    - **Deployment Granularity**: Deployed at the VM level (one instance per VM).
-    - **Core Services**:
-        - `data-plane`: Collects and reports local resource metrics, performs active network probing, and gathers real-time telemetry.
-        - `data-proxy`: Executes the actual file proxying and low-latency data forwarding operations.
-    - **Gateway Layer**: Nodes provide external/internal gateways with rate limiting on external access to ensure traffic stability.
+### 3. Cross-Cloud Architecture Foundation
+Rigel's underlying architecture enables global cross-cloud deployment:
+#### Two-Level Resource Abstraction
+- **Virtual Machines (VMs)**: Fundamental execution unit for data forwarding and network measurement (e.g., `instance-20260202-081825`).
+- **Nodes**: Grouped VMs mapping to cloud regions (e.g., `europe-west4-b`), acting as the basic unit for resource management and scheduling.
 
-3. **Edge Client (rigel-client)**
-    - Runs at the system edge (user side) to provide access to the Rigel network.
-    - Key functions: File chunking, multi-path parallel transmission, and large file upload optimization.
+#### Decoupled Control–Data Plane
+- **Control Plane**: One instance per node, responsible for Lyapunov-based routing optimization and elastic scaling decisions.
+- **Data Plane**: Deployed at VM level, running `data-plane` (resource metrics collection/network probing) and `data-proxy` (actual file forwarding/proxying) services.
+- **Edge Client**: `rigel-client` manages file chunking and multi-path parallel transmission for bulk data at the system edge.
 
-### Horizontal State Synchronization
-To enable distributed routing and scheduling across regions:
-- `control-plane` instances across nodes synchronize state in real time.
-- Each node maintains a consistent global view of system states without a centralized controller.
-- Independent routing decisions per node enhance system robustness against failures and support large-scale deployments.
+#### Horizontal State Synchronization
+- Distributed state sync across control-plane instances eliminates centralized bottlenecks, enabling independent routing decisions and enhancing robustness in large-scale deployments.
 
 ---
 
 ## Implementation Architecture Diagram
-The detailed architecture and module relationships are shown below:
-![Rigel Implementation Architecture](implementation.png)
+The end-to-end architecture for bulk data transfer is shown below:
+
+![Rigel Bulk Data Transfer Architecture](implementation.png)
 
 ### Figure Caption
-**Rigel implementation architecture**, illustrating the two-level resource abstraction (VMs and nodes) and the decoupled control–data plane design. The control plane, with one instance per node, handles routing optimization and elastic scaling, while the data plane, deployed at the VM level, performs resource metrics collection, network probing, and data forwarding operations. Horizontal state synchronization among control-plane instances enables distributed, resilient routing decisions across cloud regions.
+**Rigel bulk data transfer architecture**, illustrating the cross-cloud two-level resource abstraction (VMs and nodes) and decoupled control–data plane design. The control plane leverages Lyapunov-based Universal Max-Weight routing and backpressure-aware elastic scaling, while the data plane ensures high-throughput bulk data forwarding. Horizontal state synchronization enables resilient, global cross-cloud data transfer across major cloud providers.
 
 ---
 
-## Key Workflows (Supplemental)
-Based on the architecture diagram, core workflows include:
-1. `rigel-client` initiates large file upload requests and chunks files into segments.
-2. Client fetches optimal routing information from the control plane.
-3. Data plane reports real-time resource metrics to the control plane.
-4. Control plane synchronizes state across nodes via `etcd`.
-5. Data-proxy executes parallel data forwarding across multiple paths.
-6. Rate limiting at the external gateway controls inbound/outbound traffic.
+## Performance Results
+Deployed across multiple major cloud providers, Rigel delivers significant improvements over open-source tools and commercial services:
+- **Cost Reduction**: Reduces bandwidth costs by up to x%.
+- **Transfer Speed**: Achieves up to y× faster replication for bulk data.
+- **Stability**: Maintains high utilization and throughput even under saturated network links.
+
+---
+
+## Key Workflows for Bulk Data Transfer
+1. `rigel-client` chunks bulk files into segments and initiates transfer requests.
+2. Control plane computes optimal routing paths via Lyapunov-based Universal Max-Weight algorithm.
+3. Data plane reports real-time resource metrics to trigger backpressure-aware scaling if needed.
+4. Control plane synchronizes global state across cloud regions for cross-provider routing.
+5. `data-proxy` executes parallel bulk data forwarding across optimized paths.
+6. Rate-limited gateways ensure stable throughput for large-scale transfers.
