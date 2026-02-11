@@ -2,7 +2,6 @@ package scaling_vm
 
 import (
 	"log/slog"
-	"time"
 )
 
 //init | scale_up | deploy_proxy | deploy_plane | attach_envoy | sleep | start | release
@@ -10,13 +9,13 @@ import (
 func (s *Scaler) ManualScaling(pre, action, ip, vmName string) {
 
 	// 尝试获取锁，若获取不到则直接返回
-	if !s.tryLock(1 * time.Second) {
+	if !s.tryMu.TryLock() {
 		s.logger.Warn("cannot get lock", slog.String("pre", pre),
 			slog.Any("err", "cannot get lock"),
 		)
 		return
 	}
-	defer s.mu.Unlock()
+	defer s.tryMu.Unlock()
 
 	//---------------------------------------------------------------
 	vm_ := VM{}

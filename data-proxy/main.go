@@ -224,12 +224,15 @@ func main() {
 
 	//logger.Error("log init success")
 
+	pre := "init"
+
 	config.Config_, err = config.ReadYamlConfig(logger)
 	if err != nil {
-		logger.Error("read config failed", "error", err)
+		logger.Error("read config failed", slog.String("pre", pre), "error", err)
 		return
 	} else {
-		logger.Error("print config info", config.Config_)
+		logger.Info("print config info", slog.String("pre", pre),
+			slog.Any("config", config.Config_))
 	}
 
 	router := gin.Default()
@@ -291,8 +294,8 @@ func main() {
 	port := "8095"
 	port = config.Config_.Port
 
-	logger.Info("Listening", "port", port)
+	logger.Info("Listening", slog.String("pre", pre), "port", port)
 	if err := router.Run(":" + port); err != nil {
-		logger.Error("Gin Run failed", "error", err)
+		logger.Error("Gin Run failed", slog.String("pre", pre), "error", err)
 	}
 }

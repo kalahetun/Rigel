@@ -120,13 +120,13 @@ func (s *Scaler) autoScaling() {
 	pre := util.GenerateRandomLetters(5)
 
 	// 尝试获取锁，若获取不到则直接返回
-	if !s.tryLock(1 * time.Second) {
+	if !s.tryMu.TryLock() {
 		s.logger.Warn("cannot get lock", slog.String("pre", pre),
 			slog.Any("err", "cannot get lock"),
 		)
 		return
 	}
-	defer s.mu.Unlock()
+	defer s.tryMu.Unlock()
 
 	s.logger.Info("autoScaling", slog.String("pre", pre))
 

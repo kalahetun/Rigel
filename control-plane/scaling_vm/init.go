@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -104,12 +105,31 @@ type Scaler struct {
 	logger *slog.Logger
 
 	// 读写锁，保护 node 状态并发访问
-	mu sync.Mutex
+	tryMu TryMutex
 
 	// ====== 测试 / 模拟用 ======
 	Override *ScalerOverride `json:"override,omitempty"`
 
 	ManualAction string
+}
+
+type TryMutex struct {
+	locked int32
+	mu     sync.Mutex
+}
+
+func (m *TryMutex) TryLock() bool {
+	if !atomic.CompareAndSwapInt32(&m.locked, 0, 1) {
+		// 已经被锁住，直接返回 false
+		return false
+	}
+	m.mu.Lock()
+	return true
+}
+
+func (m *TryMutex) Unlock() {
+	atomic.StoreInt32(&m.locked, 0)
+	m.mu.Unlock()
 }
 
 // NewDefaultScaleConfig 返回带默认值的 ScaleConfig
@@ -175,26 +195,6 @@ func NewScaler(nodeID string, config *ScaleConfig, queue *util.FixedQueue,
 		logger:       logger,
 		Override:     nil,
 		ManualAction: "init",
-	}
-}
-
-// 尝试获取锁，如果获取不到则返回 false
-func (s *Scaler) tryLock(timeout time.Duration) bool {
-	// 设置一个通道，用于接收锁的获取结果
-	done := make(chan bool, 1)
-
-	// 启动一个 goroutine 来尝试获取锁
-	go func() {
-		s.mu.Lock()
-		done <- true
-	}()
-
-	// 等待锁或超时
-	select {
-	case <-done: // 如果成功获取到锁
-		return true
-	case <-time.After(timeout): // 如果超时
-		return false
 	}
 }
 
