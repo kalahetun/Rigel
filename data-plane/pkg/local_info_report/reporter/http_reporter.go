@@ -37,7 +37,7 @@ func NewHTTPReporter() *HTTPReporter {
 }
 
 // Report 上报VM信息（按ApiResponse格式封装）
-func (r *HTTPReporter) Report(controlHost string, vmReport *model.VMReport) error {
+func (r *HTTPReporter) Report(controlHost, pre string, vmReport *model.VMReport) error {
 	// 1. 填充ReportID（若为空）
 	if vmReport.ReportID == "" {
 		vmReport.ReportID = uuid.NewString()
