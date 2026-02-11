@@ -142,7 +142,7 @@ func (o *EnvoyPortAPIHandler) UpdateGlobalTargetAddrsHandler(c *gin.Context) {
 	}
 
 	// 2. 调用核心方法更新配置
-	if err := o.operator.UpdateGlobalTargetAddrs(req, pre, o.logger, o.logger1); err != nil {
+	if err := o.operator.UpdateGlobalTargetAddrs(req, action, pre, o.logger, o.logger1); err != nil {
 		o.logger.Error("Failed to update target addrs", slog.String("pre", pre), "error", err)
 		c.JSON(http.StatusInternalServerError, envoymanager2.APICommonResp{
 			Code:    500,
