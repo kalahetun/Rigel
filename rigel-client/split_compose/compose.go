@@ -26,6 +26,7 @@ func ComposeTree(
 	ctx context.Context,
 	bucket, objectName, credFile string,
 	parts []string,
+	pre string,
 	logger *slog.Logger,
 ) error {
 
@@ -66,7 +67,8 @@ func ComposeTree(
 
 			next = append(next, tmp)
 			tempObjects = append(tempObjects, tmp) // 记录临时对象
-			logger.Info("合并生成临时文件", "name", tmp, "level", level, "from", group)
+			logger.Info("合并生成临时文件", slog.String("pre", pre),
+				"name", tmp, "level", level, "from", group)
 		}
 
 		current = next

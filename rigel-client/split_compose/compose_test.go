@@ -43,7 +43,7 @@ func TestComposeTree(t *testing.T) {
 	}
 
 	// 调用 ComposeTree
-	if err := ComposeTree(ctx, bucketName, objectName, credFile, parts); err != nil {
+	if err := ComposeTree(ctx, bucketName, objectName, credFile, parts, "", nil); err != nil {
 		t.Fatalf("ComposeTree failed: %v", err)
 	}
 

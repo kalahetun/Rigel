@@ -87,7 +87,8 @@ func UploadToGCSbyReDirectHttpsV2(uploadInfo UploadFileInfo, routingInfo Routing
 	go ChunkEventLoop(ctx, chunks, workerPool, uploadInfo, events, done, pre, logger)
 
 	// 4. 启动分片上传
-	go StartChunkSubmitLoop(ctx, chunks, workerPool, uploadInfo, false, nil, pre, logger)
+	go StartChunkSubmitLoop(ctx, chunks, workerPool, uploadInfo,
+		false, nil, pre, logger)
 
 	// 5分钟超时定时器
 	timeout := 5 * time.Minute
@@ -95,7 +96,8 @@ func UploadToGCSbyReDirectHttpsV2(uploadInfo UploadFileInfo, routingInfo Routing
 	case <-done:
 		logger.Info("FunctionA 正常完成", slog.String("per", pre), fileName)
 	case <-time.After(timeout):
-		logger.Warn("等待 5 分钟超时，退出等待", slog.String("per", pre), slog.String("fileName", fileName))
+		logger.Warn("等待 5 分钟超时，退出等待", slog.String("per", pre),
+			slog.String("fileName", fileName))
 		return fmt.Errorf("等待 5 分钟超时，退出等待, fileName: %s", fileName)
 	}
 
@@ -221,7 +223,7 @@ func ChunkEventLoop(ctx context.Context, chunks *util.SafeMap, workerPool *Worke
 						"fileName", fileName, "index", v_.Index, "ObjectName", v_.ObjectName)
 					parts = append(parts, v_.ObjectName)
 				}
-				err := split_compose.ComposeTree(ctx, bucketName, fileName, credFile, parts, logger)
+				err := split_compose.ComposeTree(ctx, bucketName, fileName, credFile, parts, pre, logger)
 				if err != nil {
 					logger.Error("compose failed", slog.String("pre", pre), "fileName", fileName, "err", err)
 				}
@@ -238,7 +240,7 @@ func ChunkEventLoop(ctx context.Context, chunks *util.SafeMap, workerPool *Worke
 func NewWorkerPool(
 	queueSize int,
 	routingInfo RoutingInfo,
-	handler func(ChunkTask, string, *rate.Limiter, *slog.Logger) error,
+	handler func(ChunkTask, string, *rate.Limiter, string, *slog.Logger) error,
 	pre string,
 	logger *slog.Logger,
 ) *WorkerPool {
@@ -266,6 +268,7 @@ func NewWorkerPool(
 					task,
 					pathInfo.Hops,
 					limiter,
+					pre,
 					logger,
 				)
 
@@ -342,10 +345,11 @@ func StartChunkSubmitLoop(
 
 }
 
-func uploadChunk(task ChunkTask, hops string, rateLimiter *rate.Limiter, logger *slog.Logger) error {
+func uploadChunk(task ChunkTask, hops string, rateLimiter *rate.Limiter, pre string, logger *slog.Logger) error {
 	ctx := task.ctx
 
-	logger.Info("开始上传分片", "fileName", task.uploadInfo.FileName, "index", task.Index, "hops", hops)
+	logger.Info("开始上传分片", slog.String("pre", pre),
+		"fileName", task.uploadInfo.FileName, "index", task.Index, "hops", hops)
 
 	// 1. 生成 access token（和 uploadChunkV2 保持一致）
 	jsonBytes, err := os.ReadFile(task.uploadInfo.CredFile)
@@ -422,7 +426,8 @@ func uploadChunk(task ChunkTask, hops string, rateLimiter *rate.Limiter, logger 
 		LastSend:   time.Now(),
 		Acked:      1,
 	})
-	logger.Info("上传分片", "url", url, "fileName", task.uploadInfo.FileName, "index", task.Index, "hops", hops)
+	logger.Info("上传分片", slog.String("pre", pre),
+		"url", url, "fileName", task.uploadInfo.FileName, "index", task.Index, "hops", hops)
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -447,7 +452,8 @@ func uploadChunk(task ChunkTask, hops string, rateLimiter *rate.Limiter, logger 
 		LastSend:   chunk.LastSend,
 		Acked:      2,
 	})
-	logger.Info("上传分片成功", "fileName", task.uploadInfo.FileName, "index", task.Index, "hops", hops)
+	logger.Info("上传分片成功", slog.String("pre", pre),
+		"fileName", task.uploadInfo.FileName, "index", task.Index, "hops", hops)
 
 	return nil
 }
