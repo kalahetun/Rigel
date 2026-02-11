@@ -36,7 +36,7 @@ func TestSplitFile(t *testing.T) {
 
 	// 调用 SplitFile
 	fileName := "testfile"
-	if err := SplitFile(tmpFile.Name(), fileName, chunks, nil); err != nil {
+	if err := SplitFile(tmpFile.Name(), fileName, chunks, "", nil); err != nil {
 		t.Fatalf("SplitFile failed: %v", err)
 	}
 

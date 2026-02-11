@@ -58,7 +58,11 @@ type UploadFileInfo struct {
 }
 
 // 分片+限流+ack+compose 功能的upload
-func UploadToGCSbyReDirectHttpsV2(uploadInfo UploadFileInfo, routingInfo RoutingInfo, logger *slog.Logger) error {
+func UploadToGCSbyReDirectHttpsV2(uploadInfo UploadFileInfo, routingInfo RoutingInfo,
+	pre string, logger *slog.Logger) error {
+
+	logger.Info("UploadToGCSbyReDirectHttpsV2", slog.String("pre", pre),
+		slog.Any("uploadInfo", uploadInfo), slog.Any("routingInfo", routingInfo))
 
 	// 定时器控制最大等待时间
 	done := make(chan struct{})
@@ -68,47 +72,49 @@ func UploadToGCSbyReDirectHttpsV2(uploadInfo UploadFileInfo, routingInfo Routing
 
 	//获取分片
 	chunks := util.NewSafeMap()
-	_ = split_compose.SplitFile(localFilePath, fileName, chunks, logger)
+	_ = split_compose.SplitFile(localFilePath, fileName, chunks, pre, logger)
 
 	//启动定时重传 & check传输完毕
 	events := make(chan ChunkEvent, 100)
 	interval := 10 * time.Duration(time.Second)
 	expire := 120 * time.Duration(time.Second)
-	StartChunkTimeoutChecker(ctx, chunks, interval, expire, events, logger)
+	StartChunkTimeoutChecker(ctx, chunks, interval, expire, events, pre, logger)
 
 	//启动消费者 默认一个http并发度
-	workerPool := NewWorkerPool(100, routingInfo, uploadChunk, logger)
+	workerPool := NewWorkerPool(100, routingInfo, uploadChunk, pre, logger)
 
 	//events 消费
-	go ChunkEventLoop(ctx, chunks, workerPool, uploadInfo, events, done, logger)
+	go ChunkEventLoop(ctx, chunks, workerPool, uploadInfo, events, done, pre, logger)
 
 	// 4. 启动分片上传
-	go StartChunkSubmitLoop(ctx, chunks, workerPool, uploadInfo, false, nil, logger)
+	go StartChunkSubmitLoop(ctx, chunks, workerPool, uploadInfo, false, nil, pre, logger)
 
 	// 5分钟超时定时器
 	timeout := 5 * time.Minute
 	select {
 	case <-done:
-		logger.Info("FunctionA 正常完成", fileName)
+		logger.Info("FunctionA 正常完成", slog.String("per", pre), fileName)
 	case <-time.After(timeout):
-		logger.Warn("等待 5 分钟超时，退出等待", fileName)
+		logger.Warn("等待 5 分钟超时，退出等待", slog.String("per", pre), slog.String("fileName", fileName))
 		return fmt.Errorf("等待 5 分钟超时，退出等待, fileName: %s", fileName)
 	}
 
-	logger.Info("主程序执行完毕", fileName)
+	logger.Info("主程序执行完毕", slog.String("per", pre), slog.String("fileName", fileName))
 	return nil
 }
 
 func CollectExpiredChunks(
 	s *util.SafeMap,
 	expire time.Duration,
+	pre string,
 	logger *slog.Logger,
 ) (expired map[string]*split_compose.ChunkState, finished, unfinished bool) {
 	now := time.Now()
 	expired = make(map[string]*split_compose.ChunkState)
 	finished = true // 先假设都 ack 了
 
-	logger.Info("CollectExpiredChunks", now, expire)
+	logger.Info("CollectExpiredChunks", slog.String("pre", pre),
+		slog.Any("now", now), slog.Any("expire", expire))
 	chunks_ := s.GetAll()
 
 	for _, v := range chunks_ {
@@ -119,7 +125,8 @@ func CollectExpiredChunks(
 
 		//还没发送完不能resubmit
 		if v_.Acked == 0 {
-			logger.Info("还没发送完不能resubmit", v_.Index)
+			logger.Info("还没发送完不能resubmit", slog.String("pre", pre),
+				slog.String("index", v_.Index))
 			return expired, false, true
 		}
 
@@ -141,11 +148,12 @@ func StartChunkTimeoutChecker(
 	interval time.Duration,
 	expire time.Duration,
 	events chan<- ChunkEvent,
+	pre string,
 	logger *slog.Logger,
 ) {
 	ticker := time.NewTicker(interval)
 
-	logger.Info("定时器启动", interval, expire)
+	logger.Info("定时器启动", slog.String("pre", pre), interval, expire)
 
 	go func() {
 		defer ticker.Stop()
@@ -153,7 +161,7 @@ func StartChunkTimeoutChecker(
 		for {
 			select {
 			case <-ticker.C:
-				expired, finished, unfinished := CollectExpiredChunks(s, expire, logger)
+				expired, finished, unfinished := CollectExpiredChunks(s, expire, pre, logger)
 
 				if !unfinished {
 					if finished {
@@ -179,24 +187,24 @@ func StartChunkTimeoutChecker(
 }
 
 func ChunkEventLoop(ctx context.Context, chunks *util.SafeMap, workerPool *WorkerPool,
-	uploadInfo UploadFileInfo, events <-chan ChunkEvent, done chan struct{}, logger *slog.Logger) {
+	uploadInfo UploadFileInfo, events <-chan ChunkEvent, done chan struct{}, pre string, logger *slog.Logger) {
 
-	fmt.Println("事件循环启动")
+	logger.Info("事件循环启动", slog.String("pre", pre))
 
 	for {
 		select {
 		case ev := <-events:
 			switch ev.Type {
 			case ChunkExpired:
-				logger.Warn("超时重传", "indexes", ev.Indexes)
-				StartChunkSubmitLoop(ctx, chunks, workerPool, uploadInfo, true, ev.Indexes, logger)
+				logger.Warn("超时重传", slog.String("pre", pre), "indexes", ev.Indexes)
+				StartChunkSubmitLoop(ctx, chunks, workerPool, uploadInfo, true, ev.Indexes, pre, logger)
 			case ChunkFinished:
 				var parts = []string{}
 				bucketName := uploadInfo.BucketName
 				fileName := uploadInfo.FileName
 				credFile := uploadInfo.CredFile
 
-				logger.Info("传输完成", "fileName", fileName)
+				logger.Info("传输完成", slog.String("pre", pre), "fileName", fileName)
 				chunks_ := chunks.GetAll()
 				for _, v := range chunks_ {
 					v_, ok := v.(*split_compose.ChunkState)
@@ -204,16 +212,18 @@ func ChunkEventLoop(ctx context.Context, chunks *util.SafeMap, workerPool *Worke
 						continue
 					}
 					if v_.Acked != 2 {
-						logger.Error("upload failed", "fileName", fileName, "index", v_.Index)
+						logger.Error("upload failed", slog.String("pre", pre),
+							"fileName", fileName, "index", v_.Index)
 						close(done)
 						return
 					}
-					logger.Info("传输完成", "fileName", fileName, "index", v_.Index, "ObjectName", v_.ObjectName)
+					logger.Info("传输完成", slog.String("pre", pre),
+						"fileName", fileName, "index", v_.Index, "ObjectName", v_.ObjectName)
 					parts = append(parts, v_.ObjectName)
 				}
 				err := split_compose.ComposeTree(ctx, bucketName, fileName, credFile, parts, logger)
 				if err != nil {
-					logger.Error("compose failed", "fileName", fileName, "err", err)
+					logger.Error("compose failed", slog.String("pre", pre), "fileName", fileName, "err", err)
 				}
 				close(done)
 				return
@@ -229,13 +239,14 @@ func NewWorkerPool(
 	queueSize int,
 	routingInfo RoutingInfo,
 	handler func(ChunkTask, string, *rate.Limiter, *slog.Logger) error,
+	pre string,
 	logger *slog.Logger,
 ) *WorkerPool {
 	p := &WorkerPool{
 		taskCh: make(chan ChunkTask, queueSize),
 	}
 
-	logger.Info("WorkerPool 启动", "queueSize", queueSize)
+	logger.Info("WorkerPool 启动", slog.String("pre", pre), "queueSize", queueSize)
 
 	workerNum := len(routingInfo.Routing)
 
@@ -246,7 +257,8 @@ func NewWorkerPool(
 			bytesPerSec := rate_ * 1024 * 1024 / 8 // Mbps → bytes/sec
 			limiter := rate.NewLimiter(rate.Limit(bytesPerSec), int(bytesPerSec))
 
-			logger.Info("Worker 启动", "worker", workerID, "rate", rate_, "hops", pathInfo.Hops)
+			logger.Info("Worker 启动", slog.String("pre", pre),
+				"worker", workerID, "rate", rate_, "hops", pathInfo.Hops)
 
 			for task := range p.taskCh {
 
@@ -258,9 +270,9 @@ func NewWorkerPool(
 				)
 
 				if err != nil {
-					logger.Error("handle task", "worker", workerID, "err", err)
+					logger.Error("handle task", slog.String("pre", pre), "worker", workerID, "err", err)
 				} else {
-					logger.Info("handle task", "worker", workerID, "task", task)
+					logger.Info("handle task", slog.String("pre", pre), "worker", workerID, "task", task)
 				}
 			}
 		}(i, routingInfo.Routing[i])
@@ -287,9 +299,10 @@ func StartChunkSubmitLoop(
 	uploadInfo UploadFileInfo,
 	resubmit bool,
 	resubmitIndexes map[string]*split_compose.ChunkState,
+	pre string,
 	logger *slog.Logger,
 ) {
-	logger.Info("开始分片上传", "fileName", uploadInfo.FileName)
+	logger.Info("开始分片上传", slog.String("pre", pre), "fileName", uploadInfo.FileName)
 	chunks_ := chunks.GetAll()
 
 	for _, v := range chunks_ {
@@ -321,6 +334,7 @@ func StartChunkSubmitLoop(
 
 		if !workerPool.Submit(task) {
 			// 队列满了，本轮结束，等下个 tick
+			logger.Warn("workerPool full", slog.String("pre", pre))
 			time.Sleep(10 * time.Second)
 			break
 		}

@@ -51,7 +51,7 @@ func TestSplitFile(t *testing.T) {
 	tmpFile.Close()
 
 	chunks := util.NewSafeMap()
-	err = split_compose.SplitFile(tmpFile.Name(), "testfile", chunks, nil)
+	err = split_compose.SplitFile(tmpFile.Name(), "testfile", chunks, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func TestCollectExpiredChunks(t *testing.T) {
 	chunks.Set("1", &split_compose.ChunkState{Index: "1", Acked: 1, LastSend: now.Add(-time.Minute)})
 	chunks.Set("2", &split_compose.ChunkState{Index: "2", Acked: 2, LastSend: now})
 
-	expired, finished, unfinished := CollectExpiredChunks(chunks, 10*time.Second, nil)
+	expired, finished, unfinished := CollectExpiredChunks(chunks, 10*time.Second, "", nil)
 	if len(expired) != 1 {
 		t.Errorf("expected 1 expired chunk, got %d", len(expired))
 	}
@@ -106,7 +106,7 @@ func TestChunkTimeoutAndEventLoop(t *testing.T) {
 
 	// 拆分文件
 	chunks := util.NewSafeMap()
-	err = split_compose.SplitFile(uploadInfo.LocalFilePath, uploadInfo.FileName, chunks, logger)
+	err = split_compose.SplitFile(uploadInfo.LocalFilePath, uploadInfo.FileName, chunks, "", logger)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +118,7 @@ func TestChunkTimeoutAndEventLoop(t *testing.T) {
 	// WorkerPool
 	workerPool := NewWorkerPool(10, routingInfo, func(task ChunkTask, hops string, _ *rate.Limiter, _ *slog.Logger) error {
 		return mockUploadChunk(task, hops, logger)
-	}, logger)
+	}, "", logger)
 
 	events := make(chan ChunkEvent, 10)
 	done := make(chan struct{})
@@ -126,13 +126,13 @@ func TestChunkTimeoutAndEventLoop(t *testing.T) {
 	defer cancel()
 
 	// 超时检查器
-	StartChunkTimeoutChecker(ctx, chunks, 10*time.Millisecond, 50*time.Millisecond, events, logger)
+	StartChunkTimeoutChecker(ctx, chunks, 10*time.Millisecond, 50*time.Millisecond, events, "", logger)
 
 	// 事件循环
-	go ChunkEventLoop(ctx, chunks, workerPool, uploadInfo, events, done, logger)
+	go ChunkEventLoop(ctx, chunks, workerPool, uploadInfo, events, done, "", logger)
 
 	// 开始分片提交
-	go StartChunkSubmitLoop(ctx, chunks, workerPool, uploadInfo, false, nil, logger)
+	go StartChunkSubmitLoop(ctx, chunks, workerPool, uploadInfo, false, nil, "", logger)
 
 	// 等待完成
 	select {

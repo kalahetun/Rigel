@@ -23,7 +23,8 @@ type ChunkState struct {
 	Acked      int
 }
 
-func SplitFile(path, fileName string, chunks *util.SafeMap, logger *slog.Logger) error {
+func SplitFile(path, fileName string, chunks *util.SafeMap,
+	pre string, logger *slog.Logger) error {
 
 	fi, err := os.Stat(path)
 	if err != nil {
@@ -56,7 +57,8 @@ func SplitFile(path, fileName string, chunks *util.SafeMap, logger *slog.Logger)
 		offset += partSize
 		index++
 
-		logger.Info("SplitFile", "partName", partName, "offset", offset, "size", size)
+		logger.Info("SplitFile", slog.String("pre", pre),
+			"partName", partName, "offset", offset, "size", size)
 	}
 
 	return nil

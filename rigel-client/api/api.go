@@ -4,13 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"github.com/gin-gonic/gin"
 	"io"
 	"log/slog"
 	"net/http"
 	"rigel-client/config"
 	"rigel-client/upload"
+	"rigel-client/util"
 )
 
 const (
@@ -121,6 +121,10 @@ func DirectUploadHandler(logger *slog.Logger) gin.HandlerFunc {
 
 func RedirectV2Handler(logger *slog.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
+
+		pre := util.GenerateRandomLetters(5)
+		logger.Info("RedirectV2Handler", slog.String("pre", pre))
+
 		var routingInfo upload.RoutingInfo
 		if err := c.ShouldBindJSON(&routingInfo); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{
@@ -161,7 +165,7 @@ func RedirectV2Handler(logger *slog.Logger) gin.HandlerFunc {
 			CredFile:      credFile,
 		}
 
-		if err := upload.UploadToGCSbyReDirectHttpsV2(uploadInfo, routingInfo, logger); err != nil {
+		if err := upload.UploadToGCSbyReDirectHttpsV2(uploadInfo, routingInfo, pre, logger); err != nil {
 			logger.Error("ReDirect v2 HTTPS upload failed: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -176,6 +180,9 @@ func RedirectV2Handler(logger *slog.Logger) gin.HandlerFunc {
 
 func Upload(logger *slog.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
+
+		pre := util.GenerateRandomLetters(5)
+		logger.Info("Upload", slog.String("pre", pre))
 
 		// 1️⃣ 读取客户端请求 body
 		bodyBytes, err := io.ReadAll(c.Request.Body)
@@ -208,6 +215,7 @@ func Upload(logger *slog.Logger) gin.HandlerFunc {
 		username := c.GetHeader("X-Username")
 
 		logger.Info("Proxy UserRoute request",
+			slog.String("pre", pre),
 			"clientIP", clientIP,
 			"username", username,
 			"fileName", fileName,
@@ -218,8 +226,11 @@ func Upload(logger *slog.Logger) gin.HandlerFunc {
 		)
 
 		// 3️⃣ 构建请求转发给B
-		bReq, err := http.NewRequest("POST", config.Config_.ControlHost+RoutingURL, bytes.NewReader(bodyBytes))
+		bReq, err := http.NewRequest("POST", config.Config_.ControlHost+RoutingURL,
+			bytes.NewReader(bodyBytes))
 		if err != nil {
+			logger.Error("http NewRequest failed", slog.String("pre", pre),
+				slog.String("err", err.Error()))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
@@ -232,6 +243,8 @@ func Upload(logger *slog.Logger) gin.HandlerFunc {
 		client := &http.Client{}
 		bResp, err := client.Do(bReq)
 		if err != nil {
+			logger.Error("http Do failed", slog.String("pre", pre),
+				slog.String("err", err.Error()))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
@@ -240,6 +253,8 @@ func Upload(logger *slog.Logger) gin.HandlerFunc {
 		// 4️⃣ 读取B响应 body
 		bRespBody, err := io.ReadAll(bResp.Body)
 		if err != nil {
+			logger.Error("io ReadAll failed", slog.String("pre", pre),
+				slog.String("err", err.Error()))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
@@ -247,17 +262,22 @@ func Upload(logger *slog.Logger) gin.HandlerFunc {
 		// 5️⃣ 解析B的 JSON 成 ApiResponse
 		var bApiResp ApiResponse
 		if err := json.Unmarshal(bRespBody, &bApiResp); err != nil {
+			logger.Error("json Unmarshal failed", slog.String("pre", pre),
+				slog.String("err", err.Error()))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
 
 		var routingInfo upload.RoutingInfo
 		if err := c.ShouldBindJSON(&routingInfo); err != nil {
+			logger.Error("c ShouldBindJSON failed", slog.String("pre", pre),
+				slog.String("err", err.Error()))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
 
-		logger.Info("Proxy UserRoute response", fmt.Sprintf("%+v", routingInfo))
+		logger.Info("Proxy UserRoute response", slog.String("pre", pre),
+			slog.Any("routingInfo", routingInfo))
 
 		if len(routingInfo.Routing) == 0 {
 			c.JSON(http.StatusBadRequest, gin.H{
@@ -273,8 +293,9 @@ func Upload(logger *slog.Logger) gin.HandlerFunc {
 			CredFile:      credFile,
 		}
 
-		if err := upload.UploadToGCSbyReDirectHttpsV2(uploadInfo, routingInfo, logger); err != nil {
-			logger.Error("ReDirect v2 HTTPS upload failed: %v", err)
+		if err := upload.UploadToGCSbyReDirectHttpsV2(uploadInfo, routingInfo, pre, logger); err != nil {
+			logger.Error("ReDirect v2 HTTPS upload failed",
+				slog.String("pre", pre), slog.Any("err", err))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
