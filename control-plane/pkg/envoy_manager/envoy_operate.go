@@ -287,10 +287,16 @@ func (o *EnvoyOperator) UpdateGlobalTargetAddrs(targetAddrs []EnvoyTargetAddr,
 			}
 		}
 	} else if action == "del" {
-		for i, v := range targetAddrs {
-			if _, exist := targetAddrMap[v.IP]; exist {
-				s := o.GlobalCfg.TargetAddrs
-				s = append(s[:i], s[i+1:]...)
+		o.GlobalCfg.TargetAddrs = []EnvoyTargetAddr{}
+
+		delAddrMap := make(map[string]EnvoyTargetAddr)
+		for _, v_ := range targetAddrs {
+			delAddrMap[v_.IP] = v_
+		}
+
+		for _, v := range targetAddrMap {
+			if _, exist := delAddrMap[v.IP]; !exist {
+				o.GlobalCfg.TargetAddrs = append(o.GlobalCfg.TargetAddrs, v)
 			}
 		}
 	}
