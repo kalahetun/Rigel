@@ -255,7 +255,7 @@ func (o *EnvoyOperator) DisableEnvoyPort(port int, pre string, logger, logger1 *
 
 // UpdateGlobalTargetAddrs 更新后端地址（写锁）
 func (o *EnvoyOperator) UpdateGlobalTargetAddrs(targetAddrs []EnvoyTargetAddr,
-	pre string, logger, logger1 *slog.Logger) error {
+	action, pre string, logger, logger1 *slog.Logger) error {
 	// 写锁：修改TargetAddrs，独占锁
 	o.mu.Lock()
 	defer o.mu.Unlock()
@@ -274,15 +274,24 @@ func (o *EnvoyOperator) UpdateGlobalTargetAddrs(targetAddrs []EnvoyTargetAddr,
 		slog.String("pre", pre), "config", string(b))
 
 	// 更新后端地址
-	o.GlobalCfg.TargetAddrs = append(o.GlobalCfg.TargetAddrs, targetAddrs...)
+	//o.GlobalCfg.TargetAddrs = append(o.GlobalCfg.TargetAddrs, targetAddrs...)
 
 	targetAddrMap := make(map[string]EnvoyTargetAddr)
 	for _, v := range o.GlobalCfg.TargetAddrs {
 		targetAddrMap[v.IP] = v
 	}
-	for _, v := range targetAddrs {
-		if _, exist := targetAddrMap[v.IP]; !exist {
-			o.GlobalCfg.TargetAddrs = append(o.GlobalCfg.TargetAddrs, v)
+	if action == "add" {
+		for _, v := range targetAddrs {
+			if _, exist := targetAddrMap[v.IP]; !exist {
+				o.GlobalCfg.TargetAddrs = append(o.GlobalCfg.TargetAddrs, v)
+			}
+		}
+	} else if action == "del" {
+		for i, v := range targetAddrs {
+			if _, exist := targetAddrMap[v.IP]; exist {
+				s := o.GlobalCfg.TargetAddrs
+				s = append(s[:i], s[i+1:]...)
+			}
 		}
 	}
 

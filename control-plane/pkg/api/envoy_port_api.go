@@ -127,6 +127,20 @@ func (o *EnvoyPortAPIHandler) UpdateGlobalTargetAddrsHandler(c *gin.Context) {
 		return
 	}
 
+	action := c.GetHeader("Action")
+	o.logger.Info("action and addr", slog.String("pre", pre),
+		slog.String("action", action), slog.Any("addr", req))
+
+	if action == "" {
+		o.logger.Error("Invalid request body", slog.String("pre", pre), slog.String("action", action))
+		c.JSON(http.StatusOK, envoymanager2.APICommonResp{
+			Code:    400,
+			Message: "Action 参数错误",
+			Data:    nil,
+		})
+		return
+	}
+
 	// 2. 调用核心方法更新配置
 	if err := o.operator.UpdateGlobalTargetAddrs(req, pre, o.logger, o.logger1); err != nil {
 		o.logger.Error("Failed to update target addrs", slog.String("pre", pre), "error", err)

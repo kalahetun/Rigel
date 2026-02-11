@@ -382,6 +382,17 @@ func (s *Scaler) triggerRelease(vm_ VM, pre string) bool {
 		s.logger.Error("删除 VM 失败", slog.String("pre", pre), "error", err)
 	}
 
+	//update envoy 配置
+	if _, err := sendAddTargetIpsRequest(
+		[]envoy_manager.EnvoyTargetAddr{{vm.PublicIP, 8095}},
+		"del", pre, logger); err != nil {
+		s.logger.Error("sendAddTargetIpsRequest failed", slog.String("pre", pre),
+			slog.Any("vm", vm_), slog.Any("err", err))
+	} else {
+		s.logger.Info("sendAddTargetIpsRequest success", slog.String("pre", pre),
+			slog.Any("vm", vm_))
+	}
+
 	s.logger.Info("Releasing node", slog.String("pre", pre), slog.String("vm name", vm.VMName))
 	return true
 }
@@ -451,16 +462,31 @@ func setHealthState(apiHost, setState, pre string, logger *slog.Logger) bool {
 }
 
 // sendRequest 向指定的 API 路由发送请求
-func sendAddTargetIpsRequest(targetIps []envoy_manager.EnvoyTargetAddr, pre string) (*envoy_manager.APICommonResp, error) {
+func sendAddTargetIpsRequest(targetIps []envoy_manager.EnvoyTargetAddr,
+	action, pre string, logger *slog.Logger) (*envoy_manager.APICommonResp, error) {
 	// 构建请求体
-	url := "http://127.0.0.1:8081/envoy/cfg/setTargetIps" // API URL
-	body, err := json.Marshal(targetIps)                  // 将目标地址数据编码为 JSON
+	url := "http://127.0.0.1:8081/envoy/cfg/setTargetIps"
+	body, err := json.Marshal(targetIps)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request body: %v", err)
 	}
 
-	// 发送 POST 请求
-	resp, err := http.Post(url, "application/json", bytes.NewBuffer(body))
+	logger.Info("sendAddTargetIpsRequest", slog.String("pre", pre),
+		slog.String("action", action), slog.Any("addr", targetIps))
+
+	// 构建请求
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %v", err)
+	}
+
+	// 设置 Content-Type 和自定义 Header
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Action", action) // <- 这里加上 action
+
+	// 发送请求
+	client := &http.Client{}
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %v", err)
 	}
@@ -472,7 +498,6 @@ func sendAddTargetIpsRequest(targetIps []envoy_manager.EnvoyTargetAddr, pre stri
 		return nil, fmt.Errorf("failed to decode response: %v", err)
 	}
 
-	// 返回响应
 	return &response, nil
 }
 
@@ -578,7 +603,8 @@ func (s *Scaler) deployAndAttachVM(
 	}
 
 	if _, err := sendAddTargetIpsRequest(
-		[]envoy_manager.EnvoyTargetAddr{{vm.PublicIP, 8095}}, pre); err != nil {
+		[]envoy_manager.EnvoyTargetAddr{{vm.PublicIP, 8095}},
+		"add", pre, logger); err != nil {
 		s.logger.Error("sendAddTargetIpsRequest failed", slog.String("pre", pre),
 			slog.String("vm", string(b)), slog.Any("err", err))
 		return err
