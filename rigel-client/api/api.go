@@ -28,14 +28,14 @@ type ApiResponse struct {
 	Data interface{} `json:"data"` // 业务数据
 }
 
-type UserRouteRequest struct {
-	FileName   string `json:"fileName"` // 文件名
-	Priority   int    `json:"priority"`
-	ClientCont string `json:"clientContinent"`
-	ServerIP   string `json:"serverIP"`
-	ServerCont string `json:"serverContinent"`
-	Username   string `json:"username"`
-}
+//type UserRouteRequest struct {
+//	FileName   string `json:"fileName"` // 文件名
+//	Priority   int    `json:"priority"`
+//	ClientCont string `json:"clientContinent"`
+//	ServerIP   string `json:"serverIP"`
+//	ServerCont string `json:"serverContinent"`
+//	Username   string `json:"username"`
+//}
 
 func RedirectV1Handler(logger *slog.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -194,7 +194,7 @@ func Upload(logger *slog.Logger) gin.HandlerFunc {
 		}
 
 		// 2️⃣ 解析 body 用于日志
-		var req UserRouteRequest
+		var req util.UserRouteRequest
 		if err := json.Unmarshal(bodyBytes, &req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error": "请求体解析失败" + err.Error(),
@@ -214,16 +214,10 @@ func Upload(logger *slog.Logger) gin.HandlerFunc {
 		}
 		username := c.GetHeader("X-Username")
 
-		logger.Info("Proxy UserRoute request",
-			slog.String("pre", pre),
-			"clientIP", clientIP,
-			"username", username,
-			"fileName", fileName,
-			"priority", req.Priority,
-			"clientContinent", req.ClientCont,
-			"serverIP", req.ServerIP,
-			"serverContinent", req.ServerCont,
-		)
+		b, _ := json.Marshal(req)
+		logger.Info("Proxy UserRoute request", slog.String("pre", pre),
+			"h-clientIP", clientIP, "h-username", username,
+			"h-fileName", fileName, slog.String("", string(b)))
 
 		// 3️⃣ 构建请求转发给B
 		bReq, err := http.NewRequest("POST", config.Config_.ControlHost+RoutingURL,

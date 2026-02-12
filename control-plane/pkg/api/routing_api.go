@@ -51,7 +51,7 @@ func (h *UserRoutingAPIHandler) GetUserRoute(c *gin.Context) {
 	username := c.GetHeader("X-User-Name")
 
 	// 2️⃣ 解析 body JSON
-	var req routing.UserRouteRequest
+	var req util.UserRouteRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		resp.Code = 400
 		resp.Msg = "请求体解析失败：" + err.Error()
