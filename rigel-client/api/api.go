@@ -125,7 +125,7 @@ func RedirectV2Handler(logger *slog.Logger) gin.HandlerFunc {
 		pre := util.GenerateRandomLetters(5)
 		logger.Info("RedirectV2Handler", slog.String("pre", pre))
 
-		var routingInfo upload.RoutingInfo
+		var routingInfo util.RoutingInfo
 		if err := c.ShouldBindJSON(&routingInfo); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error":  "invalid json body for routing",
@@ -256,15 +256,19 @@ func Upload(logger *slog.Logger) gin.HandlerFunc {
 		//解析B的 JSON 成 ApiResponse
 		var bApiResp ApiResponse
 		if err := json.Unmarshal(bRespBody, &bApiResp); err != nil {
-			logger.Error("json Unmarshal failed", slog.String("pre", pre),
+			logger.Error("json Unmarshal ApiResponse failed", slog.String("pre", pre),
 				slog.String("err", err.Error()))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
 
-		var routingInfo upload.RoutingInfo
-		if err := c.ShouldBindJSON(&routingInfo); err != nil {
-			logger.Error("c ShouldBindJSON failed", slog.String("pre", pre),
+		reqDataBytes, _ := json.Marshal(bApiResp.Data)
+		logger.Info("Proxy UserRoute response", slog.String("pre", pre),
+			slog.String("reqDataBytes", string(reqDataBytes)))
+		
+		var routingInfo util.RoutingInfo
+		if err := json.Unmarshal(reqDataBytes, &routingInfo); err != nil {
+			logger.Error("json Unmarshal ApiResponse failed", slog.String("pre", pre),
 				slog.String("err", err.Error()))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return

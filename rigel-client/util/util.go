@@ -26,3 +26,13 @@ type UserRouteRequest struct {
 	CloudRegion   string `json:"cloudRegion"`   // 云服务所在区域，例如 us-east-1
 	CloudCity     string `json:"cloudCity"`     // 云服务所在城市，例如 Ashburn
 }
+
+type PathInfo struct {
+	Hops string `json:"hops"`
+	Rate int64  `json:"rate"`
+	//Weight int64  `json:"weight"`
+}
+
+type RoutingInfo struct {
+	Routing []PathInfo `json:"routing"`
+}

@@ -9,19 +9,9 @@ import (
 	"strings"
 )
 
-type PathInfo struct {
-	Hops string `json:"hops"`
-	Rate int64  `json:"rate"`
-	//Weight int64  `json:"weight"`
-}
-
-type RoutingInfo struct {
-	Routing []PathInfo `json:"routing"`
-}
-
 // 输入是client区域和cloud storage 区域
 func (g *GraphManager) Routing(startContinent string, request util.UserRouteRequest,
-	pre string, logger *slog.Logger) RoutingInfo {
+	pre string, logger *slog.Logger) util.RoutingInfo {
 
 	logger.Info("Routing", slog.String("pre", pre),
 		"startContinent", startContinent, "userRouteRequest", request)
@@ -42,7 +32,7 @@ func (g *GraphManager) Routing(startContinent string, request util.UserRouteRequ
 	if len(startNodes) == 0 {
 		logger.Warn("No nodes found for start continent",
 			slog.String("pre", pre), "startContinent", startContinent)
-		return RoutingInfo{}
+		return util.RoutingInfo{}
 	}
 
 	cloudFull := fmt.Sprintf("%s_%s_%s",
@@ -52,7 +42,7 @@ func (g *GraphManager) Routing(startContinent string, request util.UserRouteRequ
 	if _, ok := g.FindEdgeBySuffix(cloudFull); !ok {
 		logger.Warn("No cloud node found",
 			slog.String("pre", pre), "cloudFull", cloudFull)
-		return RoutingInfo{}
+		return util.RoutingInfo{}
 	}
 
 	// 遍历 start × end 节点组合，寻找最短路径
@@ -106,7 +96,9 @@ func (g *GraphManager) Routing(startContinent string, request util.UserRouteRequ
 	//计算速率
 	rate := ComputeAdmissionRate(Task{WeightU: 1, MinRate: 10, MaxRate: 20},
 		minCost, 1.0, 100, pre, g.logger)
-	rout := RoutingInfo{[]PathInfo{PathInfo{merged, int64(rate)}}}
+	var paths []util.PathInfo
+	paths = append(paths, util.PathInfo{Hops: merged, Rate: int64(rate)})
+	rout := util.RoutingInfo{Routing: paths}
 	logger.Info("routing result", slog.String("pre", pre),
 		slog.Any("rout", rout))
 	return rout

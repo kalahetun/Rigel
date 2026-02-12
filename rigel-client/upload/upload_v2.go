@@ -40,15 +40,15 @@ type WorkerPool struct {
 	taskCh chan ChunkTask
 }
 
-type PathInfo struct {
-	Hops string `json:"hops"`
-	Rate int64  `json:"rate"`
-	//Weight int64  `json:"weight"`
-}
-
-type RoutingInfo struct {
-	Routing []PathInfo `json:"routing"`
-}
+//type PathInfo struct {
+//	Hops string `json:"hops"`
+//	Rate int64  `json:"rate"`
+//	//Weight int64  `json:"weight"`
+//}
+//
+//type RoutingInfo struct {
+//	Routing []PathInfo `json:"routing"`
+//}
 
 type UploadFileInfo struct {
 	LocalFilePath string
