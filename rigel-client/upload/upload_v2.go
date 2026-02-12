@@ -155,7 +155,8 @@ func StartChunkTimeoutChecker(
 ) {
 	ticker := time.NewTicker(interval)
 
-	logger.Info("定时器启动", slog.String("pre", pre), interval, expire)
+	logger.Info("定时器启动", slog.String("pre", pre),
+		slog.Any("interval", interval), slog.Any("expire", expire))
 
 	go func() {
 		defer ticker.Stop()

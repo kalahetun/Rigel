@@ -70,6 +70,11 @@ static_resources:
                           route:
                             cluster: target_cluster
 
+                http_filters:
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+
                 #http_filters:
                 #  - name: envoy.filters.http.lua
                 #    typed_config:
