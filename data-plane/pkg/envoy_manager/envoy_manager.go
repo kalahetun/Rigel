@@ -19,9 +19,15 @@ import (
 
 // 核心常量（适配你的环境）
 const (
-	EnvoyPath     = "/home/matth/envoy"           // Envoy二进制路径
-	DefaultConfig = "/home/matth/envoy-mini.yaml" // Envoy配置文件路径
-	EpochFile     = "/tmp/envoy_epoch"            // epoch记录文件
+	//EnvoyPath     = "/home/matth/envoy"           // Envoy二进制路径
+	//DefaultConfig = "/home/matth/envoy-mini.yaml" // Envoy配置文件路径
+	EpochFile = "/tmp/envoy_epoch" // epoch记录文件
+)
+
+var (
+	DefaultConfig string
+	EnvoyPath     string
+	EnvoyLog      string
 )
 
 // EnvoyStarter 仅负责Envoy启动的极简结构体
@@ -156,7 +162,7 @@ func (s *EnvoyStarter) StartEnvoy(logger, logger1 *slog.Logger) (int, error) {
 		"--restart-epoch", "0", // 首次启动epoch=0
 		"--base-id", strconv.Itoa(s.baseID), // 基础ID
 		"--log-level", "info", // 日志级别
-		"--log-path", "/home/matth/envoy.log",
+		"--log-path", EnvoyLog,
 	)
 
 	logger.Info("Test config load", util.Config_.EnvoyPath)

@@ -111,14 +111,15 @@ func TestChunkTimeoutAndEventLoop(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	routingInfo := RoutingInfo{
-		Routing: []PathInfo{{Hops: "127.0.0.1:8080", Rate: 10}},
+	routingInfo := util.RoutingInfo{
+		Routing: []util.PathInfo{{Hops: "127.0.0.1:8080", Rate: 10}},
 	}
 
 	// WorkerPool
-	workerPool := NewWorkerPool(10, routingInfo, func(task ChunkTask, hops string, _ *rate.Limiter, _ *slog.Logger) error {
-		return mockUploadChunk(task, hops, logger)
-	}, "", logger)
+	workerPool := NewWorkerPool(10, routingInfo,
+		func(task ChunkTask, hops string, _ *rate.Limiter, _ string, _ *slog.Logger) error {
+			return mockUploadChunk(task, hops, logger)
+		}, "", logger)
 
 	events := make(chan ChunkEvent, 10)
 	done := make(chan struct{})

@@ -19,7 +19,12 @@ import (
 	"time"
 )
 
-const EnvoyPath = "/home/matth/envoy"
+//const EnvoyPath = "/home/matth/envoy"
+
+var (
+	EnvoyPath string
+	EnvoyLog  string
+)
 
 // EnvoyOperator Envoy操作器（适配matth目录）
 type EnvoyOperator struct {
@@ -162,6 +167,7 @@ func (o *EnvoyOperator) InitEnvoyGlobalConfig(uu *util.Config, adminPort int,
 
 	o.GlobalCfg = &EnvoyGlobalConfig{
 		AdminPort:   adminPort,
+		PathBase:    uu.EnvoyPathBase,
 		Ports:       ports,
 		TargetAddrs: targetAddresses,
 	}
@@ -358,7 +364,7 @@ func (o *EnvoyOperator) StartFirstEnvoy(pre string, logger, logger1 *slog.Logger
 		"--restart-epoch", "0",
 		"--base-id", "1000",
 		"--log-level", "info",
-		"--log-path", "/home/matth/envoy.log",
+		"--log-path", EnvoyLog,
 	)
 
 	// 日志输出
@@ -438,7 +444,7 @@ func (o *EnvoyOperator) HotReloadEnvoyConfig(pre string, logger, logger1 *slog.L
 		"--restart-epoch", strconv.Itoa(newEpoch),
 		"--base-id", "1000",
 		"--log-level", "info",
-		"--log-path", "/home/matth/envoy.log",
+		"--log-path", EnvoyLog,
 	)
 
 	// 日志输出

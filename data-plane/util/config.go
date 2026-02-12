@@ -12,8 +12,10 @@ var Config_ *Config
 
 // Config 一级结构体，对应yaml平级配置
 type Config struct {
-	EnvoyPath   string `yaml:"envoy_path"`
-	ControlHost string `yaml:"control_host"`
+	EnvoyPath     string `yaml:"envoy_path"`
+	ControlHost   string `yaml:"control_host"`
+	DefaultConfig string `yaml:"default_config"`
+	EnvoyLog      string `yaml:"envoy_log"`
 }
 
 // ReadYamlConfig 读取同层级的config.yaml配置

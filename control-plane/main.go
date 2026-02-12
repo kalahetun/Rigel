@@ -5,6 +5,7 @@ import (
 	"control-plane/etcd_client"
 	"control-plane/etcd_server"
 	"control-plane/pkg/api"
+	"control-plane/pkg/envoy_manager"
 	envoymanager2 "control-plane/pkg/envoy_manager"
 	"control-plane/routing"
 	"control-plane/scaling_vm"
@@ -18,11 +19,6 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-)
-
-const (
-	// Envoy配置文件路径常量
-	envoyConfigPath = "/home/matth/envoy-mini.yaml"
 )
 
 func main() {
@@ -65,6 +61,9 @@ func main() {
 	b, _ := json.Marshal(uu)
 	logger.Info("读取配置文件成功", slog.String("pre", logPre),
 		slog.String("config", string(b)))
+	envoy_manager.EnvoyPath = uu.EnvoyPath
+	envoy_manager.EnvoyLog = uu.EnvoyLog
+	scaling_vm.InitScalingConfig()
 
 	//初始化 bandwidth cost信息
 	err = util.LoadBandwidthCost(logger)
@@ -161,7 +160,7 @@ func main() {
 
 	//启动envoy
 	// 1. 固定配置文件路径（matth目录）
-	configPath := envoyConfigPath
+	configPath := uu.EnvoyConfig
 	// 2. 创建Envoy操作器（固定管理地址+matth配置路径）
 	operator := envoymanager2.NewEnvoyOperator("http://127.0.0.1:9901", configPath)
 	// 初始化全局配置（管理端口9901）

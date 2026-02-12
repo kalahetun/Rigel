@@ -14,12 +14,12 @@ set -euo pipefail
 # --------------------------
 ENVOY_VERSION="1.28.0"
 ENVOY_HOME="/home/matth"
+OWNER="matth:matth"
 ENVOY_BIN="${ENVOY_HOME}/envoy"
 ENVOY_CONFIG="${ENVOY_HOME}/envoy-mini.yaml"
 DOWNLOAD_URL=""
 LUA_SCRIPT_PATH="${ENVOY_HOME}/hop_router.lua"  # Lua script in same directory as config
 PROFILE_DIR="$(dirname ${ENVOY_CONFIG})/profile"
-OWNER="matth:matth"
 
 # --------------------------
 # 2. 架构检测
@@ -76,8 +76,8 @@ admin:
     socket_address:
       address: 127.0.0.1
       port_value: 9901
-  access_log_path: "/home/matth/admin_access.log"
-  profile_path: "/home/matth/profile"
+  access_log_path: "%ENV{ENVOY_HOME}%/admin_access.log"
+  profile_path: "%ENV{ENVOY_HOME}%/profile"
 
 layered_runtime:
   layers:
@@ -107,7 +107,7 @@ static_resources:
                   - name: envoy.access_logs.file
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.access_loggers.file.v3.FileAccessLog
-                      path: "/home/matth/listener_8095_business.log"
+                      path: "%ENV{ENVOY_HOME}%/listener_8095_business.log"
                       log_format:
                         text_format: >
                           [%START_TIME%] "%REQ(:METHOD)% %REQ(:PATH)% %PROTOCOL%" %RESPONSE_CODE% %BYTES_RECEIVED% %BYTES_SENT%
@@ -130,7 +130,7 @@ static_resources:
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
                       default_source_code:
-                        filename: "/home/matth/hop_router.lua"
+                        filename: "%ENV{ENVOY_HOME}%/hop_router.lua"
                   - name: envoy.filters.http.router
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router

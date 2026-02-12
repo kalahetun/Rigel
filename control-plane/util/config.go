@@ -14,11 +14,18 @@ var Config_ *Config
 
 // Config 代表整个配置文件的结构
 type Config struct {
-	EnvoyPath  string   `yaml:"envoy_path"`  // Envoy 可执行文件路径
-	ServerList []string `yaml:"server_list"` // Etcd 集群所有节点的地址
-	ServerIP   string   `yaml:"server_ip"`   // 当前节点 IP
-	DataDir    string   `yaml:"data_dir"`    // Etcd 数据目录
+	EnvoyPathBase string   `yaml:"envoy_path_base"` // Envoy 可执行文件路径（基础路径）
+	EnvoyPath     string   `yaml:"envoy_path"`      // Envoy 可执行文件路径
+	EnvoyLog      string   `yaml:"envoy_log"`
+	EnvoyConfig   string   `yaml:"envoy_config"`
+	ServerList    []string `yaml:"server_list"` // Etcd 集群所有节点的地址
+	ServerIP      string   `yaml:"server_ip"`   // 当前节点 IP
+	DataDir       string   `yaml:"data_dir"`    // Etcd 数据目录
 	//Name       string   `yaml:"name"`         // 当前节点名字
+
+	Scaling ScalingConfig `yaml:"scaling"`
+
+	SshKey string `yaml:"ssh_key"` // SSH Key 路径
 
 	// Node 配置
 	Node NodeConfig `yaml:"node"`
@@ -27,6 +34,17 @@ type Config struct {
 
 	// GCP 配置
 	GCP GCPConfig `yaml:"gcp"`
+}
+
+type ScalingConfig struct {
+	Username        string `yaml:"username"`
+	LocalPathProxy  string `yaml:"local_path_proxy"`
+	RemotePathProxy string `yaml:"remote_path_proxy"`
+	BinaryProxy     string `yaml:"binary_proxy"`
+	LocalPathPlane  string `yaml:"local_path_plane"`
+	RemotePathPlane string `yaml:"remote_path_plane"`
+	BinaryPlane     string `yaml:"binary_plane"`
+	PrivateKey      string `yaml:"private_key"`
 }
 
 type ProxyConfig struct {

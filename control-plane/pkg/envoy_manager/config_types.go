@@ -32,6 +32,7 @@ type EnvoyPortConfig struct {
 // EnvoyGlobalConfig Envoy global config (global target addrs + listen ports)
 type EnvoyGlobalConfig struct {
 	AdminPort   int               `json:"admin_port" binding:"required,min=1,max=65535"`
+	PathBase    string            `json:"path_base"`
 	TargetAddrs []EnvoyTargetAddr `json:"target_addrs" binding:"required,dive"` // Global target addrs
 	Ports       []EnvoyPortConfig `json:"ports"`
 }

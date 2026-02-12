@@ -15,11 +15,16 @@ import (
 
 const (
 	HeaderFileName = "X-File-Name" // 通过 Header 传文件名
-	bucketName     = "rigel-data"
-	credFile       = "/home/matth/civil-honor-480405-e0-e62b994bbc27.json"
-	localBaseDir   = "/home/matth/upload/" // 本地文件目录前缀
+	BucketName     = "rigel-data"
+	//credFile       = "/home/matth/civil-honor-480405-e0-e62b994bbc27.json"
+	//localBaseDir   = "/home/matth/upload/" // 本地文件目录前缀
 	//HOST           = "http://127.0.0.1:8081" //可以通过geoDNS获取
 	RoutingURL = "/api/v1/routing"
+)
+
+var (
+	CredFile     string
+	LocalBaseDir string
 )
 
 type ApiResponse struct {
@@ -51,9 +56,9 @@ func RedirectV1Handler(logger *slog.Logger) gin.HandlerFunc {
 			return
 		}
 
-		localFilePath := localBaseDir + fileName
+		localFilePath := LocalBaseDir + fileName
 
-		if err := upload.UploadToGCSbyReDirectHttpsV1(localFilePath, bucketName, fileName, credFile,
+		if err := upload.UploadToGCSbyReDirectHttpsV1(localFilePath, BucketName, fileName, CredFile,
 			hops, c.Request.Header, logger); err != nil {
 			logger.Error("ReDirect HTTPS upload failed: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -76,10 +81,10 @@ func ClientUploadHandler(logger *slog.Logger) gin.HandlerFunc {
 			return
 		}
 
-		localFilePath := localBaseDir + fileName
+		localFilePath := LocalBaseDir + fileName
 		ctx := context.Background()
 
-		if err := upload.UploadToGCSbyClient(ctx, localFilePath, bucketName, fileName, credFile, logger); err != nil {
+		if err := upload.UploadToGCSbyClient(ctx, localFilePath, BucketName, fileName, CredFile, logger); err != nil {
 			logger.Error("Upload failed: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -88,7 +93,7 @@ func ClientUploadHandler(logger *slog.Logger) gin.HandlerFunc {
 		c.JSON(http.StatusOK, gin.H{
 			"message":    "upload success",
 			"file_name":  fileName,
-			"bucket":     bucketName,
+			"bucket":     BucketName,
 			"objectName": fileName,
 		})
 	}
@@ -102,9 +107,9 @@ func DirectUploadHandler(logger *slog.Logger) gin.HandlerFunc {
 			return
 		}
 
-		localFilePath := localBaseDir + fileName
+		localFilePath := LocalBaseDir + fileName
 
-		if err := upload.UploadToGCSbyDirectHttps(localFilePath, bucketName, fileName, credFile, logger); err != nil {
+		if err := upload.UploadToGCSbyDirectHttps(localFilePath, BucketName, fileName, CredFile, logger); err != nil {
 			logger.Error("Direct HTTPS upload failed: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -113,7 +118,7 @@ func DirectUploadHandler(logger *slog.Logger) gin.HandlerFunc {
 		c.JSON(http.StatusOK, gin.H{
 			"message":    "direct upload success",
 			"file_name":  fileName,
-			"bucket":     bucketName,
+			"bucket":     BucketName,
 			"objectName": fileName,
 		})
 	}
@@ -139,12 +144,12 @@ func RedirectV2Handler(logger *slog.Logger) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Missing X-File-Name header"})
 			return
 		}
-		localFilePath := localBaseDir + fileName
+		localFilePath := LocalBaseDir + fileName
 
 		//没有路径直传
 		if len(routingInfo.Routing) == 0 {
 			ctx := context.Background()
-			if err := upload.UploadToGCSbyClient(ctx, localFilePath, bucketName, fileName, credFile, logger); err != nil {
+			if err := upload.UploadToGCSbyClient(ctx, localFilePath, BucketName, fileName, CredFile, logger); err != nil {
 				logger.Error("Upload failed: %v", err)
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
@@ -152,7 +157,7 @@ func RedirectV2Handler(logger *slog.Logger) gin.HandlerFunc {
 			c.JSON(http.StatusOK, gin.H{
 				"message":    "upload success",
 				"file_name":  fileName,
-				"bucket":     bucketName,
+				"bucket":     BucketName,
 				"objectName": fileName,
 			})
 			return
@@ -160,9 +165,9 @@ func RedirectV2Handler(logger *slog.Logger) gin.HandlerFunc {
 
 		uploadInfo := upload.UploadFileInfo{
 			LocalFilePath: localFilePath,
-			BucketName:    bucketName,
+			BucketName:    BucketName,
 			FileName:      fileName,
-			CredFile:      credFile,
+			CredFile:      CredFile,
 		}
 
 		if err := upload.UploadToGCSbyReDirectHttpsV2(uploadInfo, routingInfo, pre, logger); err != nil {
@@ -265,7 +270,7 @@ func Upload(logger *slog.Logger) gin.HandlerFunc {
 		reqDataBytes, _ := json.Marshal(bApiResp.Data)
 		logger.Info("Proxy UserRoute response", slog.String("pre", pre),
 			slog.String("reqDataBytes", string(reqDataBytes)))
-		
+
 		var routingInfo util.RoutingInfo
 		if err := json.Unmarshal(reqDataBytes, &routingInfo); err != nil {
 			logger.Error("json Unmarshal ApiResponse failed", slog.String("pre", pre),
@@ -285,10 +290,10 @@ func Upload(logger *slog.Logger) gin.HandlerFunc {
 		}
 
 		uploadInfo := upload.UploadFileInfo{
-			LocalFilePath: localBaseDir + fileName,
-			BucketName:    bucketName,
+			LocalFilePath: LocalBaseDir + fileName,
+			BucketName:    BucketName,
 			FileName:      fileName,
-			CredFile:      credFile,
+			CredFile:      CredFile,
 		}
 
 		if err := upload.UploadToGCSbyReDirectHttpsV2(uploadInfo, routingInfo, pre, logger); err != nil {

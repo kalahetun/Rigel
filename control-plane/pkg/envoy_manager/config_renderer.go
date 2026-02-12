@@ -15,8 +15,8 @@ admin:
       address: 0.0.0.0
       port_value: {{.AdminPort}}
   # ⚠ 可选：deprecated，但目前还能用
-  access_log_path: "/home/matth/admin_access.log"
-  profile_path: "/home/matth/profile"
+  access_log_path: "{{$.PathBase}}/admin_access.log"
+  profile_path: "{{$.PathBase}}/profile"
 
 # ================= Lua runtime =================
 layered_runtime:
@@ -51,7 +51,7 @@ static_resources:
                   - name: envoy.access_logs.file
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.access_loggers.file.v3.FileAccessLog
-                      path: "/home/matth/all_listeners_business.log"
+                      path: "{{$.PathBase}}/all_listeners_business.log"
                       log_format:
                         text_format: >
                           [%START_TIME%] "%REQ(:METHOD)% %REQ(:PATH)% %PROTOCOL%" %RESPONSE_CODE% %BYTES_RECEIVED% %BYTES_SENT%
@@ -80,7 +80,7 @@ static_resources:
                 #    typed_config:
                 #      "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
                 #      default_source_code:
-                #        filename: "/home/matth/access_router.lua"
+                #        filename: "{{$.PathBase}}/access_router.lua"
 
                 #  - name: envoy.filters.http.router
                 #    typed_config:

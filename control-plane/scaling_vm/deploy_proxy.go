@@ -1,6 +1,7 @@
 package scaling_vm
 
 import (
+	"control-plane/util"
 	"fmt"
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
@@ -12,18 +13,29 @@ import (
 	"time"
 )
 
-const (
-	username = "matth"
-	//host = "192.168.1.10"
-	//port = "22"
-	localPathProxy  = "./install/data-proxy"   // 本地 Go 编译后的二进制文件路径
-	remotePathProxy = "/home/matth/data-proxy" // 远程服务器目标路径
-	binaryProxy     = "data-proxy"             // 二进制文件名
-	localPathPlane  = "./install/data-plane"   // 本地 Go 编译后的二进制文件路径
-	remotePathPlane = "/home/matth/data-plane" // 远程服务器目标路径
-	binaryPlane     = "data-plane"             // 二进制文件名
-	privateKey      = "/home/matth/.ssh/id_rsa"
+var (
+	username        string
+	localPathProxy  string
+	remotePathProxy string
+	binaryProxy     string
+	localPathPlane  string
+	remotePathPlane string
+	binaryPlane     string
+	privateKey      string
 )
+
+func InitScalingConfig() {
+	uu := util.Config_ // 这里假设你已经加载了 Config
+
+	username = uu.Scaling.Username
+	localPathProxy = uu.Scaling.LocalPathProxy
+	remotePathProxy = uu.Scaling.RemotePathProxy
+	binaryProxy = uu.Scaling.BinaryProxy
+	localPathPlane = uu.Scaling.LocalPathPlane
+	remotePathPlane = uu.Scaling.RemotePathPlane
+	binaryPlane = uu.Scaling.BinaryPlane
+	privateKey = uu.Scaling.PrivateKey
+}
 
 // SSHConfig 包含 SSH 连接所需的配置信息
 type SSHConfig struct {

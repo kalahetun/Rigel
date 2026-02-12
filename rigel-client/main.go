@@ -27,7 +27,13 @@ func main() {
 	pre := util.GenerateRandomLetters(5)
 	logger.Info("rigel client", slog.String("pre", pre))
 
-	config.Config_, _ = config.ReadYamlConfig(logger)
+	config.Config_, err = config.ReadYamlConfig(logger)
+	if err != nil {
+		logger.Error("read config error", slog.String("pre", pre), slog.Any("error", err))
+		return
+	}
+	api.CredFile = config.Config_.CredFile
+	api.LocalBaseDir = config.Config_.LocalBaseDir
 	logger.Info("config data", slog.String("pre", pre), slog.Any("data", config.Config_))
 
 	router := gin.New() // 不用 Default，这样我们自定义中间件
