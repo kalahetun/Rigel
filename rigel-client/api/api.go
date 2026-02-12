@@ -184,7 +184,7 @@ func Upload(logger *slog.Logger) gin.HandlerFunc {
 		pre := util.GenerateRandomLetters(5)
 		logger.Info("Upload", slog.String("pre", pre))
 
-		// 1️⃣ 读取客户端请求 body
+		//读取客户端请求 body
 		bodyBytes, err := io.ReadAll(c.Request.Body)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{
@@ -193,7 +193,7 @@ func Upload(logger *slog.Logger) gin.HandlerFunc {
 			return
 		}
 
-		// 2️⃣ 解析 body 用于日志
+		//解析 body 用于日志
 		var req util.UserRouteRequest
 		if err := json.Unmarshal(bodyBytes, &req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{
@@ -219,7 +219,7 @@ func Upload(logger *slog.Logger) gin.HandlerFunc {
 			"h-clientIP", clientIP, "h-username", username,
 			"h-fileName", fileName, slog.String("", string(b)))
 
-		// 3️⃣ 构建请求转发给B
+		//构建请求转发给B
 		bReq, err := http.NewRequest("POST", config.Config_.ControlHost+RoutingURL,
 			bytes.NewReader(bodyBytes))
 		if err != nil {
@@ -244,7 +244,7 @@ func Upload(logger *slog.Logger) gin.HandlerFunc {
 		}
 		defer bResp.Body.Close()
 
-		// 4️⃣ 读取B响应 body
+		//读取B响应 body
 		bRespBody, err := io.ReadAll(bResp.Body)
 		if err != nil {
 			logger.Error("io ReadAll failed", slog.String("pre", pre),
@@ -253,7 +253,7 @@ func Upload(logger *slog.Logger) gin.HandlerFunc {
 			return
 		}
 
-		// 5️⃣ 解析B的 JSON 成 ApiResponse
+		//解析B的 JSON 成 ApiResponse
 		var bApiResp ApiResponse
 		if err := json.Unmarshal(bRespBody, &bApiResp); err != nil {
 			logger.Error("json Unmarshal failed", slog.String("pre", pre),
