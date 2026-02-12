@@ -58,7 +58,7 @@ type UploadFileInfo struct {
 }
 
 // 分片+限流+ack+compose 功能的upload
-func UploadToGCSbyReDirectHttpsV2(uploadInfo UploadFileInfo, routingInfo RoutingInfo,
+func UploadToGCSbyReDirectHttpsV2(uploadInfo UploadFileInfo, routingInfo util.RoutingInfo,
 	pre string, logger *slog.Logger) error {
 
 	logger.Info("UploadToGCSbyReDirectHttpsV2", slog.String("pre", pre),
@@ -239,7 +239,7 @@ func ChunkEventLoop(ctx context.Context, chunks *util.SafeMap, workerPool *Worke
 
 func NewWorkerPool(
 	queueSize int,
-	routingInfo RoutingInfo,
+	routingInfo util.RoutingInfo,
 	handler func(ChunkTask, string, *rate.Limiter, string, *slog.Logger) error,
 	pre string,
 	logger *slog.Logger,
@@ -253,7 +253,7 @@ func NewWorkerPool(
 	workerNum := len(routingInfo.Routing)
 
 	for i := 0; i < workerNum; i++ {
-		go func(workerID int, pathInfo PathInfo) {
+		go func(workerID int, pathInfo util.PathInfo) {
 
 			rate_ := pathInfo.Rate                 //maxMbps
 			bytesPerSec := rate_ * 1024 * 1024 / 8 // Mbps → bytes/sec
