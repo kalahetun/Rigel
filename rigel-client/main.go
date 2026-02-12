@@ -6,6 +6,7 @@ import (
 	"os"
 	"rigel-client/api"
 	"rigel-client/config"
+	"rigel-client/util"
 	"time"
 )
 
@@ -23,7 +24,11 @@ func main() {
 		Level: slog.LevelInfo,
 	}))
 
+	pre := util.GenerateRandomLetters(5)
+	logger.Info("rigel client", slog.String("pre", pre))
+
 	config.Config_, _ = config.ReadYamlConfig(logger)
+	logger.Info("config data", slog.String("pre", pre), slog.Any("data", config.Config_))
 
 	router := gin.New() // 不用 Default，这样我们自定义中间件
 	router.Use(AccessLogMiddleware(logger))
@@ -43,7 +48,8 @@ func main() {
 	router.POST("/gcp/upload/redirect/v2", api.RedirectV2Handler(logger))
 
 	port := "8080"
-	logger.Info("Starting server on port %s...", port)
+	logger.Info("Starting server on port", slog.String("pre", pre),
+		slog.String("port", port))
 	router.Run(":" + port)
 }
 
