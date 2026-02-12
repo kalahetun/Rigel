@@ -38,6 +38,7 @@ func NewUserRoutingAPIHandler(gm *routing.GraphManager, logger *slog.Logger) *Us
 func (h *UserRoutingAPIHandler) GetUserRoute(c *gin.Context) {
 
 	pre := util.GenerateRandomLetters(5)
+	h.Logger.Info("GetUserRoute", slog.String("pre", pre))
 
 	resp := model.ApiResponse{
 		Code: 500,
@@ -78,6 +79,9 @@ func (h *UserRoutingAPIHandler) GetUserRoute(c *gin.Context) {
 	// 3️⃣ 调用 GraphManager 获取最优路径
 	// 可以把 GetBestPath 改成支持从客户端到服务器
 	paths := h.GM.Routing(req.ClientCont, req, pre, h.Logger)
+
+	h.Logger.Info("UserRoute POST response", slog.String("pre", pre),
+		slog.Any("routing", paths))
 
 	resp.Code = 200
 	resp.Msg = "成功获取路径"

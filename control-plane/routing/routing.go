@@ -106,5 +106,8 @@ func (g *GraphManager) Routing(startContinent string, request util.UserRouteRequ
 	//计算速率
 	rate := ComputeAdmissionRate(Task{WeightU: 1, MinRate: 10, MaxRate: 20},
 		minCost, 1.0, 100, pre, g.logger)
-	return RoutingInfo{[]PathInfo{PathInfo{merged, int64(rate)}}}
+	rout := RoutingInfo{[]PathInfo{PathInfo{merged, int64(rate)}}}
+	logger.Info("routing result", slog.String("pre", pre),
+		slog.Any("rout", rout))
+	return rout
 }
