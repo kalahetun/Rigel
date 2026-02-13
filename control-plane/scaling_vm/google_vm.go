@@ -12,9 +12,12 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-//const (
-//	SshKey = "matth:ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCyKfXWsf5A1H2Ga0OYZDb2LPhpivEoQatdOBfssmhJxxlNQ4m+TkzVMZGZfFYWUpBigbRKfOtoAGPR0wIc/qEmRpRF6L+9FvBFJZG1t0BnC1uZiydoK8f7taVz9kcHScAjdxXF1malRPGL0su5MLMvwQ5HYyevYpfHlvhTZziVqnTJZR6mnaVYb5vezYZPTgTyKEZABZxpxsc8wUQum7wcr2OffqVJItQa65XJyxHtASNlY8YxQevPuOHUzaX/d6yoCtZMYVTf68JE0etQ+0Fx/HPdlGAlccXiZIyC6vVGQfYylnTo7yl29FpaMhfM/IHc2nPERcPslQKnestE+Z0+IjJXJMtbGYKUrwxhFtYqy22JD2rKLy6r2kR7rKoi3+e9n+GdbH8jranccnrWkj1/rtP7YG8hniXwgoOB86TJp+OoWkiRDtCXE++jxsiegMAcF/gVmChDzH42+5v+vMYI9MI1Prjd4CLqbWDKffuUg94MTJILbKMZIbwqYAkBQtk= matth@instance-20260202-081539"
-//)
+const (
+	//SshKey = "matth:ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCyKfXWsf5A1H2Ga0OYZDb2LPhpivEoQatdOBfssmhJxxlNQ4m+TkzVMZGZfFYWUpBigbRKfOtoAGPR0wIc/qEmRpRF6L+9FvBFJZG1t0BnC1uZiydoK8f7taVz9kcHScAjdxXF1malRPGL0su5MLMvwQ5HYyevYpfHlvhTZziVqnTJZR6mnaVYb5vezYZPTgTyKEZABZxpxsc8wUQum7wcr2OffqVJItQa65XJyxHtASNlY8YxQevPuOHUzaX/d6yoCtZMYVTf68JE0etQ+0Fx/HPdlGAlccXiZIyC6vVGQfYylnTo7yl29FpaMhfM/IHc2nPERcPslQKnestE+Z0+IjJXJMtbGYKUrwxhFtYqy22JD2rKLy6r2kR7rKoi3+e9n+GdbH8jranccnrWkj1/rtP7YG8hniXwgoOB86TJp+OoWkiRDtCXE++jxsiegMAcF/gVmChDzH42+5v+vMYI9MI1Prjd4CLqbWDKffuUg94MTJILbKMZIbwqYAkBQtk= matth@instance-20260202-081539"
+	FireWallTag  = "default-allow-internal"
+	InstanceType = "e2-medium"
+	SourceImage  = "projects/debian-cloud/global/images/family/debian-12"
+)
 
 // CreateVM 创建GCP Compute Engine虚拟机实例
 // credFile: JSON格式的服务账号凭证文件
@@ -46,7 +49,7 @@ func CreateVM(
 		Boot:       proto.Bool(true),
 		Type:       proto.String(computepb.AttachedDisk_PERSISTENT.String()),
 		InitializeParams: &computepb.AttachedDiskInitializeParams{
-			SourceImage: proto.String("projects/debian-cloud/global/images/family/debian-12"),
+			SourceImage: proto.String(SourceImage),
 			DiskSizeGb:  proto.Int64(10), // 确保客户端在使用后被关闭
 		},
 	}
@@ -68,13 +71,14 @@ func CreateVM(
 	instance := &computepb.Instance{
 		// 配置网络接口，使用默认网络并启用公网IP
 		Name:        proto.String(vmName),
-		MachineType: proto.String(fmt.Sprintf("zones/%s/machineTypes/e2-medium", zone)), // 使用默认网络
+		MachineType: proto.String(fmt.Sprintf("zones/%s/machineTypes/%s", zone, InstanceType)), // 使用默认网络
 		Disks:       []*computepb.AttachedDisk{bootDisk},
 		NetworkInterfaces: []*computepb.NetworkInterface{
 			networkInterface,
 		},
+		//"default-allow-internal" 防火墙标签 需要自己配置
 		Tags: &computepb.Tags{
-			Items: []string{"http-server", "https-server", "lb-health-check", "default-allow-internal"}, // 防火墙标签
+			Items: []string{"http-server", "https-server", "lb-health-check", FireWallTag},
 		},
 		Metadata: &computepb.Metadata{
 			Items: []*computepb.Items{
