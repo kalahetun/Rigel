@@ -30,7 +30,7 @@ Existing bulk data transfer solutions suffer from:
 Rigel's underlying architecture enables global cross-cloud deployment:
 #### Two-Level Resource Abstraction
 - **Virtual Machines (VMs)**: Fundamental execution unit for data forwarding and network measurement (e.g., `instance-20260202-081825`).
-- **Nodes**: Grouped VMs mapping to cloud regions (e.g., `europe-west4-b`), acting as the basic unit for resource management and scheduling.
+- **Nodes**: Grouped VMs mapping to cloud regions or availability zones (e.g., `europe-west4-b`), acting as the basic unit for resource management and scheduling.
 
 #### Decoupled Control–Data Plane
 - **Control Plane**: One instance per node, responsible for Lyapunov-based routing optimization and elastic scaling decisions.
