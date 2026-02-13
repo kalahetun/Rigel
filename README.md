@@ -52,7 +52,7 @@ The end-to-end architecture for bulk data transfer is shown below:
 
 ---
 
-## Performance Results
+## Performance Results (under Different Network Setups)
 Deployed across multiple major cloud providers, Rigel delivers significant improvements over open-source tools and commercial services:
 - **Cost Reduction**: Reduces bandwidth costs by up to x%.
 - **Transfer Speed**: Achieves up to y× faster replication for bulk data.
