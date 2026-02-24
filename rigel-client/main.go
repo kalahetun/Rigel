@@ -12,6 +12,7 @@ import (
 
 //todo 1、支持断点续传
 //todo 2、支持记录io时间 传输时间
+//todo 3、支持从storage读取文件
 
 func main() {
 
