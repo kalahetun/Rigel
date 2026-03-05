@@ -14,7 +14,8 @@ import (
 )
 
 // UploadToGCS 上传本地文件到指定 GCS bucket
-func UploadToGCSbyClient(ctx context.Context, localFilePath, bucketName, objectName, credFile string, logger *slog.Logger) error {
+func UploadToGCSbyClient(ctx context.Context, localFilePath, bucketName, objectName, credFile string,
+	logger *slog.Logger) error {
 
 	logger.Info("Uploading file to GCS bucket using client library", localFilePath, objectName)
 	// 使用环境变量配置凭证

@@ -9,13 +9,15 @@ import (
 	"log/slog"
 	"net/http"
 	"rigel-client/config"
+	"rigel-client/download"
 	"rigel-client/upload"
 	"rigel-client/util"
 )
 
 const (
 	HeaderFileName = "X-File-Name" // 通过 Header 传文件名
-	BucketName     = "rigel-data"
+	DataSourceType = "X-Data-Source-Type"
+	//BucketName     = "rigel-data"
 	//credFile       = "/home/matth/civil-honor-480405-e0-e62b994bbc27.json"
 	//localBaseDir   = "/home/matth/upload/" // 本地文件目录前缀
 	//HOST           = "http://127.0.0.1:8081" //可以通过geoDNS获取
@@ -23,8 +25,11 @@ const (
 )
 
 var (
-	CredFile     string
-	LocalBaseDir string
+	CredFileSource   string
+	BucketNameSource string
+	CredFile         string
+	BucketName       string
+	LocalBaseDir     string
 )
 
 type ApiResponse struct {
@@ -74,21 +79,41 @@ func RedirectV1Handler(logger *slog.Logger) gin.HandlerFunc {
 
 func ClientUploadHandler(logger *slog.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
+
+		pre := util.GenerateRandomLetters(5)
+		logger.Info("ClientUploadHandler", slog.String("pre", pre))
+
 		// 从 Header 获取文件名
 		fileName := c.GetHeader(HeaderFileName)
-		if fileName == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Missing X-File-Name header"})
+		sourceType := c.GetHeader(DataSourceType)
+		if fileName == "" || sourceType == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Missing X-File-Name or X-Data-Source-Type header"})
 			return
 		}
+
+		logger.Info("ClientUploadHandler", slog.String("pre", pre),
+			slog.String("fileName", fileName), slog.String("sourceType", sourceType))
 
 		localFilePath := LocalBaseDir + fileName
 		ctx := context.Background()
 
+		if sourceType == "cloud" {
+			err := download.DownloadFromGCSbyClient(ctx, localFilePath, BucketNameSource,
+				fileName, CredFileSource, pre, logger)
+			if err != nil {
+				logger.Error("DownloadFromGCSbyClient failed", slog.String("pre", pre), slog.Any("err", err))
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+		}
+
 		if err := upload.UploadToGCSbyClient(ctx, localFilePath, BucketName, fileName, CredFile, logger); err != nil {
-			logger.Error("Upload failed: %v", err)
+			logger.Error("UploadToGCSbyClient failed", slog.String("pre", pre), slog.Any("err", err))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+
+		logger.Info("ClientUploadHandler success", slog.String("pre", pre))
 
 		c.JSON(http.StatusOK, gin.H{
 			"message":    "upload success",

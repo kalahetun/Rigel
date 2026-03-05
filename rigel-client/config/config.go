@@ -12,10 +12,13 @@ var Config_ *Config
 
 // Config 一级结构体，对应yaml平级配置
 type Config struct {
-	Port         string `yaml:"port"`           // 服务端口
-	ControlHost  string `yaml:"control_host"`   // 控制接口地址
-	CredFile     string `yaml:"cred_file"`      // GCP / 服务凭证文件
-	LocalBaseDir string `yaml:"local_base_dir"` // 本地上传目录
+	Port             string `yaml:"port"`           // 服务端口
+	ControlHost      string `yaml:"control_host"`   // 控制接口地址
+	CredFileSource   string `yaml:"cred_file"`      // GCP / 服务凭证文件
+	BucketNameSource string `yaml:"local_base_dir"` // 本地上传目录
+	CredFile         string `yaml:"cred_file"`      // GCP / 服务凭证文件
+	BucketName       string `yaml:"bucket_name"`
+	LocalBaseDir     string `yaml:"local_base_dir"` // 本地上传目录
 }
 
 // ReadYamlConfig 读取同层级的config.yaml配置

@@ -37,8 +37,13 @@ func main() {
 		logger.Error("read config error", slog.String("pre", pre), slog.Any("error", err))
 		return
 	}
+
+	api.CredFileSource = config.Config_.CredFileSource
+	api.BucketNameSource = config.Config_.BucketNameSource
 	api.CredFile = config.Config_.CredFile
+	api.BucketName = config.Config_.BucketName
 	api.LocalBaseDir = config.Config_.LocalBaseDir
+
 	logger.Info("config data", slog.String("pre", pre), slog.Any("data", config.Config_))
 
 	router := gin.New() // 不用 Default，这样我们自定义中间件
@@ -52,15 +57,14 @@ func main() {
 	router.POST("/gcp/upload/client", api.ClientUploadHandler(logger))
 
 	// ========== 新增 HTTPS 直传 ==========
-	router.POST("/gcp/upload/direct", api.DirectUploadHandler(logger))
-
-	router.POST("/gcp/upload/redirect/v1", api.RedirectV1Handler(logger))
+	//router.POST("/gcp/upload/direct", api.DirectUploadHandler(logger))
+	//
+	//router.POST("/gcp/upload/redirect/v1", api.RedirectV1Handler(logger))
 
 	router.POST("/gcp/upload/redirect/v2", api.RedirectV2Handler(logger))
 
 	port := "8080"
-	logger.Info("Starting server on port", slog.String("pre", pre),
-		slog.String("port", port))
+	logger.Info("Starting server on port", slog.String("pre", pre), slog.String("port", port))
 	router.Run(":" + port)
 }
 
