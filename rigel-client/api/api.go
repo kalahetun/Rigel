@@ -99,7 +99,7 @@ func ClientUploadHandler(logger *slog.Logger) gin.HandlerFunc {
 
 		if sourceType == "cloud" {
 			err := download.DownloadFromGCSbyClient(ctx, localFilePath, BucketNameSource,
-				fileName, CredFileSource, pre, logger)
+				fileName, CredFileSource, 0, 0, pre, logger)
 			if err != nil {
 				logger.Error("DownloadFromGCSbyClient failed", slog.String("pre", pre), slog.Any("err", err))
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
