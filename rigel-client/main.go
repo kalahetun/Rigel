@@ -12,7 +12,8 @@ import (
 
 //todo 1、支持断点续传
 //todo 2、支持记录io时间 传输时间
-//todo 3、支持从storage读取文件
+//todo 3、支持从storage读取(分片)文件
+//todo 4、支持用scp从local disk读取(分片)文件
 
 func main() {
 

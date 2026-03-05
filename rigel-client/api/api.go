@@ -225,8 +225,8 @@ func Upload(logger *slog.Logger) gin.HandlerFunc {
 			"h-fileName", fileName, slog.String("", string(b)))
 
 		//构建请求转发给B
-		bReq, err := http.NewRequest("POST", config.Config_.ControlHost+RoutingURL,
-			bytes.NewReader(bodyBytes))
+		bReq, err := http.NewRequest("POST",
+			config.Config_.ControlHost+RoutingURL, bytes.NewReader(bodyBytes))
 		if err != nil {
 			logger.Error("http NewRequest failed", slog.String("pre", pre),
 				slog.String("err", err.Error()))
