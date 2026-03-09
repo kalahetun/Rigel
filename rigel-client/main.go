@@ -57,6 +57,9 @@ func main() {
 	// 上传接口
 	router.POST("/gcp/upload/client", api.ClientUploadHandler(logger))
 
+	// ========== 新增文件接收上传接口 ==========
+	router.POST("/api/v1/upload-file", api.FileReceiveHandler(logger))
+
 	// ========== 新增 HTTPS 直传 ==========
 	//router.POST("/gcp/upload/direct", api.DirectUploadHandler(logger))
 	//
