@@ -41,7 +41,7 @@ func main() {
 	api.RemoteDiskDir = config.Config_.SSH.RemoteDir
 	api.RemoteDiskSSHConfig = util.SSHConfig{
 		User:     config.Config_.SSH.User,
-		Host:     config.Config_.SSH.Host,
+		Host:     config.Config_.SSH.Host + ":" + config.Config_.SSH.SSHPort,
 		Password: config.Config_.SSH.Password,
 	}
 
