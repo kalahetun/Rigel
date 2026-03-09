@@ -39,7 +39,11 @@
     },
 
     "aws": {
-      "Any->Any": 0.02
+      "NorthAmerica->Any": 0.09,
+      "Europe->Any": 0.09,
+      "Asia->Any": 0.114,
+      "Oceania->Any": 0.114,
+      "Any->Any": 0.10
     },
 
     "azure": {
@@ -48,11 +52,7 @@
     },
 
     "vultr": {
-      "NorthAmerica->Any": 0.01,
-      "Europe->Any": 0.01,
-      "Asia->Any": 0.025,
-      "Oceania->Any": 0.05,
-      "Any->Any": 0.025
+      "Any->Any": 0.01
     },
 
     "digitalocean": {
