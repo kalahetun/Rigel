@@ -14,10 +14,13 @@ import (
 )
 
 // UploadToGCS 上传本地文件到指定 GCS bucket
-func UploadToGCSbyClient(ctx context.Context, localFilePath, bucketName, objectName, credFile string,
+func UploadToGCSbyClient(ctx context.Context, LocalBaseDir, bucketName, objectName, credFile string,
 	logger *slog.Logger) error {
 
-	logger.Info("Uploading file to GCS bucket using client library", localFilePath, objectName)
+	logger.Info("Uploading file to GCS bucket using client library", LocalBaseDir, objectName)
+
+	localFilePath := LocalBaseDir + objectName
+
 	// 使用环境变量配置凭证
 	os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", credFile)
 

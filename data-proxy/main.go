@@ -42,12 +42,6 @@ func (c *countingReader) Read(p []byte) (int, error) {
 	return c.r.Read(p)
 }
 
-//func (c *countingReader) Read(p []byte) (int, error) {
-//	n, err := c.r.Read(p)
-//	atomic.AddInt64(&bytesTransferred, int64(n))
-//	return n, err
-//}
-
 // 拆分 x-hops 字符串
 func splitHops(hopsStr string) []string {
 	if hopsStr == "" {
@@ -116,7 +110,6 @@ func handler(logger *slog.Logger) http.HandlerFunc {
 		logger.Info("Received request", slog.String("pre", pre),
 			"hops", hops, "current_index", currentIndex,
 			"method", r.Method, "path", r.URL.Path,
-			//"active_transfers", atomic.LoadInt64(&virtual_queue.ActiveTransfers),
 		)
 
 		if hopsLen == 0 {

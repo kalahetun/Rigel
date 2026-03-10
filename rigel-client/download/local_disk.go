@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"rigel-client/util"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -49,7 +48,7 @@ func SSHDDReadRangeChunk(ctx context.Context, cfg util.SSHConfig, remoteDir, fil
 	var actualStart, actualLength int64
 	if length <= 0 {
 		// 获取远端文件总大小
-		fileSize, err := getRemoteFileSize(ctx, cfg, remoteDir, filename, pre, logger)
+		fileSize, err := util.GetRemoteFileSize(ctx, cfg, remoteDir, filename, pre, logger)
 		if err != nil {
 			return "", fmt.Errorf("获取文件大小失败：%w", err)
 		}
@@ -76,14 +75,14 @@ func SSHDDReadRangeChunk(ctx context.Context, cfg util.SSHConfig, remoteDir, fil
 
 	// 3. 自动选择最优块大小（如果bs为空）
 	if strings.TrimSpace(bs) == "" {
-		bs = autoSelectBs(actualLength)
+		bs = util.AutoSelectBs(actualLength)
 		logger.Info("自动选择块大小",
 			slog.String("pre", pre),
 			slog.String("块大小", bs))
 	}
 
 	// 4. 解析块大小为字节数
-	bsBytes, err := parseBsToBytes(bs)
+	bsBytes, err := util.ParseBsToBytes(bs)
 	if err != nil {
 		return "", fmt.Errorf("解析块大小失败：%w", err)
 	}
@@ -212,7 +211,7 @@ func SSHDDReadRangeConcurrent(ctx context.Context, cfg util.SSHConfig, remoteDir
 	)
 
 	// 获取远端文件总大小
-	totalFileSize, err = getRemoteFileSize(ctx, cfg, remoteDir, filename, pre, logger)
+	totalFileSize, err = util.GetRemoteFileSize(ctx, cfg, remoteDir, filename, pre, logger)
 	if err != nil {
 		return "", fmt.Errorf("获取远端文件大小失败：%w", err)
 	}
@@ -330,11 +329,11 @@ func SSHDDReadRangeConcurrent(ctx context.Context, cfg util.SSHConfig, remoteDir
 			// 自动选择块大小（复用原有逻辑）
 			chunkBs := bs
 			if strings.TrimSpace(chunkBs) == "" {
-				chunkBs = autoSelectBs(chunkLength)
+				chunkBs = util.AutoSelectBs(chunkLength)
 			}
 
 			// 解析块大小为字节数（用于计算dd的skip和count）
-			bsBytes, err := parseBsToBytes(chunkBs)
+			bsBytes, err := util.ParseBsToBytes(chunkBs)
 			if err != nil {
 				return fmt.Errorf("分片%d：解析块大小失败：%w", chunkIndex, err)
 			}
@@ -444,146 +443,6 @@ func SSHDDReadRangeConcurrent(ctx context.Context, cfg util.SSHConfig, remoteDir
 	}
 
 	return localFileName, nil
-}
-
-// ------------------- 内部工具函数（依赖） -------------------
-
-// getRemoteFileSize 获取远端文件总大小（字节）
-func getRemoteFileSize(ctx context.Context, cfg util.SSHConfig, remoteDir, filename string, pre string, logger *slog.Logger) (int64, error) {
-	remoteFile := filepath.Join(remoteDir, filename)
-
-	// 初始化SSH配置
-	sshConfig := &ssh.ClientConfig{
-		User:            cfg.User,
-		Auth:            []ssh.AuthMethod{ssh.Password(cfg.Password)},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-		Timeout:         30 * time.Second,
-	}
-
-	// 建立SSH连接
-	client, err := ssh.Dial("tcp", cfg.Host, sshConfig)
-	if err != nil {
-		return 0, fmt.Errorf("SSH连接失败：%w", err)
-	}
-	defer client.Close()
-
-	// 创建会话
-	session, err := client.NewSession()
-	if err != nil {
-		return 0, fmt.Errorf("创建SSH会话失败：%w", err)
-	}
-	defer session.Close()
-
-	// 兼容Linux/macOS的stat命令
-	cmd := fmt.Sprintf("stat -c %%s '%s'", remoteFile)
-	output, err := session.CombinedOutput(cmd)
-	if err != nil {
-		cmd = fmt.Sprintf("stat -f %%z '%s'", remoteFile)
-		output, err = session.CombinedOutput(cmd)
-		if err != nil {
-			return 0, fmt.Errorf("执行stat命令失败：%w，输出：%s", err, string(output))
-		}
-	}
-
-	// 解析文件大小
-	sizeStr := strings.TrimSpace(string(output))
-	fileSize, err := strconv.ParseInt(sizeStr, 10, 64)
-	if err != nil {
-		return 0, fmt.Errorf("解析文件大小失败：%w，原始输出：%s", err, sizeStr)
-	}
-
-	return fileSize, nil
-}
-
-// autoSelectBs 根据读取的总大小自动选择最优块大小
-func autoSelectBs(totalSize int64) string {
-	const (
-		_100MB = 100 * 1024 * 1024
-		_1GB   = 1024 * 1024 * 1024
-		_10GB  = 10 * _1GB
-		_100GB = 100 * _1GB
-	)
-
-	switch {
-	case totalSize < _100MB:
-		return "1M"
-	case totalSize < _1GB:
-		return "64M"
-	case totalSize < _10GB:
-		return "512M"
-	case totalSize < _100GB:
-		return "1G"
-	default:
-		return "2G"
-	}
-}
-
-// parseBsToBytes 解析bs字符串为字节数（如1G→1073741824）
-func parseBsToBytes(bs string) (int64, error) {
-	bs = strings.TrimSpace(strings.ToLower(bs))
-	if bs == "" {
-		return 0, fmt.Errorf("bs不能为空")
-	}
-
-	var numStr, unit string
-	for i, c := range bs {
-		if (c >= '0' && c <= '9') || c == '.' {
-			numStr += string(c)
-		} else {
-			unit = bs[i:]
-			break
-		}
-	}
-
-	if numStr == "" {
-		return 0, fmt.Errorf("无法解析bs的数字部分：%s", bs)
-	}
-
-	num, err := strconv.ParseFloat(numStr, 64)
-	if err != nil {
-		return 0, fmt.Errorf("解析bs数字失败：%w，输入：%s", err, numStr)
-	}
-
-	var bytes float64
-	switch unit {
-	case "k", "kb":
-		bytes = num * 1024
-	case "m", "mb":
-		bytes = num * 1024 * 1024
-	case "g", "gb":
-		bytes = num * 1024 * 1024 * 1024
-	case "t", "tb":
-		bytes = num * 1024 * 1024 * 1024 * 1024
-	default:
-		bytes = num // 无单位则为字节
-	}
-
-	return int64(bytes), nil
-}
-
-// buildLocalFileName 构造本地文件名
-func buildLocalFileName(filename string, start, length int64, split bool) string {
-
-	if !split {
-		return filename
-	}
-
-	basename := filename
-	ext := ""
-	if idx := strings.LastIndex(filename, "."); idx != -1 {
-		basename = filename[:idx]
-		ext = filename[idx:]
-	}
-
-	// 全量读取（length≤0）
-	//if length <= 0 {
-	//	return fmt.Sprintf("%s_full%s", basename, ext)
-	//}
-
-	// 指定范围读取
-	start_ := fmt.Sprintf("%.1f", start)
-	end_ := fmt.Sprintf("%.1f", start+length)
-	return fmt.Sprintf("%s_%s-%s%s", basename, start_, end_, ext)
 }
 
 // ------------------- 测试调用示例 -------------------

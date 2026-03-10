@@ -8,6 +8,8 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
+	"rigel-client/util"
 	"sync"
 	"time"
 )
@@ -17,18 +19,24 @@ import (
 //
 //	start: 读取起始字节（从0开始，完整下载传0）
 //	length: 读取字节长度（完整下载传-1，分片读取传具体值如10*1024*1024*1024）
-func DownloadFromGCSbyClient(ctx context.Context, localFilePath, bucketName, objectName, credFile string,
+func DownloadFromGCSbyClient(ctx context.Context, LocalBaseDir, bucketName, objectName, credFile string,
 	start, length int64, pre string, logger *slog.Logger) error {
+
+	split := false
 
 	// 日志区分完整下载/分片读取
 	if length <= 0 {
-		logger.Info("Downloading full file from GCS bucket using client library", slog.String("pre", pre),
-			slog.String("objectName", objectName), slog.String("localFilePath", localFilePath))
+		logger.Info("Downloading full file from GCS current bucket using client library", slog.String("pre", pre),
+			slog.String("objectName", objectName), slog.String("LocalBaseDir", LocalBaseDir))
 	} else {
-		logger.Info("Downloading file range from GCS bucket using client library", slog.String("pre", pre),
-			slog.String("objectName", objectName), slog.String("localFilePath", localFilePath),
+		logger.Info("Downloading file range from GCS current bucket using client library", slog.String("pre", pre),
+			slog.String("objectName", objectName), slog.String("LocalBaseDir", LocalBaseDir),
 			slog.Int64("start_byte", start), slog.Int64("length_byte", length))
+		split = true
 	}
+
+	objectName = buildLocalFileName(objectName, start, length, split)
+	localFilePath := filepath.Join(LocalBaseDir, objectName)
 
 	// 设置凭证
 	os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", credFile)
@@ -87,7 +95,7 @@ func DownloadFromGCSbyClient(ctx context.Context, localFilePath, bucketName, obj
 }
 
 // 默认分片大小（可根据网络/机器调整）
-const defaultChunkSize = 100 * 1024 * 1024 // 100MB
+//const defaultChunkSize = 100 * 1024 * 1024 // 100MB
 
 // DownloadFromGCSConcurrent 并发从 GCS 下载文件（支持指定范围 + 范围内分片）
 // 参数说明：
@@ -102,16 +110,34 @@ const defaultChunkSize = 100 * 1024 * 1024 // 100MB
 //	concurrency: 并发数（传0则使用默认8）
 //	pre: 日志前缀
 //	logger: 日志对象
-func DownloadFromGCSConcurrent(ctx context.Context, localFilePath, bucketName, objectName, credFile string,
+func DownloadFromGCSConcurrent(ctx context.Context, LocalBaseDir, bucketName, objectName, credFile string,
 	start, length, chunkSize int64, concurrency int, pre string, logger *slog.Logger) error {
 
+	logger.Info("Downloading file from GCS bucket using concurrent chunks", slog.String("pre", pre),
+		slog.String("objectName", objectName), slog.String("LocalBaseDir", LocalBaseDir))
+
 	// 初始化默认值
-	if chunkSize <= 0 {
-		chunkSize = defaultChunkSize
-	}
+	chunkSize = util.AutoSelectChunkSize(length)
+
 	if concurrency <= 0 {
 		concurrency = 8
 	}
+
+	split := false
+
+	// 日志区分完整下载/分片读取
+	if length <= 0 {
+		logger.Info("Downloading full file from GCS bucket using client library", slog.String("pre", pre),
+			slog.String("objectName", objectName), slog.String("LocalBaseDir", LocalBaseDir))
+	} else {
+		logger.Info("Downloading file range from GCS bucket using client library", slog.String("pre", pre),
+			slog.String("objectName", objectName), slog.String("LocalBaseDir", LocalBaseDir),
+			slog.Int64("start_byte", start), slog.Int64("length_byte", length))
+		split = true
+	}
+
+	objectName = buildLocalFileName(objectName, start, length, split)
+	localFilePath := filepath.Join(LocalBaseDir, objectName)
 
 	// 设置 GCS 凭证
 	os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", credFile)

@@ -44,6 +44,7 @@ func main() {
 		Host:     config.Config_.SSH.Host + ":" + config.Config_.SSH.SSHPort,
 		Password: config.Config_.SSH.Password,
 	}
+	api.FileSys = config.Config_.FileSys
 
 	logger.Info("config data", slog.String("pre", pre), slog.Any("data", config.Config_))
 
