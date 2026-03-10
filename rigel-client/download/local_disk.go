@@ -193,9 +193,8 @@ func SSHDDReadRangeConcurrent(ctx context.Context, cfg util.SSHConfig, remoteDir
 	start, length, chunkSize int64, concurrency int, bs string, pre string, logger *slog.Logger) (string, error) {
 
 	// 1. 初始化默认值
-	if chunkSize <= 0 {
-		chunkSize = defaultChunkSize // 复用GCS的默认分片大小（100MB）
-	}
+	chunkSize = util.AutoSelectChunkSize(length)
+
 	if concurrency <= 0 {
 		concurrency = 8
 	}
