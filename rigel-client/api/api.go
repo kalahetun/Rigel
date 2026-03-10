@@ -19,6 +19,8 @@ const (
 	DataSourceType = "X-Data-Source-Type"
 	DataDestType   = "X-Data-Dest-Type"
 	RoutingURL     = "/api/v1/routing"
+	GCPCLoud       = "gcp-cloud"
+	RemoteDisk     = "remote-disk"
 )
 
 var (
@@ -106,15 +108,16 @@ func V1ClientUploadHandler(logger *slog.Logger) gin.HandlerFunc {
 
 		ctx := context.Background()
 
-		if sourceType == "gcp-cloud" {
-			err := download.DownloadFromGCSbyClient(ctx, LocalBaseDir, BucketNameSource,
+		if sourceType == GCPCLoud {
+			localFileName, err := download.DownloadFromGCSbyClient(ctx, LocalBaseDir, BucketNameSource,
 				fileName, CredFileSource, 0, 0, pre, logger)
 			if err != nil {
 				logger.Error("DownloadFromGCSbyClient failed", slog.String("pre", pre), slog.Any("err", err))
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
 			}
-		} else if sourceType == "remote-disk" {
+			fileName = localFileName
+		} else if sourceType == RemoteDisk {
 			localFileName, err := download.SSHDDReadRangeChunk(ctx, RemoteDiskSSHConfig, RemoteDiskDir, fileName,
 				LocalBaseDir, 0, 0, "", pre, logger)
 			if err != nil {
@@ -125,13 +128,104 @@ func V1ClientUploadHandler(logger *slog.Logger) gin.HandlerFunc {
 			fileName = localFileName
 		}
 
-		if destType == "gcp-cloud" {
+		logger.Info("download objectName success", slog.String("pre", pre),
+			slog.String("objectName", fileName))
+
+		if destType == GCPCLoud {
 			if err := upload.UploadToGCSbyClient(ctx, LocalBaseDir, BucketName, fileName, CredFile, logger); err != nil {
 				logger.Error("UploadToGCSbyClient failed", slog.String("pre", pre), slog.Any("err", err))
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
 			}
-		} else if destType == "remote-disk" {
+		} else if destType == RemoteDisk {
+			req := upload.ChunkUploadRequest{
+				ServerURL:     FileSys,
+				FinalFileName: fileName,
+				ChunkName:     fileName,
+				LocalBaseDir:  LocalBaseDir,
+			}
+			if _, err := upload.UploadFileChunk(req, pre, logger); err != nil {
+				logger.Error("ChunkUploadHandler failed", slog.String("pre", pre), slog.Any("err", err))
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+		}
+
+		logger.Info("ClientUploadHandler success", slog.String("pre", pre))
+
+		c.JSON(http.StatusOK, gin.H{
+			"message":    "upload success",
+			"file_name":  fileName,
+			"bucket":     BucketName,
+			"objectName": fileName,
+		})
+	}
+}
+
+func V2ClientUploadHandler(logger *slog.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+
+		pre := util.GenerateRandomLetters(5)
+		logger.Info("ClientUploadHandler", slog.String("pre", pre))
+
+		// 从 Header 获取文件名
+		fileName := c.GetHeader(HeaderFileName)
+		sourceType := c.GetHeader(DataSourceType)
+		destType := c.GetHeader(DataDestType)
+
+		// 校验文件名 Header
+		if fileName == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Missing X-File-Name header"})
+			return
+		}
+
+		// 校验数据源类型 Header
+		if sourceType == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Missing Data-Source-Type header"})
+			return
+		}
+
+		// 校验数据目标类型 Header
+		if destType == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Missing Data-Dest-Type header"})
+			return
+		}
+
+		logger.Info("ClientUploadHandler", slog.String("pre", pre), slog.String("fileName", fileName),
+			slog.String("sourceType", sourceType), slog.String("destType", destType))
+
+		ctx := context.Background()
+
+		if sourceType == GCPCLoud {
+			localFileName, err := download.DownloadFromGCSbyClient(ctx, LocalBaseDir, BucketNameSource,
+				fileName, CredFileSource, 0, 0, pre, logger)
+			if err != nil {
+				logger.Error("DownloadFromGCSbyClient failed", slog.String("pre", pre), slog.Any("err", err))
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			fileName = localFileName
+		} else if sourceType == RemoteDisk {
+			localFileName, err := download.SSHDDReadRangeChunk(ctx, RemoteDiskSSHConfig, RemoteDiskDir, fileName,
+				LocalBaseDir, 0, 0, "", pre, logger)
+			if err != nil {
+				logger.Error("SSHDDReadRangeChunk failed", slog.String("pre", pre), slog.Any("err", err))
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			fileName = localFileName
+		}
+
+		logger.Info("download objectName success", slog.String("pre", pre),
+			slog.String("objectName", fileName))
+
+		if destType == GCPCLoud {
+			if err := upload.UploadToGCSbyClient(ctx, LocalBaseDir, BucketName, fileName, CredFile, logger); err != nil {
+				logger.Error("UploadToGCSbyClient failed", slog.String("pre", pre), slog.Any("err", err))
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+		} else if destType == RemoteDisk {
 			req := upload.ChunkUploadRequest{
 				ServerURL:     FileSys,
 				FinalFileName: fileName,
@@ -362,13 +456,14 @@ func V1Upload(logger *slog.Logger) gin.HandlerFunc {
 
 		//download
 		if sourceType == "gcp-cloud" {
-			err := download.DownloadFromGCSbyClient(ctx, LocalBaseDir, BucketNameSource,
+			localFileName, err := download.DownloadFromGCSbyClient(ctx, LocalBaseDir, BucketNameSource,
 				fileName, CredFileSource, 0, 0, pre, logger)
 			if err != nil {
 				logger.Error("DownloadFromGCSbyClient failed", slog.String("pre", pre), slog.Any("err", err))
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
 			}
+			fileName = localFileName
 		} else if sourceType == "remote-disk" {
 			localFileName, err := download.SSHDDReadRangeChunk(ctx, RemoteDiskSSHConfig, RemoteDiskDir, fileName,
 				LocalBaseDir, 0, 0, "", pre, logger)
@@ -379,6 +474,9 @@ func V1Upload(logger *slog.Logger) gin.HandlerFunc {
 			}
 			fileName = localFileName
 		}
+
+		logger.Info("download objectName success", slog.String("pre", pre),
+			slog.String("objectName", fileName))
 
 		//local disk
 		localFilePath := LocalBaseDir + fileName

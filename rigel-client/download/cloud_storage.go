@@ -20,7 +20,7 @@ import (
 //	start: 读取起始字节（从0开始，完整下载传0）
 //	length: 读取字节长度（完整下载传-1，分片读取传具体值如10*1024*1024*1024）
 func DownloadFromGCSbyClient(ctx context.Context, LocalBaseDir, bucketName, objectName, credFile string,
-	start, length int64, pre string, logger *slog.Logger) error {
+	start, length int64, pre string, logger *slog.Logger) (string, error) {
 
 	split := false
 
@@ -44,7 +44,7 @@ func DownloadFromGCSbyClient(ctx context.Context, LocalBaseDir, bucketName, obje
 	// 创建客户端
 	client, err := storage.NewClient(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to create storage client: %w", err)
+		return objectName, fmt.Errorf("failed to create storage client: %w", err)
 	}
 	defer client.Close()
 
@@ -65,20 +65,20 @@ func DownloadFromGCSbyClient(ctx context.Context, LocalBaseDir, bucketName, obje
 		rc, err = obj.NewRangeReader(ctx, start, length)
 	}
 	if err != nil {
-		return fmt.Errorf("failed to create object reader: %w", err)
+		return objectName, fmt.Errorf("failed to create object reader: %w", err)
 	}
 	defer rc.Close()
 
 	// 创建本地文件（分片读取建议文件名带范围，如 bigfile_0_10GB.bin）
 	f, err := os.Create(localFilePath)
 	if err != nil {
-		return fmt.Errorf("failed to create local file: %w", err)
+		return objectName, fmt.Errorf("failed to create local file: %w", err)
 	}
 	defer f.Close()
 
 	// 写入本地文件
 	if _, err := io.Copy(f, rc); err != nil {
-		return fmt.Errorf("failed to copy object to local file: %w", err)
+		return objectName, fmt.Errorf("failed to copy object to local file: %w", err)
 	}
 
 	// 日志反馈结果
@@ -91,7 +91,7 @@ func DownloadFromGCSbyClient(ctx context.Context, LocalBaseDir, bucketName, obje
 			slog.Int64("start_byte", start), slog.Int64("length_byte", length))
 	}
 
-	return nil
+	return objectName, nil
 }
 
 // 默认分片大小（可根据网络/机器调整）
@@ -111,7 +111,7 @@ func DownloadFromGCSbyClient(ctx context.Context, LocalBaseDir, bucketName, obje
 //	pre: 日志前缀
 //	logger: 日志对象
 func DownloadFromGCSConcurrent(ctx context.Context, LocalBaseDir, bucketName, objectName, credFile string,
-	start, length, chunkSize int64, concurrency int, pre string, logger *slog.Logger) error {
+	start, length, chunkSize int64, concurrency int, pre string, logger *slog.Logger) (string, error) {
 
 	logger.Info("Downloading file from GCS bucket using concurrent chunks", slog.String("pre", pre),
 		slog.String("objectName", objectName), slog.String("LocalBaseDir", LocalBaseDir))
@@ -145,7 +145,7 @@ func DownloadFromGCSConcurrent(ctx context.Context, LocalBaseDir, bucketName, ob
 	// 创建 GCS 客户端
 	client, err := storage.NewClient(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to create storage client: %w", err)
+		return objectName, fmt.Errorf("failed to create storage client: %w", err)
 	}
 	defer client.Close()
 
@@ -154,7 +154,7 @@ func DownloadFromGCSConcurrent(ctx context.Context, LocalBaseDir, bucketName, ob
 	obj := bucket.Object(objectName)
 	attrs, err := obj.Attrs(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get object attributes: %w", err)
+		return objectName, fmt.Errorf("failed to get object attributes: %w", err)
 	}
 	fileTotalSize := attrs.Size
 
@@ -192,7 +192,8 @@ func DownloadFromGCSConcurrent(ctx context.Context, LocalBaseDir, bucketName, ob
 		}
 		// 防止起始位置超出文件总大小
 		if downloadStart >= fileTotalSize {
-			return fmt.Errorf("start position %d exceeds file total size %d", downloadStart, fileTotalSize)
+			return objectName,
+				fmt.Errorf("start position %d exceeds file total size %d", downloadStart, fileTotalSize)
 		}
 
 		downloadSize = downloadEnd - downloadStart
@@ -219,13 +220,13 @@ func DownloadFromGCSConcurrent(ctx context.Context, LocalBaseDir, bucketName, ob
 	// 创建本地文件（预分配空间）
 	localFile, err := os.Create(localFilePath)
 	if err != nil {
-		return fmt.Errorf("failed to create local file: %w", err)
+		return objectName, fmt.Errorf("failed to create local file: %w", err)
 	}
 	defer localFile.Close()
 
 	// 预分配文件空间（如果是完整下载，分配全量大小；如果是范围下载，分配范围大小）
 	if err := localFile.Truncate(downloadSize); err != nil {
-		return fmt.Errorf("failed to truncate local file: %w", err)
+		return objectName, fmt.Errorf("failed to truncate local file: %w", err)
 	}
 
 	// 计算在指定范围内的总分片数
@@ -311,7 +312,7 @@ func DownloadFromGCSConcurrent(ctx context.Context, LocalBaseDir, bucketName, ob
 
 	// 等待所有 goroutine 完成
 	if err := eg.Wait(); err != nil {
-		return fmt.Errorf("concurrent download failed: %w", err)
+		return objectName, fmt.Errorf("concurrent download failed: %w", err)
 	}
 
 	// 日志反馈结果
@@ -331,5 +332,5 @@ func DownloadFromGCSConcurrent(ctx context.Context, LocalBaseDir, bucketName, ob
 			slog.Int64("total_size", downloadSize))
 	}
 
-	return nil
+	return objectName, nil
 }

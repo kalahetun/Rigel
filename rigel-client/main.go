@@ -57,6 +57,7 @@ func main() {
 
 	// 上传接口
 	router.POST("/api/v1/client/upload", api.V1ClientUploadHandler(logger))
+	router.POST("/api/v2/client/upload", api.V2ClientUploadHandler(logger))
 
 	// ========== 新增文件接收上传接口 ==========
 	router.POST("/api/v1/chunk/upload", api.ChunkUploadHandler(logger)) // 分片上传（自定义名）
