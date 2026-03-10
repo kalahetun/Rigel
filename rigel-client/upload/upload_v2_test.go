@@ -5,11 +5,11 @@ import (
 	"golang.org/x/time/rate"
 	"io/ioutil"
 	"os"
+	"rigel-client/upload/split"
 	"testing"
 	"time"
 
 	"log/slog"
-	"rigel-client/split_compose"
 	"rigel-client/util"
 )
 
@@ -18,13 +18,13 @@ import (
 // =======================
 func mockUploadChunk(task ChunkTask, hops string, logger *slog.Logger) error {
 	chunk_, _ := task.s.Get(task.Index)
-	chunk := chunk_.(*split_compose.ChunkState)
+	chunk := chunk_.(*split.ChunkState)
 
 	// 模拟上传耗时
 	time.Sleep(5 * time.Millisecond)
 
 	// 上传成功，Acked = 2
-	task.s.Set(task.Index, &split_compose.ChunkState{
+	task.s.Set(task.Index, &split.ChunkState{
 		Index:      chunk.Index,
 		FileName:   chunk.FileName,
 		ObjectName: chunk.ObjectName,
@@ -51,7 +51,7 @@ func TestSplitFile(t *testing.T) {
 	tmpFile.Close()
 
 	chunks := util.NewSafeMap()
-	err = split_compose.SplitFile(tmpFile.Name(), "testfile", chunks, "", nil)
+	err = split.SplitFile(tmpFile.Name(), "testfile", chunks, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,8 +67,8 @@ func TestSplitFile(t *testing.T) {
 func TestCollectExpiredChunks(t *testing.T) {
 	chunks := util.NewSafeMap()
 	now := time.Now()
-	chunks.Set("1", &split_compose.ChunkState{Index: "1", Acked: 1, LastSend: now.Add(-time.Minute)})
-	chunks.Set("2", &split_compose.ChunkState{Index: "2", Acked: 2, LastSend: now})
+	chunks.Set("1", &split.ChunkState{Index: "1", Acked: 1, LastSend: now.Add(-time.Minute)})
+	chunks.Set("2", &split.ChunkState{Index: "2", Acked: 2, LastSend: now})
 
 	expired, finished, unfinished := CollectExpiredChunks(chunks, 10*time.Second, "", nil)
 	if len(expired) != 1 {
@@ -106,7 +106,7 @@ func TestChunkTimeoutAndEventLoop(t *testing.T) {
 
 	// 拆分文件
 	chunks := util.NewSafeMap()
-	err = split_compose.SplitFile(uploadInfo.LocalFilePath, uploadInfo.FileName, chunks, "", logger)
+	err = split.SplitFile(uploadInfo.LocalFilePath, uploadInfo.FileName, chunks, "", logger)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +139,7 @@ func TestChunkTimeoutAndEventLoop(t *testing.T) {
 	select {
 	case <-done:
 		for _, v := range chunks.GetAll() {
-			c := v.(*split_compose.ChunkState)
+			c := v.(*split.ChunkState)
 			if c.Acked != 2 {
 				t.Errorf("chunk %s not fully uploaded, Acked=%d", c.Index, c.Acked)
 			}

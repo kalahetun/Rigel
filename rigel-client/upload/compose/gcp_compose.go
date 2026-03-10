@@ -1,4 +1,4 @@
-package split_compose
+package compose
 
 import (
 	"cloud.google.com/go/storage"

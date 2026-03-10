@@ -41,9 +41,9 @@
     "aws": {
       "NorthAmerica->Any": 0.09,
       "Europe->Any": 0.09,
-      "Asia->Any": 0.114,
-      "Oceania->Any": 0.114,
-      "Any->Any": 0.10
+      "Asia->Any": 0.12,
+      "Oceania->Any": 0.12,
+      "Any->Any": 0.15
     },
 
     "azure": {

@@ -1,4 +1,4 @@
-package split_compose
+package split
 
 import (
 	"fmt"

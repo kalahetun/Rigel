@@ -10,7 +10,8 @@ import (
 	"net/http"
 	"os"
 	"rigel-client/limit_rate"
-	"rigel-client/split_compose"
+	"rigel-client/upload/compose"
+	"rigel-client/upload/split"
 	"rigel-client/util"
 	"strings"
 	"time"
@@ -25,7 +26,7 @@ const (
 
 type ChunkEvent struct {
 	Type    ChunkEventType
-	Indexes map[string]*split_compose.ChunkState
+	Indexes map[string]*split.ChunkState
 }
 
 type ChunkTask struct {
@@ -72,7 +73,7 @@ func UploadToGCSbyReDirectHttpsV2(uploadInfo UploadFileInfo, routingInfo util.Ro
 
 	//获取分片
 	chunks := util.NewSafeMap()
-	_ = split_compose.SplitFile(localFilePath, fileName, chunks, pre, logger)
+	_ = split.SplitFile(localFilePath, fileName, chunks, pre, logger)
 
 	//启动定时重传 & check传输完毕
 	events := make(chan ChunkEvent, 100)
@@ -110,9 +111,9 @@ func CollectExpiredChunks(
 	expire time.Duration,
 	pre string,
 	logger *slog.Logger,
-) (expired map[string]*split_compose.ChunkState, finished, unfinished bool) {
+) (expired map[string]*split.ChunkState, finished, unfinished bool) {
 	now := time.Now()
-	expired = make(map[string]*split_compose.ChunkState)
+	expired = make(map[string]*split.ChunkState)
 	finished = true // 先假设都 ack 了
 
 	logger.Info("CollectExpiredChunks", slog.String("pre", pre),
@@ -120,7 +121,7 @@ func CollectExpiredChunks(
 	chunks_ := s.GetAll()
 
 	for _, v := range chunks_ {
-		v_, ok := v.(*split_compose.ChunkState)
+		v_, ok := v.(*split.ChunkState)
 		if !ok {
 			continue
 		}
@@ -210,7 +211,7 @@ func ChunkEventLoop(ctx context.Context, chunks *util.SafeMap, workerPool *Worke
 				logger.Info("传输完成", slog.String("pre", pre), "fileName", fileName)
 				chunks_ := chunks.GetAll()
 				for _, v := range chunks_ {
-					v_, ok := v.(*split_compose.ChunkState)
+					v_, ok := v.(*split.ChunkState)
 					if !ok {
 						continue
 					}
@@ -224,7 +225,7 @@ func ChunkEventLoop(ctx context.Context, chunks *util.SafeMap, workerPool *Worke
 						"fileName", fileName, "index", v_.Index, "ObjectName", v_.ObjectName)
 					parts = append(parts, v_.ObjectName)
 				}
-				err := split_compose.ComposeTree(ctx, bucketName, fileName, credFile, parts, pre, logger)
+				err := compose.ComposeTree(ctx, bucketName, fileName, credFile, parts, pre, logger)
 				if err != nil {
 					logger.Error("compose failed", slog.String("pre", pre), "fileName", fileName, "err", err)
 				}
@@ -302,7 +303,7 @@ func StartChunkSubmitLoop(
 	workerPool *WorkerPool,
 	uploadInfo UploadFileInfo,
 	resubmit bool,
-	resubmitIndexes map[string]*split_compose.ChunkState,
+	resubmitIndexes map[string]*split.ChunkState,
 	pre string,
 	logger *slog.Logger,
 ) {
@@ -313,7 +314,7 @@ func StartChunkSubmitLoop(
 
 		time.Sleep(200 * time.Millisecond)
 
-		v_, ok := v.(*split_compose.ChunkState)
+		v_, ok := v.(*split.ChunkState)
 		if !ok {
 			continue
 		}
@@ -380,7 +381,7 @@ func uploadChunk(task ChunkTask, hops string, rateLimiter *rate.Limiter, pre str
 	defer file.Close()
 
 	chunk_, _ := task.s.Get(task.Index)
-	chunk := chunk_.(*split_compose.ChunkState)
+	chunk := chunk_.(*split.ChunkState)
 
 	// 3. 读取 chunk 内容
 	section := io.NewSectionReader(file, chunk.Offset, chunk.Size)
@@ -418,7 +419,7 @@ func uploadChunk(task ChunkTask, hops string, rateLimiter *rate.Limiter, pre str
 		Timeout: 5 * time.Minute,
 	}
 
-	task.s.Set(task.Index, &split_compose.ChunkState{
+	task.s.Set(task.Index, &split.ChunkState{
 		Index:      chunk.Index,
 		FileName:   chunk.FileName,
 		ObjectName: chunk.ObjectName,
@@ -443,8 +444,8 @@ func uploadChunk(task ChunkTask, hops string, rateLimiter *rate.Limiter, pre str
 
 	// 6. 成功后更新状态（重新 set，不 mutate）
 	chunk_, _ = task.s.Get(task.Index)
-	chunk = chunk_.(*split_compose.ChunkState)
-	task.s.Set(task.Index, &split_compose.ChunkState{
+	chunk = chunk_.(*split.ChunkState)
+	task.s.Set(task.Index, &split.ChunkState{
 		Index:      chunk.Index,
 		FileName:   chunk.FileName,
 		ObjectName: chunk.ObjectName,
