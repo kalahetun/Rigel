@@ -9,13 +9,14 @@ import (
 )
 
 type ChunkState struct {
-	Index      string
-	FileName   string
-	ObjectName string
-	Offset     int64
-	Size       int64
-	LastSend   time.Time
-	Acked      int
+	Index       string
+	FileName    string
+	NewFileName string
+	ObjectName  string
+	Offset      int64 //start
+	Size        int64 //length
+	LastSend    time.Time
+	Acked       int
 }
 
 // SplitFile 支持指定范围分片（length>0）或全文件分片（length≤0）
@@ -28,7 +29,7 @@ type ChunkState struct {
 //	chunks: 存储分片信息的安全Map
 //	pre: 日志前缀
 //	logger: 日志对象
-func SplitFilebyRange(size int64, start, length int64, fileName string, chunks *util.SafeMap,
+func SplitFilebyRange(size int64, start, length int64, fileName, newFileName string, chunks *util.SafeMap,
 	pre string, logger *slog.Logger) error {
 
 	// -------------------------- 1. 核心逻辑：处理 length ≤ 0 的全量分片 --------------------------
@@ -85,16 +86,17 @@ func SplitFilebyRange(size int64, start, length int64, fileName string, chunks *
 		}
 
 		// 构造分片名称
-		partName := fmt.Sprintf("%s.part.%05d", fileName, index)
+		partName := fmt.Sprintf("%s.part.%05d", newFileName, index)
 
 		// 存储分片信息
 		chunks.Set(strconv.Itoa(index), &ChunkState{
-			Index:      strconv.Itoa(index),
-			FileName:   fileName,
-			ObjectName: partName,
-			Offset:     offset,
-			Size:       partSize,
-			Acked:      0,
+			Index:       strconv.Itoa(index),
+			FileName:    fileName,
+			NewFileName: newFileName,
+			ObjectName:  partName,
+			Offset:      offset,
+			Size:        partSize,
+			Acked:       0,
 		})
 
 		// 日志打印

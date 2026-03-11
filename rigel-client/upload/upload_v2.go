@@ -30,26 +30,16 @@ type ChunkEvent struct {
 }
 
 type ChunkTask struct {
-	ctx        context.Context
+	Ctx        context.Context
 	Index      string
-	s          *util.SafeMap
-	uploadInfo UploadFileInfo
-	objectName string
+	Chunks     *util.SafeMap
+	UploadInfo UploadFileInfo
+	ObjectName string
 }
 
 type WorkerPool struct {
-	taskCh chan ChunkTask
+	TaskCh chan ChunkTask
 }
-
-//type PathInfo struct {
-//	Hops string `json:"hops"`
-//	Rate int64  `json:"rate"`
-//	//Weight int64  `json:"weight"`
-//}
-//
-//type RoutingInfo struct {
-//	Routing []PathInfo `json:"routing"`
-//}
 
 type UploadFileInfo struct {
 	LocalFilePath string
@@ -79,7 +69,7 @@ func UploadToGCSbyReDirectHttpsV2(uploadInfo UploadFileInfo, routingInfo util.Ro
 		return err
 	}
 	size := fi.Size()
-	_ = split.SplitFilebyRange(size, 0, -1, fileName, chunks, pre, logger)
+	_ = split.SplitFilebyRange(size, 0, -1, fileName, fileName, chunks, pre, logger)
 
 	//启动定时重传 & check传输完毕
 	events := make(chan ChunkEvent, 100)
@@ -88,7 +78,7 @@ func UploadToGCSbyReDirectHttpsV2(uploadInfo UploadFileInfo, routingInfo util.Ro
 	StartChunkTimeoutChecker(ctx, chunks, interval, expire, events, pre, logger)
 
 	//启动消费者 默认一个http并发度
-	workerPool := NewWorkerPool(100, routingInfo, uploadChunk, pre, logger)
+	workerPool := NewWorkerPool(100, routingInfo, uploadChunkRedirect, pre, logger)
 
 	//events 消费
 	go ChunkEventLoop(ctx, chunks, workerPool, uploadInfo, events, done, pre, logger)
@@ -253,7 +243,7 @@ func NewWorkerPool(
 	logger *slog.Logger,
 ) *WorkerPool {
 	p := &WorkerPool{
-		taskCh: make(chan ChunkTask, queueSize),
+		TaskCh: make(chan ChunkTask, queueSize),
 	}
 
 	logger.Info("WorkerPool 启动", slog.String("pre", pre), "queueSize", queueSize)
@@ -270,7 +260,7 @@ func NewWorkerPool(
 			logger.Info("Worker 启动", slog.String("pre", pre),
 				"worker", workerID, "rate", rate_, "hops", pathInfo.Hops)
 
-			for task := range p.taskCh {
+			for task := range p.TaskCh {
 
 				err := handler(
 					task,
@@ -294,8 +284,8 @@ func NewWorkerPool(
 
 func (p *WorkerPool) Submit(task ChunkTask) bool {
 	select {
-	case p.taskCh <- task:
-		fmt.Println("submit task", task)
+	case p.TaskCh <- task:
+		//fmt.Println("submit task", task)
 		return true
 	default:
 		// 队列满了，可以选择丢 / 打日志 / 统计
@@ -336,11 +326,11 @@ func StartChunkSubmitLoop(
 		}
 
 		task := ChunkTask{
-			ctx:        ctx,
+			Ctx:        ctx,
 			Index:      v_.Index,
-			s:          chunks,
-			uploadInfo: uploadInfo,
-			objectName: v_.ObjectName,
+			Chunks:     chunks,
+			UploadInfo: uploadInfo,
+			ObjectName: v_.ObjectName,
 		}
 
 		if !workerPool.Submit(task) {
@@ -353,14 +343,14 @@ func StartChunkSubmitLoop(
 
 }
 
-func uploadChunk(task ChunkTask, hops string, rateLimiter *rate.Limiter, pre string, logger *slog.Logger) error {
-	ctx := task.ctx
+func uploadChunkRedirect(task ChunkTask, hops string, rateLimiter *rate.Limiter, pre string, logger *slog.Logger) error {
+	ctx := task.Ctx
 
 	logger.Info("开始上传分片", slog.String("pre", pre),
-		"fileName", task.uploadInfo.FileName, "index", task.Index, "hops", hops)
+		"fileName", task.UploadInfo.FileName, "index", task.Index, "hops", hops)
 
 	// 1. 生成 access token（和 uploadChunkV2 保持一致）
-	jsonBytes, err := os.ReadFile(task.uploadInfo.CredFile)
+	jsonBytes, err := os.ReadFile(task.UploadInfo.CredFile)
 	if err != nil {
 		return fmt.Errorf("read cred file: %w", err)
 	}
@@ -380,13 +370,13 @@ func uploadChunk(task ChunkTask, hops string, rateLimiter *rate.Limiter, pre str
 	}
 
 	// 2. 打开 chunk 文件（或整文件）
-	file, err := os.Open(task.uploadInfo.LocalFilePath)
+	file, err := os.Open(task.UploadInfo.LocalFilePath)
 	if err != nil {
 		return fmt.Errorf("open file: %w", err)
 	}
 	defer file.Close()
 
-	chunk_, _ := task.s.Get(task.Index)
+	chunk_, _ := task.Chunks.Get(task.Index)
 	chunk := chunk_.(*split.ChunkState)
 
 	// 3. 读取 chunk 内容
@@ -406,8 +396,8 @@ func uploadChunk(task ChunkTask, hops string, rateLimiter *rate.Limiter, pre str
 	url := fmt.Sprintf(
 		"http://%s/%s/%s",
 		firstHop,
-		task.uploadInfo.BucketName,
-		task.objectName,
+		task.UploadInfo.BucketName,
+		task.ObjectName,
 	)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, body)
@@ -425,7 +415,7 @@ func uploadChunk(task ChunkTask, hops string, rateLimiter *rate.Limiter, pre str
 		Timeout: 5 * time.Minute,
 	}
 
-	task.s.Set(task.Index, &split.ChunkState{
+	task.Chunks.Set(task.Index, &split.ChunkState{
 		Index:      chunk.Index,
 		FileName:   chunk.FileName,
 		ObjectName: chunk.ObjectName,
@@ -435,7 +425,7 @@ func uploadChunk(task ChunkTask, hops string, rateLimiter *rate.Limiter, pre str
 		Acked:      1,
 	})
 	logger.Info("上传分片", slog.String("pre", pre),
-		"url", url, "fileName", task.uploadInfo.FileName, "index", task.Index, "hops", hops)
+		"url", url, "fileName", task.UploadInfo.FileName, "index", task.Index, "hops", hops)
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -449,9 +439,9 @@ func uploadChunk(task ChunkTask, hops string, rateLimiter *rate.Limiter, pre str
 	}
 
 	// 6. 成功后更新状态（重新 set，不 mutate）
-	chunk_, _ = task.s.Get(task.Index)
+	chunk_, _ = task.Chunks.Get(task.Index)
 	chunk = chunk_.(*split.ChunkState)
-	task.s.Set(task.Index, &split.ChunkState{
+	task.Chunks.Set(task.Index, &split.ChunkState{
 		Index:      chunk.Index,
 		FileName:   chunk.FileName,
 		ObjectName: chunk.ObjectName,
@@ -461,7 +451,7 @@ func uploadChunk(task ChunkTask, hops string, rateLimiter *rate.Limiter, pre str
 		Acked:      2,
 	})
 	logger.Info("上传分片成功", slog.String("pre", pre),
-		"fileName", task.uploadInfo.FileName, "index", task.Index, "hops", hops)
+		"fileName", task.UploadInfo.FileName, "index", task.Index, "hops", hops)
 
 	return nil
 }

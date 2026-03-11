@@ -39,7 +39,8 @@ func ComposeTree(
 
 	bkt := client.Bucket(bucket)
 
-	current := parts
+	//排序 increasing
+	current := parts //util.SortPartStrings(parts)
 	level := 0
 
 	var tempObjects []string // 保存所有临时对象
@@ -86,7 +87,7 @@ func ComposeTree(
 			_ = bkt.Object(tmp).Delete(ctx)
 		}
 	}
-	
+
 	for _, p := range parts {
 		_ = bkt.Object(p).Delete(ctx)
 	}

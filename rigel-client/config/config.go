@@ -27,7 +27,11 @@ type Config struct {
 	CredFileSource   string `yaml:"cred_file_source"`   // GCP / 服务凭证文件
 	BucketNameSource string `yaml:"bucket_name_source"` // 本地上传目录
 
-	FileSys string `yaml:"file_sys"` // 文件系统接口地址
+	FileSys struct {
+		Upload string `yaml:"upload"` // 上传接口地址 // ``
+		Merge  string `yaml:"merge"`  // 合并接口地址
+		Dir    string `yaml:"dir"`
+	} `yaml:"file_sys"` // 文件系统接口地址
 
 	CredFile   string `yaml:"cred_file"` // GCP / 服务凭证文件
 	BucketName string `yaml:"bucket_name"`

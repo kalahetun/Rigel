@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"github.com/gin-gonic/gin"
 	"io"
 	"log/slog"
@@ -11,7 +12,10 @@ import (
 	"rigel-client/config"
 	"rigel-client/download"
 	"rigel-client/upload"
+	"rigel-client/upload/split"
 	"rigel-client/util"
+	"strconv"
+	"time"
 )
 
 const (
@@ -22,8 +26,6 @@ const (
 	DataSourceType = "X-Data-Source-Type"
 	DataDestType   = "X-Data-Dest-Type"
 	RoutingURL     = "/api/v1/routing"
-	GCPCLoud       = "gcp-cloud"
-	RemoteDisk     = "remote-disk"
 )
 
 var (
@@ -33,19 +35,13 @@ var (
 	CredFileSource   string
 	BucketNameSource string
 
-	FileSys string
+	FileSys util.FileSys
 
 	CredFile   string
 	BucketName string
 
 	LocalBaseDir string
 )
-
-type ApiResponse struct {
-	Code int         `json:"code"` // 200=成功，400=参数错误，500=服务端错误
-	Msg  string      `json:"msg"`  // 提示信息
-	Data interface{} `json:"data"` // 业务数据
-}
 
 func V1ClientUploadHandler(logger *slog.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -83,7 +79,7 @@ func V1ClientUploadHandler(logger *slog.Logger) gin.HandlerFunc {
 			slog.String("sourceType", sourceType), slog.String("destType", destType))
 
 		ctx := context.Background()
-		if sourceType == GCPCLoud {
+		if sourceType == download.GCPCLoud {
 			_, err := download.DownloadFromGCSbyClient(ctx, LocalBaseDir, BucketNameSource,
 				fileName, newFileName, CredFileSource, 0, 0, pre, logger)
 			if err != nil {
@@ -91,7 +87,7 @@ func V1ClientUploadHandler(logger *slog.Logger) gin.HandlerFunc {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
 			}
-		} else if sourceType == RemoteDisk {
+		} else if sourceType == download.RemoteDisk {
 			_, err := download.SSHDDReadRangeChunk(ctx, RemoteDiskSSHConfig, RemoteDiskDir, fileName,
 				newFileName, LocalBaseDir, 0, 0, "", pre, logger)
 			if err != nil {
@@ -105,15 +101,15 @@ func V1ClientUploadHandler(logger *slog.Logger) gin.HandlerFunc {
 		logger.Info("download objectName success", slog.String("pre", pre),
 			slog.String("objectName", fileName))
 
-		if destType == GCPCLoud {
+		if destType == upload.GCPCLoud {
 			if err := upload.UploadToGCSbyClient(ctx, LocalBaseDir, BucketName, fileName, CredFile, logger); err != nil {
 				logger.Error("UploadToGCSbyClient failed", slog.String("pre", pre), slog.Any("err", err))
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
 			}
-		} else if destType == RemoteDisk {
+		} else if destType == upload.RemoteDisk {
 			req := upload.ChunkUploadRequest{
-				ServerURL:     FileSys,
+				ServerURL:     FileSys.Upload,
 				FinalFileName: fileName,
 				ChunkName:     fileName,
 				LocalBaseDir:  LocalBaseDir,
@@ -136,85 +132,168 @@ func V1ClientUploadHandler(logger *slog.Logger) gin.HandlerFunc {
 	}
 }
 
-// todo 0 x-range 1 file split;2 parallel transfer;3 compose; 4 response
 func V2ClientUploadHandler(logger *slog.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 
 		pre := util.GenerateRandomLetters(5)
 		logger.Info("ClientUploadHandler", slog.String("pre", pre))
 
-		// 从 Header 获取文件名
+		// 2. Header解析与严格校验
 		fileName := c.GetHeader(FileName)
+		fileStartStr := c.GetHeader(FileStart)
+		fileLengthStr := c.GetHeader(FileLength)
 		newFileName := c.GetHeader(NewFileName)
 		sourceType := c.GetHeader(DataSourceType)
 		destType := c.GetHeader(DataDestType)
 
-		// 校验文件名 Header
-		if fileName == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Missing X-File-Name header"})
+		// 2.1 必传项校验
+		requiredChecks := map[string]string{
+			FileName:       fileName,
+			FileStart:      fileStartStr,
+			FileLength:     fileLengthStr,
+			DataSourceType: sourceType,
+			DataDestType:   destType,
+		}
+		for header, value := range requiredChecks {
+			if value == "" {
+				errMsg := fmt.Sprintf("Missing required header: %s", header)
+				logger.Error(errMsg, slog.String("pre", pre))
+				c.JSON(http.StatusBadRequest, gin.H{"error": errMsg})
+				return
+			}
+		}
+
+		// 2.2 数值类型转换与校验
+		fileStart, err := strconv.ParseInt(fileStartStr, 10, 64)
+		if err != nil || fileStart < 0 {
+			errMsg := fmt.Sprintf("Invalid %s: must be non-negative integer", FileStart)
+			logger.Error(errMsg, slog.String("pre", pre), slog.Any("err", err))
+			c.JSON(http.StatusBadRequest, gin.H{"error": errMsg})
+			return
+		}
+		fileLength, err := strconv.ParseInt(fileLengthStr, 10, 64)
+		if err != nil || fileLength <= 0 {
+			errMsg := fmt.Sprintf("Invalid %s: must be positive integer", FileLength)
+			logger.Error(errMsg, slog.String("pre", pre), slog.Any("err", err))
+			c.JSON(http.StatusBadRequest, gin.H{"error": errMsg})
 			return
 		}
 
-		// 校验数据源类型 Header
-		if sourceType == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Missing Data-Source-Type header"})
+		// 2.3 源/目标类型合法性校验
+		validSourceTypes := map[string]bool{download.GCPCLoud: true, download.RemoteDisk: true, download.LocalDisk: true}
+		validDestTypes := map[string]bool{upload.GCPCLoud: true, upload.RemoteDisk: true}
+		if !validSourceTypes[sourceType] {
+			errMsg := fmt.Sprintf("Invalid source type: %s (supported: %v)",
+				sourceType, []string{download.GCPCLoud, download.RemoteDisk, download.LocalDisk})
+			logger.Error(errMsg, slog.String("pre", pre))
+			c.JSON(http.StatusBadRequest, gin.H{"error": errMsg})
+			return
+		}
+		if !validDestTypes[destType] {
+			errMsg := fmt.Sprintf("Invalid dest type: %s (supported: %v)",
+				destType, []string{upload.GCPCLoud, upload.RemoteDisk})
+			logger.Error(errMsg, slog.String("pre", pre))
+			c.JSON(http.StatusBadRequest, gin.H{"error": errMsg})
 			return
 		}
 
-		// 校验数据目标类型 Header
-		if destType == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Missing Data-Dest-Type header"})
-			return
-		}
-
-		logger.Info("ClientUploadHandler", slog.String("pre", pre), slog.String("fileName", fileName),
+		logger.Info("Header parse success", slog.String("pre", pre),
+			slog.String("fileName", fileName), slog.String("newFileName", newFileName),
+			slog.Int64("fileStart", fileStart), slog.Int64("fileLength", fileLength),
 			slog.String("sourceType", sourceType), slog.String("destType", destType))
 
+		// 3. 获取文件真实长度
 		ctx := context.Background()
+		var fileSize int64
+		switch sourceType {
+		case download.GCPCLoud:
+			fileSize, err = download.GetGCSObjectSize(ctx, BucketNameSource, fileName, CredFileSource, pre, logger)
+		case download.RemoteDisk:
+			fileSize, err = download.GetRemoteFileSize(ctx, RemoteDiskSSHConfig, RemoteDiskDir, fileName, pre, logger)
+		case download.LocalDisk:
+			fileSize, err = download.GetLocalFileSize(ctx, LocalBaseDir, fileName, pre, logger)
+		}
+		if err != nil {
+			logger.Error("Get file size failed", slog.String("pre", pre), slog.Any("err", err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		logger.Info("Get file size success", slog.String("pre", pre), slog.Int64("size", fileSize))
 
-		if sourceType == GCPCLoud {
-			_, err := download.DownloadFromGCSbyClient(ctx, LocalBaseDir, BucketNameSource,
-				fileName, newFileName, CredFileSource, 0, 0, pre, logger)
-			if err != nil {
-				logger.Error("DownloadFromGCSbyClient failed", slog.String("pre", pre), slog.Any("err", err))
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
-		} else if sourceType == RemoteDisk {
-			_, err := download.SSHDDReadRangeChunk(ctx, RemoteDiskSSHConfig, RemoteDiskDir, fileName,
-				newFileName, LocalBaseDir, 0, 0, "", pre, logger)
-			if err != nil {
-				logger.Error("SSHDDReadRangeChunk failed", slog.String("pre", pre), slog.Any("err", err))
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
+		// 4. 文件分块
+		chunks := util.NewSafeMap()
+		if err := split.SplitFilebyRange(fileSize, fileStart, fileLength, fileName,
+			newFileName, chunks, pre, logger); err != nil {
+			logger.Error("Split file failed", slog.String("pre", pre), slog.Any("err", err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
 		}
 
-		fileName = newFileName
-		logger.Info("download objectName success", slog.String("pre", pre),
-			slog.String("objectName", fileName))
-
-		if destType == GCPCLoud {
-			if err := upload.UploadToGCSbyClient(ctx, LocalBaseDir, BucketName, fileName, CredFile, logger); err != nil {
-				logger.Error("UploadToGCSbyClient failed", slog.String("pre", pre), slog.Any("err", err))
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
-		} else if destType == RemoteDisk {
-			req := upload.ChunkUploadRequest{
-				ServerURL:     FileSys,
-				FinalFileName: fileName,
-				ChunkName:     fileName,
-				LocalBaseDir:  LocalBaseDir,
-			}
-			if _, err := upload.UploadFileChunk(req, pre, logger); err != nil {
-				logger.Error("ChunkUploadHandler failed", slog.String("pre", pre), slog.Any("err", err))
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
+		uploadInfo := upload.UploadInfo{
+			File: upload.FileInfo{
+				Start:       fileStart,   // 分块起始偏移（根据实际需求填写，如0、1048576等）
+				Length:      fileLength,  // 分块长度（如1MB，按需调整）
+				FileName:    fileName,    // 源文件名称（后续填写，如"source.zip"）
+				NewFileName: newFileName, // 目标文件名称（后续填写，如"target.zip"）
+			},
+			Source: upload.SourceInfo{
+				SourceType: sourceType,                   // 源类型固定为disk
+				User:       RemoteDiskSSHConfig.User,     // SSH用户名（后续填写，如"root"）
+				Host:       RemoteDiskSSHConfig.Host,     // SSH主机IP（后续填写，如"192.168.1.100"）
+				SSHPort:    "22",                         // SSH端口（默认22，可改）
+				Password:   RemoteDiskSSHConfig.Password, // SSH密码（后续填写）
+				RemoteDir:  RemoteDiskDir,                // 远程文件目录（后续填写，如"/data/files/"）
+				// cloud类型字段无需填写，留空即可
+				BucketName: BucketNameSource,
+				CredFile:   CredFileSource,
+			},
+			Dest: upload.DestInfo{
+				DestType: destType, // 目标类型固定为disk
+				FileSys: util.FileSys{
+					Upload: FileSys.Upload,
+					Merge:  FileSys.Merge,
+					Dir:    FileSys.Dir,
+				}, // 本地文件系统实例（按需替换）
+				// cloud类型字段无需填写，留空即可
+				BucketName: BucketName,
+				CredFile:   CredFile,
+			},
+			LocalBaseDir: LocalBaseDir, // 本地文件系统根目录（后续填写，如"/data/files/"）
 		}
 
-		logger.Info("ClientUploadHandler success", slog.String("pre", pre))
+		logger.Info("UploadInfo", slog.String("pre", pre), slog.Any("uploadInfo", uploadInfo))
+
+		//启动定时重传 & check传输完毕
+		done := make(chan struct{})
+		events := make(chan upload.ChunkEvent, 100)
+		interval := 10 * time.Duration(time.Second)
+		expire := 120 * time.Duration(time.Second)
+		upload.StartChunkTimeoutChecker_(ctx, chunks, interval, expire, events, pre, logger)
+
+		//启动消费者 默认一个http并发度
+		workerPool := upload.NewWorkerPool_(upload.QueueBufferSize,
+			util.RoutingInfo{}, upload.UploadChunkDirect, pre, logger)
+
+		//events 消费
+		go upload.ChunkEventLoop_(ctx, chunks, workerPool, uploadInfo, events, done, pre, logger)
+
+		// 4. 启动分片上传
+		go upload.StartChunkSubmitLoop_(ctx, chunks, workerPool, uploadInfo,
+			false, nil, pre, logger)
+
+		// 5分钟超时定时器
+		timeout := 5 * time.Minute
+		select {
+		case <-done:
+			logger.Info("Function 正常完成", slog.String("per", pre), slog.String("newFileName", newFileName))
+		case <-time.After(timeout):
+			logger.Warn("等待 5 分钟超时，退出等待", slog.String("per", pre),
+				slog.String("newFileName", newFileName))
+			msg := fmt.Errorf("等待 5 分钟超时，退出等待, newFileName: %s", newFileName)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": msg})
+		}
+
+		logger.Info("主程序执行完毕", slog.String("per", pre), slog.String("newFileName", newFileName))
 
 		c.JSON(http.StatusOK, gin.H{
 			"message":    "upload success",
@@ -301,7 +380,7 @@ func V1Upload(logger *slog.Logger) gin.HandlerFunc {
 		}
 
 		//解析B的 JSON 成 ApiResponse
-		var bApiResp ApiResponse
+		var bApiResp util.ApiResponse
 		if err := json.Unmarshal(bRespBody, &bApiResp); err != nil {
 			logger.Error("json Unmarshal ApiResponse failed", slog.String("pre", pre),
 				slog.String("err", err.Error()))

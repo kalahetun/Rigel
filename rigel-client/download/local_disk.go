@@ -46,7 +46,7 @@ func SSHDDReadRangeChunk(ctx context.Context, cfg util.SSHConfig, remoteDir, fil
 	var actualStart, actualLength int64
 	if length <= 0 {
 		// 获取远端文件总大小
-		fileSize, err := util.GetRemoteFileSize(ctx, cfg, remoteDir, filename, pre, logger)
+		fileSize, err := GetRemoteFileSize(ctx, cfg, remoteDir, filename, pre, logger)
 		if err != nil {
 			return "", fmt.Errorf("获取文件大小失败：%w", err)
 		}
