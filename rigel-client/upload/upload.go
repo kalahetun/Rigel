@@ -81,8 +81,8 @@ const (
 	//LocalDisk  = "local-disk"
 
 	CheckInterval           = 10 * time.Second  // 分块超时检查间隔
-	ChunkExpireTime         = 120 * time.Second // 分块超时重传阈值
-	UploadTimeout           = 5 * time.Minute   // 整体上传超时时间
+	ChunkExpireTime         = 60 * time.Second  // 分块超时重传阈值
+	UploadTimeout           = 2 * time.Minute   // 整体上传超时时间
 	ChunkSizeInMemory       = 512 * 1024 * 1024 // 512MB
 	TaskSubmitRetryInterval = 3 * time.Second
 	ChunkSubmitDelay        = 200 * time.Millisecond
@@ -147,45 +147,79 @@ type UploadInfo struct {
 
 type WorkerPool struct {
 	TaskCh chan ChunkTask
+	cancel func() // 新增：协程池退出信号
 }
 
-// -------------------------- 6. 核心函数（保留pre入参 + 上下文透传） --------------------------
+// -------------------------- 6. 核心函数（保留pre入参 + 上下文透传 + 统一取消） --------------------------
 
-// StartChunkTimeoutChecker 保留pre入参，同时用上下文透传
+// StartChunkTimeoutChecker 保留pre入参，同时用上下文透传，新增全局超时控制
+// 参数新增：
+//
+//	globalTimeout - 检查器整体运行超时时间（0表示不限制，仅靠ctx控制）
 func StartChunkTimeoutChecker(
 	ctx context.Context,
 	s *util.SafeMap,
 	interval time.Duration,
 	expire time.Duration,
+	globalTimeout time.Duration, // 新增：检查器整体超时时间
 	events chan<- ChunkEvent,
 	pre string, // 保留原有pre入参
 	logger *slog.Logger,
 ) {
-	// 上下文附加pre，双重保障
+	// 1. 上下文附加pre，双重保障
 	ctx = WithRequestID(ctx, pre)
+
+	// 2. 构建带全局超时的上下文（核心修复：添加超时控制）
+	var cancel func()
+	if globalTimeout > 0 {
+		ctx, cancel = context.WithTimeout(ctx, globalTimeout)
+		defer cancel() // 确保超时/退出时释放资源
+	}
+
+	// 3. 初始化定时器
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	logger.Info("StartChunkTimeoutChecker", slog.String("pre", pre),
-		slog.Any("interval", interval), slog.Any("expire", expire))
+	logger.Info("StartChunkTimeoutChecker",
+		slog.String("pre", pre),
+		slog.Duration("interval", interval),
+		slog.Duration("expire", expire),
+		slog.Duration("global_timeout", globalTimeout))
 
+	// 4. 循环逻辑：增加全局超时退出分支
 	for {
 		select {
 		case <-ticker.C:
 			expired, finished, unfinished := CollectExpiredChunks(ctx, s, expire, pre, logger)
 
+			// 原有业务逻辑：检查分片状态并发送事件
 			if !unfinished {
 				if finished {
 					events <- ChunkEvent{Type: ChunkFinished}
-					return
+					logger.Info("Chunk checker exit: all chunks finished", slog.String("pre", pre))
+					return // 正常退出
 				}
 				if len(expired) > 0 {
 					events <- ChunkEvent{Type: ChunkExpired, Indexes: expired}
+					logger.Warn("Chunk checker detect expired chunks",
+						slog.String("pre", pre),
+						slog.Any("expired_indexes", expired))
 				}
 			}
 
 		case <-ctx.Done():
-			return
+			// 上下文结束（超时/手动取消），退出循环
+			err := ctx.Err()
+			if err == context.DeadlineExceeded {
+				logger.Warn("Chunk checker exit: global timeout reached",
+					slog.String("pre", pre),
+					slog.Duration("timeout", globalTimeout))
+			} else {
+				logger.Info("Chunk checker exit: context canceled",
+					slog.String("pre", pre),
+					slog.Any("err", err))
+			}
+			return // 超时/取消退出
 		}
 	}
 }
@@ -233,7 +267,7 @@ func CollectExpiredChunks(
 	return expired, finished, false
 }
 
-// NewWorkerPool 保留pre入参，上下文透传
+// NewWorkerPool 保留pre入参，上下文透传 + 新增取消逻辑
 func NewWorkerPool(
 	queueSize int,
 	routingInfo util.RoutingInfo,
@@ -242,7 +276,14 @@ func NewWorkerPool(
 	pre string, // 保留pre入参
 	logger *slog.Logger,
 ) *WorkerPool {
-	p := &WorkerPool{TaskCh: make(chan ChunkTask, queueSize)}
+	taskCh := make(chan ChunkTask, queueSize)
+	// 新增：创建取消上下文，用于终止协程池
+	ctx, cancel := context.WithCancel(context.Background())
+
+	p := &WorkerPool{
+		TaskCh: taskCh,
+		cancel: cancel, // 保存取消函数
+	}
 	logger.Info("NewWorkerPool", slog.String("pre", pre), "queueSize", queueSize)
 
 	workerNum := len(routingInfo.Routing)
@@ -251,22 +292,32 @@ func NewWorkerPool(
 			go func(workerID int) {
 				logger.Info("Worker for direct init", slog.String("pre", pre), "worker", workerID)
 
-				for task := range p.TaskCh {
-					// 上下文附加pre，确保task的ctx也带pre
-					task.Ctx = WithRequestID(task.Ctx, pre)
-					err := handler(
-						task,
-						"",
-						nil,
-						inMemory,
-						pre, // 传递pre入参
-						logger,
-					)
+				for {
+					select {
+					case <-ctx.Done(): // 监听取消信号
+						logger.Info("Worker exit: context canceled", slog.String("pre", pre), "worker", workerID)
+						return
+					case task, ok := <-taskCh: // 监听任务通道（关闭时ok=false）
+						if !ok {
+							logger.Info("Worker exit: task channel closed", slog.String("pre", pre), "worker", workerID)
+							return
+						}
+						// 上下文附加pre，确保task的ctx也带pre
+						task.Ctx = WithRequestID(task.Ctx, pre)
+						err := handler(
+							task,
+							"",
+							nil,
+							inMemory,
+							pre, // 传递pre入参
+							logger,
+						)
 
-					if err != nil {
-						logger.Error("handle task", slog.String("pre", pre), "worker", workerID, "err", err)
-					} else {
-						logger.Info("handle task", slog.String("pre", pre), "worker", workerID, "task", task)
+						if err != nil {
+							logger.Error("handle task", slog.String("pre", pre), "worker", workerID, "err", err)
+						} else {
+							logger.Info("handle task", slog.String("pre", pre), "worker", workerID, "task", task.Index)
+						}
 					}
 				}
 			}(i)
@@ -281,22 +332,32 @@ func NewWorkerPool(
 				logger.Info("Worker for redirect init", slog.String("pre", pre),
 					"worker", workerID, "rate", rate_, "hops", pathInfo.Hops)
 
-				for task := range p.TaskCh {
-					// 上下文附加pre
-					task.Ctx = WithRequestID(task.Ctx, pre)
-					err := handler(
-						task,
-						pathInfo.Hops,
-						limiter,
-						inMemory,
-						pre, // 传递pre入参
-						logger,
-					)
+				for {
+					select {
+					case <-ctx.Done(): // 监听取消信号
+						logger.Info("Worker exit: context canceled", slog.String("pre", pre), "worker", workerID)
+						return
+					case task, ok := <-taskCh: // 监听任务通道
+						if !ok {
+							logger.Info("Worker exit: task channel closed", slog.String("pre", pre), "worker", workerID)
+							return
+						}
+						// 上下文附加pre
+						task.Ctx = WithRequestID(task.Ctx, pre)
+						err := handler(
+							task,
+							pathInfo.Hops,
+							limiter,
+							inMemory,
+							pre, // 传递pre入参
+							logger,
+						)
 
-					if err != nil {
-						logger.Error("handle task", slog.String("pre", pre), "worker", workerID, "err", err)
-					} else {
-						logger.Info("handle task", slog.String("pre", pre), "worker", workerID, "task", task)
+						if err != nil {
+							logger.Error("handle task", slog.String("pre", pre), "worker", workerID, "err", err)
+						} else {
+							logger.Info("handle task", slog.String("pre", pre), "worker", workerID, "task", task.Index)
+						}
 					}
 				}
 			}(i, routingInfo.Routing[i])
@@ -305,7 +366,15 @@ func NewWorkerPool(
 	return p
 }
 
-// ChunkEventLoop 保留pre入参，状态枚举替换Acked
+// Stop 新增：终止协程池（关闭任务通道 + 取消上下文）
+func (p *WorkerPool) Stop() {
+	if p.cancel != nil {
+		p.cancel() // 触发所有worker的ctx.Done()
+	}
+	close(p.TaskCh) // 关闭任务通道
+}
+
+// ChunkEventLoop 保留pre入参，状态枚举替换Acked + 监听取消信号
 func ChunkEventLoop(ctx context.Context, chunks *util.SafeMap, workerPool *WorkerPool,
 	uploadInfo UploadInfo, events <-chan ChunkEvent, done chan struct{}, pre string, // 保留pre入参
 	logger *slog.Logger) {
@@ -314,22 +383,24 @@ func ChunkEventLoop(ctx context.Context, chunks *util.SafeMap, workerPool *Worke
 
 	for {
 		select {
-		case ev := <-events:
+		case ev, ok := <-events: // 监听事件通道（关闭时ok=false）
+			if !ok {
+				logger.Info("ChunkEventLoop exit: events channel closed", slog.String("pre", pre))
+				close(done)
+				return
+			}
 			switch ev.Type {
 			case ChunkExpired:
-
 				logger.Warn("超时重传", slog.String("pre", pre), "indexes", ev.Indexes)
 				StartChunkSubmitLoop(ctx, chunks, workerPool, uploadInfo, true, ev.Indexes, pre, logger)
 
 			case ChunkFinished:
-
 				logger.Info("传输完成", slog.String("pre", pre),
 					slog.String("fileName", uploadInfo.File.NewFileName))
 
 				var parts []string
 				chunks_ := chunks.GetAll()
 				for _, v := range chunks_ {
-
 					v_, ok := v.(*split.ChunkState)
 					if !ok {
 						continue
@@ -351,18 +422,14 @@ func ChunkEventLoop(ctx context.Context, chunks *util.SafeMap, workerPool *Worke
 
 				var err error
 				if uploadInfo.Dest.DestType == util.GCPCLoud {
-
 					bucketName := uploadInfo.Dest.BucketName
 					credFile := uploadInfo.Dest.CredFile
 					fileName := uploadInfo.File.NewFileName
 					err = compose.ComposeTree(ctx, bucketName, fileName, credFile, parts, pre, logger)
-
 				} else if uploadInfo.Dest.DestType == util.RemoteDisk {
-
 					mergeURL := uploadInfo.Dest.FileSys.Merge
 					finalFileName := uploadInfo.File.NewFileName
 					_, _, err = compose.ChunkMergeClient(ctx, mergeURL, finalFileName, parts, true, pre, logger)
-
 				}
 
 				if err != nil {
@@ -379,7 +446,9 @@ func ChunkEventLoop(ctx context.Context, chunks *util.SafeMap, workerPool *Worke
 				return
 			}
 
-		case <-ctx.Done():
+		case <-ctx.Done(): // 监听主上下文取消信号（超时/手动终止）
+			logger.Info("ChunkEventLoop exit: context canceled", slog.String("pre", pre), "err", ctx.Err())
+			close(done)
 			return
 		}
 	}
@@ -396,7 +465,7 @@ func (p *WorkerPool) Submit(task ChunkTask) bool {
 	}
 }
 
-// StartChunkSubmitLoop 保留pre入参，状态枚举判断
+// StartChunkSubmitLoop 保留pre入参，状态枚举判断 + 监听取消信号
 func StartChunkSubmitLoop(
 	ctx context.Context,
 	chunks *util.SafeMap,
@@ -411,7 +480,14 @@ func StartChunkSubmitLoop(
 	chunks_ := chunks.GetAll()
 
 	for _, v := range chunks_ {
-		time.Sleep(200 * time.Millisecond)
+		// 每次循环都检查上下文是否取消，避免无效提交
+		select {
+		case <-ctx.Done():
+			logger.Info("StartChunkSubmitLoop exit: context canceled", slog.String("pre", pre))
+			return
+		default:
+			time.Sleep(ChunkSubmitDelay)
+		}
 
 		v_, ok := v.(*split.ChunkState)
 		if !ok {
@@ -445,13 +521,13 @@ func StartChunkSubmitLoop(
 		if !workerPool.Submit(task) {
 			// 队列满了，本轮结束，等下个 tick
 			logger.Warn("workerPool full", slog.String("pre", pre))
-			time.Sleep(3 * time.Second)
+			time.Sleep(TaskSubmitRetryInterval)
 			break
 		}
 	}
 }
 
-// Upload 核心入口：保留pre入参，上下文透传 + 状态枚举
+// Upload 核心入口：保留pre入参，上下文透传 + 统一取消所有goroutine
 func Upload(uploadInfo UploadInfo,
 	handler func(ChunkTask, string, *rate.Limiter, bool, string, *slog.Logger) error,
 	routing util.RoutingInfo,
@@ -460,29 +536,34 @@ func Upload(uploadInfo UploadInfo,
 
 	logger.Info("Upload", slog.String("pre", pre), slog.Any("uploadInfo", uploadInfo))
 
+	// 核心修复1：创建带全局超时的可取消上下文（管控所有goroutine）
+	ctx, cancel := context.WithTimeout(context.Background(), UploadTimeout)
+	defer func() {
+		cancel() // 无论正常/异常退出，都取消上下文
+		logger.Info("Upload context canceled", slog.String("pre", pre))
+	}()
+
+	// 上下文附加pre
+	ctx = WithRequestID(ctx, pre)
+
 	// 3. 获取文件真实长度
-	ctx := WithRequestID(context.Background(), pre) // 上下文附加pre
 	var fileSize int64
 	var err error
 	switch uploadInfo.Source.SourceType {
 	case util.GCPCLoud:
-
 		fileSize, err = download.GetGCSObjectSize(ctx, uploadInfo.Source.BucketName,
 			uploadInfo.File.FileName, uploadInfo.Source.CredFile, pre, logger)
 
 	case util.RemoteDisk:
-
 		RemoteDiskSSHConfig := util.SSHConfig{
 			User:     uploadInfo.Source.User,
 			HostPort: uploadInfo.Source.HostPort,
 			Password: uploadInfo.Source.Password,
 		}
-
 		fileSize, err = download.GetRemoteFileSize(ctx, RemoteDiskSSHConfig,
 			uploadInfo.Source.RemoteDir, uploadInfo.File.FileName, pre, logger)
 
 	case util.LocalDisk:
-
 		fileSize, err = download.GetLocalFileSize(ctx, uploadInfo.LocalBaseDir, uploadInfo.File.FileName, pre, logger)
 	}
 
@@ -495,50 +576,50 @@ func Upload(uploadInfo UploadInfo,
 
 	// 4. 文件分块
 	chunks := util.NewSafeMap()
-
 	chunkSize, err := split.SplitFilebyRange(fileSize, uploadInfo.File.Start, uploadInfo.File.Length,
 		uploadInfo.File.FileName, uploadInfo.File.NewFileName, chunks, pre, logger)
 	if err != nil {
 		logger.Error("Split file failed", slog.String("pre", pre), slog.Any("err", err))
 		return fmt.Errorf("%w: %s", ErrChunkSplitFailed, err.Error())
 	}
-	//512MB
+
+	//512MB判断是否内存传输
 	inMemory := false
-	if chunkSize >= int64(512*1024*1024) {
-		inMemory = true
-	}
-	if uploadInfo.Source.SourceType == util.LocalDisk {
+	if chunkSize >= ChunkSizeInMemory || uploadInfo.Source.SourceType == util.LocalDisk {
 		inMemory = true
 	}
 
 	//启动定时重传 & check传输完毕
 	done := make(chan struct{})
 	events := make(chan ChunkEvent, 100)
-	interval := 10 * time.Duration(time.Second)
-	expire := 120 * time.Duration(time.Second)
-	go StartChunkTimeoutChecker(ctx, chunks, interval, expire, events, pre, logger)
+	// 启动超时检查器（传入带超时的ctx）
+	go StartChunkTimeoutChecker(ctx, chunks, CheckInterval, ChunkExpireTime, UploadTimeout, events, pre, logger)
 
 	//启动消费者 默认一个http并发度
 	workerPool := NewWorkerPool(QueueBufferSize, routing, handler, inMemory, pre, logger)
+	defer workerPool.Stop() // 核心修复2：退出时终止协程池
 
-	//events 消费
+	//events 消费（传入带超时的ctx）
 	go ChunkEventLoop(ctx, chunks, workerPool, uploadInfo, events, done, pre, logger)
 
-	// 4. 启动分片上传
-	go StartChunkSubmitLoop(ctx, chunks, workerPool, uploadInfo,
-		false, nil, pre, logger)
+	// 4. 启动分片上传（传入带超时的ctx）
+	go StartChunkSubmitLoop(ctx, chunks, workerPool, uploadInfo, false, nil, pre, logger)
 
 	newFileName := uploadInfo.File.NewFileName
 
-	// 5分钟超时定时器
-	timeout := 5 * time.Minute
+	// 核心修复3：监听ctx.Done()而非time.After，统一超时逻辑
 	select {
 	case <-done:
 		logger.Info("Function 正常完成", slog.String("pre", pre), slog.String("newFileName", newFileName))
-	case <-time.After(timeout):
-		logger.Warn("等待 5 分钟超时，退出等待", slog.String("pre", pre),
-			slog.String("newFileName", newFileName))
-		return fmt.Errorf("%w: %s", ErrUploadTimeout, newFileName)
+	case <-ctx.Done():
+		// 超时/取消触发
+		err := ctx.Err()
+		if err == context.DeadlineExceeded {
+			logger.Warn("超时退出", slog.String("pre", pre), slog.String("newFileName", newFileName))
+			return fmt.Errorf("%w: %s", ErrUploadTimeout, newFileName)
+		}
+		logger.Info("Upload canceled", slog.String("pre", pre), slog.Any("err", err))
+		return fmt.Errorf("upload canceled: %w", err)
 	}
 
 	logger.Info("主程序执行完毕", slog.String("pre", pre), slog.String("newFileName", newFileName))
