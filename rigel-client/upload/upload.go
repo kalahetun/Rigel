@@ -550,6 +550,7 @@ func GetTransferReader(
 	ctx context.Context,
 	source SourceInfo,
 	file FileInfo,
+	start, length int64,
 	localBaseDir string,
 	objectName string,
 	inMemory bool,
@@ -570,8 +571,8 @@ func GetTransferReader(
 			file.FileName,
 			objectName,
 			source.CredFile,
-			file.Start,
-			file.Length,
+			start,
+			length,
 			inMemory,
 			pre, // 传递pre入参
 			logger,
@@ -595,8 +596,8 @@ func GetTransferReader(
 			file.FileName,
 			objectName,
 			localBaseDir,
-			file.Start,
-			file.Length,
+			start,
+			length,
 			"", // bs参数传空，函数内部自动适配
 			inMemory,
 			pre, // 传递pre入参
@@ -612,8 +613,8 @@ func GetTransferReader(
 			ctx,
 			localBaseDir,
 			file.FileName,
-			file.Start,
-			file.Length,
+			start,
+			length,
 			pre, // 传递pre入参
 			logger,
 		)
@@ -630,6 +631,8 @@ func GetTransferReader(
 		slog.String("pre", pre),
 		slog.String("sourceType", source.SourceType),
 		slog.String("fileName", file.FileName),
+		slog.Int64("start", start),
+		slog.Int64("length", length),
 		slog.String("objectName", objectName))
 
 	return reader, nil

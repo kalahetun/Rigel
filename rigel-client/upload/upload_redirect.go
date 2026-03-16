@@ -66,8 +66,11 @@ func UploadRedirectImp(task ChunkTask, hops string, rateLimiter *rate.Limiter, i
 	source_ := task.Source
 	file := task.File
 	dest := task.Dest
+	start := chunk.Offset
+	length := chunk.Size
 
-	reader, err := GetTransferReader(ctx, source_, file, task.LocalBaseDir, task.ObjectName, inMemory, pre, logger)
+	reader, err := GetTransferReader(ctx, source_, file, start, length,
+		task.LocalBaseDir, task.ObjectName, inMemory, pre, logger)
 	if err != nil {
 		return err
 	}
