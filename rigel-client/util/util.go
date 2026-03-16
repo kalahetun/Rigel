@@ -3,6 +3,7 @@ package util
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"math/rand"
 	"net/url"
 	"os"
@@ -209,29 +210,46 @@ func extractPartNumber(s string) int {
 //
 //	dir: 目标目录路径（绝对路径/相对路径均可）
 //	fileNames: 需要删除的文件名数组（仅需文件名，无需路径）
+//	pre: 日志前缀（用于追踪请求/业务标识）
+//	logger: slog日志实例（用于标准化日志输出）
 //
 // 返回值：
 //
 //	error: 整体错误（目录不存在/权限问题等），单个文件删除失败会记录警告但不中断整体流程
-func DeleteFilesInDir(dir string, fileNames []string) error {
+func DeleteFilesInDir(dir string, fileNames []string, pre string, logger *slog.Logger) error {
 	// 1. 基础参数校验
 	if dir == "" {
-		return errors.New("目录路径不能为空")
+		err := errors.New("目录路径不能为空")
+		logger.Error("DeleteFilesInDir invalid param", slog.String("pre", pre), slog.Any("err", err))
+		return err
 	}
 	if len(fileNames) == 0 {
-		return errors.New("文件名数组不能为空")
+		err := errors.New("文件名数组不能为空")
+		logger.Error("DeleteFilesInDir invalid param", slog.String("pre", pre), slog.Any("err", err))
+		return err
+	}
+	if logger == nil {
+		err := errors.New("logger实例不能为空")
+		fmt.Printf("错误【%s】: %v\n", pre, err) // 兜底日志
+		return err
 	}
 
 	// 2. 检查目录是否存在
 	dirInfo, err := os.Stat(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return fmt.Errorf("目录不存在: %s", dir)
+			err = fmt.Errorf("目录不存在: %s", dir)
+			logger.Error("DeleteFilesInDir dir check failed", slog.String("pre", pre), slog.Any("err", err))
+			return err
 		}
-		return fmt.Errorf("获取目录信息失败: %w", err)
+		err = fmt.Errorf("获取目录信息失败: %w", err)
+		logger.Error("DeleteFilesInDir dir stat failed", slog.String("pre", pre), slog.Any("err", err))
+		return err
 	}
 	if !dirInfo.IsDir() {
-		return fmt.Errorf("指定路径不是目录: %s", dir)
+		err = fmt.Errorf("指定路径不是目录: %s", dir)
+		logger.Error("DeleteFilesInDir not a directory", slog.String("pre", pre), slog.Any("err", err))
+		return err
 	}
 
 	// 3. 遍历删除每个文件
@@ -239,7 +257,7 @@ func DeleteFilesInDir(dir string, fileNames []string) error {
 	for _, fileName := range fileNames {
 		// 过滤空文件名
 		if strings.TrimSpace(fileName) == "" {
-			fmt.Printf("警告：跳过空文件名\n")
+			logger.Warn("DeleteFilesInDir skip empty filename", slog.String("pre", pre))
 			continue
 		}
 
@@ -250,19 +268,30 @@ func DeleteFilesInDir(dir string, fileNames []string) error {
 		err := os.Remove(filePath)
 		if err != nil {
 			// 记录删除失败的文件，但不中断流程
-			failedFiles = append(failedFiles, fmt.Sprintf("%s: %v", filePath, err))
-			fmt.Printf("警告：删除文件失败 %s: %v\n", filePath, err)
+			failedMsg := fmt.Sprintf("%s: %v", filePath, err)
+			failedFiles = append(failedFiles, failedMsg)
+			logger.Warn("DeleteFilesInDir delete file failed",
+				slog.String("pre", pre),
+				slog.String("filePath", filePath),
+				slog.Any("err", err))
 			continue
 		}
 
-		fmt.Printf("成功删除文件: %s\n", filePath)
+		logger.Info("DeleteFilesInDir delete file success",
+			slog.String("pre", pre),
+			slog.String("filePath", filePath))
 	}
 
 	// 4. 处理删除失败的文件（如有）
 	if len(failedFiles) > 0 {
-		return fmt.Errorf("部分文件删除失败: %s", strings.Join(failedFiles, "; "))
+		err = fmt.Errorf("部分文件删除失败: %s", strings.Join(failedFiles, "; "))
+		logger.Error("DeleteFilesInDir partial delete failed",
+			slog.String("pre", pre),
+			slog.Any("err", err))
+		return err
 	}
 
+	logger.Info("DeleteFilesInDir all files deleted success", slog.String("pre", pre))
 	return nil
 }
 

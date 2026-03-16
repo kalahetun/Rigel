@@ -373,7 +373,7 @@ func ChunkEventLoop(ctx context.Context, chunks *util.SafeMap, workerPool *Worke
 
 				//清理临时文件
 				if uploadInfo.Dest.DestType == GCPCLoud || uploadInfo.Dest.DestType == RemoteDisk {
-					_ = util.DeleteFilesInDir(uploadInfo.LocalBaseDir, parts)
+					_ = util.DeleteFilesInDir(uploadInfo.LocalBaseDir, parts, pre, logger)
 				}
 
 				return
