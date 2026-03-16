@@ -14,6 +14,12 @@ import (
 	"time"
 )
 
+const (
+	GCPCLoud   = "gcp-cloud"
+	RemoteDisk = "remote-disk"
+	LocalDisk  = "local-disk"
+)
+
 type ApiResponse struct {
 	Code int         `json:"code"` // 200=成功，400=参数错误，500=服务端错误
 	Msg  string      `json:"msg"`  // 提示信息

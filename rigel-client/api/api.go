@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"net/http"
 	"rigel-client/config"
-	"rigel-client/download"
 	"rigel-client/upload"
 	"rigel-client/util"
 )
@@ -119,19 +118,19 @@ func ParseHeadersAndBuildUploadInfo(c *gin.Context, pre string, logger *slog.Log
 	}
 
 	// 2.3 源/目标类型合法性校验
-	validSourceTypes := map[string]bool{download.GCPCLoud: true, download.RemoteDisk: true, download.LocalDisk: true}
+	validSourceTypes := map[string]bool{util.GCPCLoud: true, util.RemoteDisk: true, util.LocalDisk: true}
 	if !validSourceTypes[sourceType] {
 		errMsg := fmt.Sprintf("Invalid source type: %s (supported: %v)",
-			sourceType, []string{download.GCPCLoud, download.RemoteDisk, download.LocalDisk})
+			sourceType, []string{util.GCPCLoud, util.RemoteDisk, util.LocalDisk})
 		logger.Error(errMsg, slog.String("pre", pre))
 		c.JSON(http.StatusBadRequest, gin.H{"error": errMsg})
 		return upload.UploadInfo{}, true, fmt.Errorf(errMsg)
 	}
 
-	validDestTypes := map[string]bool{upload.GCPCLoud: true, upload.RemoteDisk: true}
+	validDestTypes := map[string]bool{util.GCPCLoud: true, util.RemoteDisk: true}
 	if !validDestTypes[destType] {
 		errMsg := fmt.Sprintf("Invalid dest type: %s (supported: %v)",
-			destType, []string{upload.GCPCLoud, upload.RemoteDisk})
+			destType, []string{util.GCPCLoud, util.RemoteDisk})
 		logger.Error(errMsg, slog.String("pre", pre))
 		c.JSON(http.StatusBadRequest, gin.H{"error": errMsg})
 		return upload.UploadInfo{}, true, fmt.Errorf(errMsg)

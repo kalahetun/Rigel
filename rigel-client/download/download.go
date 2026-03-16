@@ -14,12 +14,6 @@ import (
 	"time"
 )
 
-const (
-	GCPCLoud   = "gcp-cloud"
-	RemoteDisk = "remote-disk"
-	LocalDisk  = "local-disk"
-)
-
 // GetLocalFileSize 简化版：获取本地文件大小
 // dir: 文件所在目录
 // fileName: 文件名
@@ -59,40 +53,121 @@ func GetLocalFileSize(ctx context.Context, dir, fileName, pre string, logger *sl
 }
 
 // getRemoteFileSize 获取远端文件总大小（字节）
+// 修复点：每次执行命令新建独立Session，避免Stdout重复绑定
 func GetRemoteFileSize(ctx context.Context, cfg util.SSHConfig, remoteDir, filename string, pre string, logger *slog.Logger) (int64, error) {
 	remoteFile := filepath.Join(remoteDir, filename)
+	logger.Info("Start get remote file size",
+		slog.String("pre", pre),
+		slog.String("remoteFile", remoteFile),
+		slog.String("host", cfg.HostPort))
 
-	// 初始化SSH配置
+	// 1. 初始化SSH配置
 	sshConfig := &ssh.ClientConfig{
 		User:            cfg.User,
 		Auth:            []ssh.AuthMethod{ssh.Password(cfg.Password)},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // 生产环境建议替换为安全的HostKey校验
 		Timeout:         30 * time.Second,
 	}
 
-	// 建立SSH连接
+	// 2. 建立SSH连接（全局连接，可复用）
 	client, err := ssh.Dial("tcp", cfg.HostPort, sshConfig)
 	if err != nil {
+		logger.Error("SSH dial failed", slog.String("pre", pre), slog.Any("err", err))
 		return 0, fmt.Errorf("SSH连接失败：%w", err)
 	}
-	defer client.Close()
+	defer func() {
+		if err := client.Close(); err != nil {
+			logger.Warn("Close SSH client failed", slog.String("pre", pre), slog.Any("err", err))
+		}
+	}()
 
-	// 创建会话
+	// 3. 先判断远端系统类型（避免重复执行命令）
+	systemType, err := getRemoteSystemType(client, pre, logger)
+	if err != nil {
+		logger.Warn("Get remote system type failed, use default stat command",
+			slog.String("pre", pre), slog.Any("err", err))
+	}
+
+	// 4. 根据系统类型执行对应stat命令（新建独立Session）
+	var cmd string
+	switch systemType {
+	case "darwin": // macOS
+		cmd = fmt.Sprintf("stat -f %%z '%s'", remoteFile)
+	default: // Linux (centos/ubuntu)
+		cmd = fmt.Sprintf("stat -c %%s '%s'", remoteFile)
+	}
+
+	// 新建Session执行命令（核心修复：每次命令用新Session）
+	fileSize, err := executeSSHCommand(client, cmd, pre, logger)
+	if err != nil {
+		// 降级重试：如果系统类型判断错误，尝试另一种命令（仍用新Session）
+		retryCmd := ""
+		if systemType == "darwin" {
+			retryCmd = fmt.Sprintf("stat -c %%s '%s'", remoteFile)
+		} else {
+			retryCmd = fmt.Sprintf("stat -f %%z '%s'", remoteFile)
+		}
+		logger.Warn("First stat command failed, retry with fallback cmd",
+			slog.String("pre", pre),
+			slog.String("originCmd", cmd),
+			slog.String("retryCmd", retryCmd),
+			slog.Any("err", err))
+
+		fileSize, err = executeSSHCommand(client, retryCmd, pre, logger)
+		if err != nil {
+			logger.Error("All stat command failed", slog.String("pre", pre), slog.Any("err", err))
+			return 0, fmt.Errorf("执行stat命令失败：%w", err)
+		}
+	}
+
+	logger.Info("Get remote file size success",
+		slog.String("pre", pre),
+		slog.String("remoteFile", remoteFile),
+		slog.Int64("fileSize", fileSize))
+
+	return fileSize, nil
+}
+
+// getRemoteSystemType 获取远端系统类型（linux/darwin）
+func getRemoteSystemType(client *ssh.Client, pre string, logger *slog.Logger) (string, error) {
+	cmd := "uname -s"
+	session, err := client.NewSession()
+	if err != nil {
+		return "", fmt.Errorf("create session failed: %w", err)
+	}
+	defer func() {
+		if err := session.Close(); err != nil {
+			logger.Warn("Close system type session failed", slog.String("pre", pre), slog.Any("err", err))
+		}
+	}()
+
+	output, err := session.CombinedOutput(cmd)
+	if err != nil {
+		return "", fmt.Errorf("execute uname command failed: %w, output: %s", err, string(output))
+	}
+
+	systemType := strings.ToLower(strings.TrimSpace(string(output)))
+	return systemType, nil
+}
+
+// executeSSHCommand 执行SSH命令（每次新建Session，避免Stdout冲突）
+func executeSSHCommand(client *ssh.Client, cmd string, pre string, logger *slog.Logger) (int64, error) {
+	// 新建独立Session
 	session, err := client.NewSession()
 	if err != nil {
 		return 0, fmt.Errorf("创建SSH会话失败：%w", err)
 	}
-	defer session.Close()
+	// 确保Session关闭（即使执行失败）
+	defer func() {
+		if err := session.Close(); err != nil {
+			logger.Warn("Close command session failed", slog.String("pre", pre), slog.Any("err", err))
+		}
+	}()
 
-	// 兼容Linux/macOS的stat命令
-	cmd := fmt.Sprintf("stat -c %%s '%s'", remoteFile)
+	// 执行命令（CombinedOutput会自动绑定Stdout/Stderr，且仅执行一次）
 	output, err := session.CombinedOutput(cmd)
 	if err != nil {
-		cmd = fmt.Sprintf("stat -f %%z '%s'", remoteFile)
-		output, err = session.CombinedOutput(cmd)
-		if err != nil {
-			return 0, fmt.Errorf("执行stat命令失败：%w，输出：%s", err, string(output))
-		}
+		return 0, fmt.Errorf("命令执行失败：%w，输出：%s", err, string(output))
 	}
 
 	// 解析文件大小

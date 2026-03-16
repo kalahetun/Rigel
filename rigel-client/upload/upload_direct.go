@@ -5,6 +5,7 @@ import (
 	"golang.org/x/time/rate"
 	"log/slog"
 	"rigel-client/upload/split"
+	"rigel-client/util"
 	"time"
 )
 
@@ -83,13 +84,13 @@ func UploadDirectImp(task ChunkTask, hops string, rateLimiter *rate.Limiter, inM
 	logger.Info("download object success", slog.String("pre", pre), slog.String("objectName", task.ObjectName))
 
 	// --------------- 第三步：上传到目标端 ---------------
-	if dest.DestType == GCPCLoud {
+	if dest.DestType == util.GCPCLoud {
 		if err := UploadToGCSbyClient(ctx, task.LocalBaseDir, dest.BucketName,
 			task.ObjectName, dest.CredFile, inMemory, reader, pre, logger); err != nil {
 			logger.Error("UploadToGCSbyClient failed", slog.String("pre", pre), slog.Any("err", err))
 			return err
 		}
-	} else if dest.DestType == RemoteDisk {
+	} else if dest.DestType == util.RemoteDisk {
 		req := ChunkUploadRequest{
 			ServerURL:     dest.FileSys.Upload,
 			FinalFileName: task.ObjectName,

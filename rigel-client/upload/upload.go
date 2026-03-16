@@ -76,9 +76,9 @@ const (
 	MaxConcurrency  = 10  // 协程池最大并发数
 	QueueBufferSize = 100 // 任务队列缓冲大小
 
-	GCPCLoud   = "gcp-cloud"
-	RemoteDisk = "remote-disk"
-	LocalDisk  = "local-disk"
+	//GCPCLoud   = "gcp-cloud"
+	//RemoteDisk = "remote-disk"
+	//LocalDisk  = "local-disk"
 
 	CheckInterval           = 10 * time.Second  // 分块超时检查间隔
 	ChunkExpireTime         = 120 * time.Second // 分块超时重传阈值
@@ -350,14 +350,14 @@ func ChunkEventLoop(ctx context.Context, chunks *util.SafeMap, workerPool *Worke
 				parts = util.SortPartStrings(parts)
 
 				var err error
-				if uploadInfo.Dest.DestType == GCPCLoud {
+				if uploadInfo.Dest.DestType == util.GCPCLoud {
 
 					bucketName := uploadInfo.Dest.BucketName
 					credFile := uploadInfo.Dest.CredFile
 					fileName := uploadInfo.File.NewFileName
 					err = compose.ComposeTree(ctx, bucketName, fileName, credFile, parts, pre, logger)
 
-				} else if uploadInfo.Dest.DestType == RemoteDisk {
+				} else if uploadInfo.Dest.DestType == util.RemoteDisk {
 
 					mergeURL := uploadInfo.Dest.FileSys.Merge
 					finalFileName := uploadInfo.File.NewFileName
@@ -372,7 +372,7 @@ func ChunkEventLoop(ctx context.Context, chunks *util.SafeMap, workerPool *Worke
 				close(done)
 
 				//清理临时文件
-				if uploadInfo.Dest.DestType == GCPCLoud || uploadInfo.Dest.DestType == RemoteDisk {
+				if uploadInfo.Dest.DestType == util.GCPCLoud || uploadInfo.Dest.DestType == util.RemoteDisk {
 					_ = util.DeleteFilesInDir(uploadInfo.LocalBaseDir, parts, pre, logger)
 				}
 
@@ -465,12 +465,12 @@ func Upload(uploadInfo UploadInfo,
 	var fileSize int64
 	var err error
 	switch uploadInfo.Source.SourceType {
-	case download.GCPCLoud:
+	case util.GCPCLoud:
 
 		fileSize, err = download.GetGCSObjectSize(ctx, uploadInfo.Source.BucketName,
 			uploadInfo.File.FileName, uploadInfo.Source.CredFile, pre, logger)
 
-	case download.RemoteDisk:
+	case util.RemoteDisk:
 
 		RemoteDiskSSHConfig := util.SSHConfig{
 			User:     uploadInfo.Source.User,
@@ -481,12 +481,12 @@ func Upload(uploadInfo UploadInfo,
 		fileSize, err = download.GetRemoteFileSize(ctx, RemoteDiskSSHConfig,
 			uploadInfo.Source.RemoteDir, uploadInfo.File.FileName, pre, logger)
 
-	case download.LocalDisk:
+	case util.LocalDisk:
 
 		fileSize, err = download.GetLocalFileSize(ctx, uploadInfo.LocalBaseDir, uploadInfo.File.FileName, pre, logger)
 	}
-	if err != nil {
 
+	if err != nil {
 		logger.Error("Get file size failed", slog.String("pre", pre), slog.Any("err", err))
 		return fmt.Errorf("%w: %s", ErrFileSizeFailed, err.Error())
 	}
@@ -507,7 +507,7 @@ func Upload(uploadInfo UploadInfo,
 	if chunkSize >= int64(512*1024*1024) {
 		inMemory = true
 	}
-	if uploadInfo.Source.SourceType == LocalDisk {
+	if uploadInfo.Source.SourceType == util.LocalDisk {
 		inMemory = true
 	}
 
@@ -563,7 +563,7 @@ func GetTransferReader(
 	var err error
 
 	switch source.SourceType {
-	case GCPCLoud: // GCS云存储源
+	case util.GCPCLoud: // GCS云存储源
 		reader, err = download.DownloadFromGCSbyClient(
 			ctx,
 			localBaseDir,
@@ -582,7 +582,7 @@ func GetTransferReader(
 			return nil, err
 		}
 
-	case RemoteDisk: // 远程磁盘（SSH）源
+	case util.RemoteDisk: // 远程磁盘（SSH）源
 		remoteDiskSSHConfig := util.SSHConfig{
 			User:     source.User,
 			HostPort: source.HostPort,
@@ -608,7 +608,7 @@ func GetTransferReader(
 			return nil, err
 		}
 
-	case LocalDisk: // 本地磁盘源
+	case util.LocalDisk: // 本地磁盘源
 		reader, _, err = download.LocalReadRangeChunk(
 			ctx,
 			localBaseDir,
