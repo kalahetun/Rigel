@@ -2,6 +2,7 @@ package upload
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"golang.org/x/time/rate"
 	"io"
@@ -39,14 +40,24 @@ type ChunkUploadRequest struct {
 //	inMemory: 新增！true=内存流式上传（从dataReader读取），false=本地文件上传（原逻辑）
 //	dataReader: 新增！inMemory=true时传入的数据源Reader（如SSH/GC SReader）
 func UploadFileChunk(
+	ctx context.Context,
 	req ChunkUploadRequest,
-	inMemory bool, // 新增：内存模式开关
+	inMemory bool,        // 新增：内存模式开关
 	dataReader io.Reader, // 新增：内存模式的数据源Reader
 	pre string,
 	logger *slog.Logger,
 ) (*http.Response, error) {
 
 	logger.Info("UploadFileChunk", "req", req, slog.String("pre", pre), slog.Bool("inMemory", inMemory))
+
+	// 仅在「上传开始前」检查ctx是否已取消（避免启动无效上传）
+	select {
+	case <-ctx.Done():
+		err := fmt.Errorf("upload canceled before start: %w", ctx.Err())
+		logger.Error("UploadToGCSbyClient canceled", slog.String("pre", pre), slog.Any("err", err))
+		return nil, err
+	default:
+	}
 
 	// 1. 基础入参校验（完全保留原逻辑）
 	if req.ServerURL == "" {
@@ -188,6 +199,14 @@ func UploadFileChunkbyProxy(
 	}
 
 	ctx := task.Ctx
+	select {
+	case <-ctx.Done():
+		err := fmt.Errorf("upload canceled before start: %w", ctx.Err())
+		logger.Error("UploadFileChunkbyProxy canceled", slog.String("pre", pre), slog.Any("err", err))
+		return err
+	default:
+	}
+
 	dest := task.Dest
 	var proxyReader io.ReadCloser = reader
 
@@ -271,7 +290,7 @@ func UploadFileChunkbyProxy(
 
 	// 发送请求
 	client := &http.Client{
-		Timeout: 5 * time.Minute,
+		Timeout: 1 * time.Minute,
 	}
 	logger.Info("send HTTP request to proxy",
 		slog.String("pre", pre),

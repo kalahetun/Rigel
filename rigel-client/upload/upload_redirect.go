@@ -64,6 +64,15 @@ func UploadRedirectImp(task ChunkTask, hops string, rateLimiter *rate.Limiter, i
 
 	// --------------- 第二步：获取Reader（读取源文件）---------------
 	ctx := task.Ctx
+	// 核心修改1：先检查ctx是否已取消，避免无效操作
+	select {
+	case <-ctx.Done():
+		finalErr = fmt.Errorf("ctx canceled before get reader: %w", ctx.Err())
+		logger.Error("UploadRedirectImp canceled", slog.String("pre", pre), slog.String("index", task.Index), slog.Any("err", finalErr))
+		return finalErr
+	default:
+	}
+
 	source_ := task.Source
 	file := task.File
 	dest := task.Dest
@@ -84,6 +93,15 @@ func UploadRedirectImp(task ChunkTask, hops string, rateLimiter *rate.Limiter, i
 	logger.Info("download object success", slog.String("pre", pre), slog.String("objectName", task.ObjectName))
 
 	// --------------- 第三步：上传到目标端 ---------------
+	// 核心修改2：上传前检查ctx是否已取消
+	select {
+	case <-ctx.Done():
+		finalErr = fmt.Errorf("ctx canceled before upload: %w", ctx.Err())
+		logger.Error("UploadRedirectImp canceled", slog.String("pre", pre), slog.String("index", task.Index), slog.Any("err", finalErr))
+		return finalErr
+	default:
+	}
+
 	if dest.DestType == util.GCPCLoud {
 		if err := UploadToGCSbyProxy(task, hops, rateLimiter, reader, inMemory, pre, logger); err != nil {
 			logger.Error("UploadToGCSbyProxy failed", slog.String("pre", pre), slog.Any("err", err))
@@ -97,6 +115,14 @@ func UploadRedirectImp(task ChunkTask, hops string, rateLimiter *rate.Limiter, i
 	}
 
 	// --------------- 第四步：成功状态更新（Acked=2）---------------
+	// 核心修改3：更新状态前最后检查ctx（防止更新过程中取消）
+	select {
+	case <-ctx.Done():
+		finalErr = fmt.Errorf("ctx canceled before update success state: %w", ctx.Err())
+		logger.Error("UploadDirectImp canceled", slog.String("pre", pre), slog.String("index", task.Index), slog.Any("err", finalErr))
+		return finalErr
+	default:
+	}
 	successChunkState := &split.ChunkState{
 		Index:       chunk.Index,
 		FileName:    chunk.FileName,

@@ -25,6 +25,15 @@ func DownloadFromGCSbyClient(
 	pre string,
 	logger *slog.Logger,
 ) (io.ReadCloser, error) { // 返回io.ReadCloser（兼容两种模式）
+
+	select {
+	case <-ctx.Done():
+		err := fmt.Errorf("upload canceled before start: %w", ctx.Err())
+		logger.Error("DownloadFromGCSbyClient canceled", slog.String("pre", pre), slog.Any("err", err))
+		return nil, err
+	default:
+	}
+
 	// 日志区分模式+完整/分片读取
 	if inMemory {
 		if length <= 0 {
@@ -73,14 +82,14 @@ func DownloadFromGCSbyClient(
 	obj := bucket.Object(objectName)
 
 	// 创建带超时的上下文
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	ctx_, cancel := context.WithTimeout(ctx, 1*time.Minute)
 
 	// 创建Reader（完整/分片读取）
 	var rc *storage.Reader
 	if length <= 0 {
-		rc, err = obj.NewReader(ctx)
+		rc, err = obj.NewReader(ctx_)
 	} else {
-		rc, err = obj.NewRangeReader(ctx, start, length)
+		rc, err = obj.NewRangeReader(ctx_, start, length)
 	}
 	if err != nil {
 		cancel()

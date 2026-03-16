@@ -31,15 +31,26 @@ func UploadToGCSbyClient(
 	pre string, // 补充：日志前缀（关键追溯字段）
 	logger *slog.Logger,
 ) error {
+
+	logger.Info("UploadToGCSbyClient", slog.String("pre", pre))
+	// 仅在「上传开始前」检查ctx是否已取消（避免启动无效上传）
+	select {
+	case <-ctx.Done():
+		err := fmt.Errorf("upload canceled before start: %w", ctx.Err())
+		logger.Error("UploadToGCSbyClient canceled", slog.String("pre", pre), slog.Any("err", err))
+		return err
+	default:
+	}
+
 	// 日志区分上传模式（添加pre前缀）
 	if inMemory {
 		logger.Info("Uploading data to GCS (in-memory mode, no local file)",
-			slog.String("pre", pre), // 核心：添加日志前缀
+			slog.String("pre", pre),
 			slog.String("bucketName", bucketName),
 			slog.String("objectName", objectName))
 	} else {
 		logger.Info("Uploading file to GCS (disk mode)",
-			slog.String("pre", pre), // 核心：添加日志前缀
+			slog.String("pre", pre),
 			slog.String("LocalBaseDir", LocalBaseDir),
 			slog.String("bucketName", bucketName),
 			slog.String("objectName", objectName))
@@ -48,29 +59,25 @@ func UploadToGCSbyClient(
 	// 设置GCS凭证
 	os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", credFile)
 
-	// 创建GCS客户端
+	// 创建GCS客户端（传入ctx，支持取消客户端创建过程）
 	client, err := storage.NewClient(ctx)
 	if err != nil {
 		logger.Error("Failed to create storage client",
-			slog.String("pre", pre), // 错误日志也加pre
+			slog.String("pre", pre),
 			slog.Any("err", err))
 		return fmt.Errorf("failed to create storage client: %w", err)
 	}
-	defer client.Close()
+	defer client.Close() // 确保客户端关闭
 
 	// 获取bucket handle
 	bucket := client.Bucket(bucketName)
 
-	// 创建带超时的上传上下文
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
-	defer cancel()
-
-	// 初始化GCS Writer
+	// 初始化GCS Writer（传入外层ctx，不重新创建超时）
 	wc := bucket.Object(objectName).NewWriter(ctx)
 	wc.StorageClass = "STANDARD"
 	wc.ContentType = "application/octet-stream"
 	defer func() {
-		// 确保Writer关闭，即使上传失败（错误日志加pre）
+		// 确保Writer关闭，捕获关闭错误
 		if err := wc.Close(); err != nil {
 			logger.Error("Failed to close GCS writer",
 				slog.String("pre", pre),
@@ -78,15 +85,15 @@ func UploadToGCSbyClient(
 		}
 	}()
 
-	// 模式1：inMemory=true → 从传入的Reader流式上传（不落盘）
+	// 模式1：inMemory=true → 从传入的Reader流式上传
 	if inMemory {
 		if dataReader == nil {
-			logger.Error("In-memory mode requires non-nil dataReader",
-				slog.String("pre", pre))
-			return fmt.Errorf("in-memory mode requires non-nil dataReader")
+			err := fmt.Errorf("in-memory mode requires non-nil dataReader")
+			logger.Error("In-memory mode invalid", slog.String("pre", pre), slog.Any("err", err))
+			return err
 		}
 
-		// 从Reader拷贝数据到GCS
+		// 保留原阻塞式io.Copy，等待拷贝完成
 		if _, err := io.Copy(wc, dataReader); err != nil {
 			logger.Error("Failed to copy in-memory data to bucket",
 				slog.String("pre", pre),
@@ -95,16 +102,16 @@ func UploadToGCSbyClient(
 		}
 
 		logger.Info("In-memory upload success",
-			slog.String("pre", pre), // 成功日志加pre
+			slog.String("pre", pre),
 			slog.String("bucketName", bucketName),
 			slog.String("objectName", objectName))
 		return nil
 	}
 
-	// 模式2：inMemory=false → 从本地文件上传（原有逻辑）
-	localFilePath := filepath.Join(LocalBaseDir, objectName) // 修复路径拼接
+	// 模式2：inMemory=false → 从本地文件上传
+	localFilePath := filepath.Join(LocalBaseDir, objectName)
 
-	// 打开本地文件（错误日志加pre）
+	// 打开本地文件
 	f, err := os.Open(localFilePath)
 	if err != nil {
 		logger.Error("Failed to open local file",
@@ -115,7 +122,7 @@ func UploadToGCSbyClient(
 	}
 	defer f.Close()
 
-	// 从本地文件拷贝到GCS（错误日志加pre）
+	// 保留原阻塞式io.Copy，等待拷贝完成
 	if _, err := io.Copy(wc, f); err != nil {
 		logger.Error("Failed to copy local file to bucket",
 			slog.String("pre", pre),
@@ -125,7 +132,7 @@ func UploadToGCSbyClient(
 	}
 
 	logger.Info("Local file upload success",
-		slog.String("pre", pre), // 成功日志加pre
+		slog.String("pre", pre),
 		slog.String("localFilePath", localFilePath),
 		slog.String("bucketName", bucketName),
 		slog.String("objectName", objectName))
@@ -168,6 +175,14 @@ func UploadToGCSbyProxy(
 	}
 
 	ctx := task.Ctx
+	select {
+	case <-ctx.Done():
+		err := fmt.Errorf("upload canceled before start: %w", ctx.Err())
+		logger.Error("UploadToGCSbyProxy canceled", slog.String("pre", pre), slog.Any("err", err))
+		return err
+	default:
+	}
+
 	dest := task.Dest
 	var proxyReader io.ReadCloser = reader
 
@@ -287,7 +302,7 @@ func UploadToGCSbyProxy(
 
 	// 发送请求
 	client := &http.Client{
-		Timeout: 5 * time.Minute,
+		Timeout: 1 * time.Minute,
 	}
 	logger.Info("send HTTP request to proxy",
 		slog.String("pre", pre),

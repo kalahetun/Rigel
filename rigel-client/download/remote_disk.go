@@ -50,6 +50,14 @@ func SSHDDReadRangeChunk(
 	logger *slog.Logger,
 ) (io.ReadCloser, string, error) {
 
+	select {
+	case <-ctx.Done():
+		err := fmt.Errorf("upload canceled before start: %w", ctx.Err())
+		logger.Error("SSHDDReadRangeChunk canceled", slog.String("pre", pre), slog.Any("err", err))
+		return nil, "", err
+	default:
+	}
+
 	// 1. 拼接远端文件完整路径
 	remoteFile := filepath.Join(remoteDir, filename)
 
@@ -105,7 +113,7 @@ func SSHDDReadRangeChunk(
 		User:            cfg.User,
 		Auth:            []ssh.AuthMethod{ssh.Password(cfg.Password)},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // 生产环境建议替换为合法的密钥验证
-		Timeout:         5 * time.Minute,             // 增大超时适配大文件读取
+		Timeout:         1 * time.Minute,             // 增大超时适配大文件读取
 	}
 
 	// 7. 建立SSH连接

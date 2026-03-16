@@ -21,6 +21,15 @@ import (
 // logger: 日志实例
 // 返回：文件大小（字节）、错误（文件不存在/非文件/其他异常）
 func GetLocalFileSize(ctx context.Context, dir, fileName, pre string, logger *slog.Logger) (int64, error) {
+
+	select {
+	case <-ctx.Done():
+		err := fmt.Errorf("get local file size canceled: %w", ctx.Err())
+		logger.Error("GetLocalFileSize canceled before connect", slog.String("pre", pre), slog.Any("err", err))
+		return 0, err
+	default:
+	}
+
 	// 1. 拼接文件完整路径
 	filePath := filepath.Join(dir, fileName)
 
@@ -61,12 +70,21 @@ func GetRemoteFileSize(ctx context.Context, cfg util.SSHConfig, remoteDir, filen
 		slog.String("remoteFile", remoteFile),
 		slog.String("host", cfg.HostPort))
 
+	// 2. 监听ctx取消信号，提前终止操作
+	select {
+	case <-ctx.Done():
+		err := fmt.Errorf("get remote file size canceled: %w", ctx.Err())
+		logger.Error("GetRemoteFileSize canceled before connect", slog.String("pre", pre), slog.Any("err", err))
+		return 0, err
+	default:
+	}
+
 	// 1. 初始化SSH配置
 	sshConfig := &ssh.ClientConfig{
 		User:            cfg.User,
 		Auth:            []ssh.AuthMethod{ssh.Password(cfg.Password)},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // 生产环境建议替换为安全的HostKey校验
-		Timeout:         30 * time.Second,
+		Timeout:         5 * time.Second,
 	}
 
 	// 2. 建立SSH连接（全局连接，可复用）
@@ -195,6 +213,16 @@ func executeSSHCommand(client *ssh.Client, cmd string, pre string, logger *slog.
 //	int64: Object 大小（字节）
 //	error: 错误信息（获取失败时返回）
 func GetGCSObjectSize(ctx context.Context, bucketName, objectName, credFile, pre string, logger *slog.Logger) (int64, error) {
+
+	// 2. 监听ctx取消信号，提前终止操作
+	select {
+	case <-ctx.Done():
+		err := fmt.Errorf("get csg file size canceled: %w", ctx.Err())
+		logger.Error("GetGCSObjectSize canceled before connect", slog.String("pre", pre), slog.Any("err", err))
+		return 0, err
+	default:
+	}
+
 	// 1. 入参校验
 	if bucketName == "" {
 		return 0, fmt.Errorf("bucketName 不能为空")
@@ -210,10 +238,10 @@ func GetGCSObjectSize(ctx context.Context, bucketName, objectName, credFile, pre
 	os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", credFile)
 
 	// 3. 创建 GCS 客户端（带超时控制）
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second) // 10秒超时，避免卡住
+	ctx_, cancel := context.WithTimeout(ctx, 10*time.Second) // 10秒超时，避免卡住
 	defer cancel()
 
-	client, err := storage.NewClient(ctx)
+	client, err := storage.NewClient(ctx_)
 	if err != nil {
 		logger.Error("创建 GCS 客户端失败", slog.String("pre", pre),
 			slog.String("bucketName", bucketName),
@@ -228,7 +256,7 @@ func GetGCSObjectSize(ctx context.Context, bucketName, objectName, credFile, pre
 	obj := bucket.Object(objectName)
 
 	// 5. 获取 Object 元数据（核心：从 Attrs 中读取 Size）
-	attrs, err := obj.Attrs(ctx)
+	attrs, err := obj.Attrs(ctx_)
 	if err != nil {
 		logger.Error("获取 GCS Object 元数据失败", slog.String("pre", pre),
 			slog.String("bucketName", bucketName),

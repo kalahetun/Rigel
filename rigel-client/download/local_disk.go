@@ -37,6 +37,15 @@ func LocalReadRangeChunk(
 	pre string,
 	logger *slog.Logger,
 ) (io.ReadCloser, string, error) {
+
+	select {
+	case <-ctx.Done():
+		err := fmt.Errorf("upload canceled before start: %w", ctx.Err())
+		logger.Error("LocalReadRangeChunk canceled", slog.String("pre", pre), slog.Any("err", err))
+		return nil, "", err
+	default:
+	}
+
 	// 1. 拼接本地文件完整路径
 	localFilePath := filepath.Join(localDir, filename)
 	localFilePath = filepath.Clean(localFilePath) // 标准化路径（处理多斜杠/相对路径）

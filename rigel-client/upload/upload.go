@@ -640,6 +640,14 @@ func GetTransferReader(
 ) (io.ReadCloser, error) {
 	// 上下文附加pre，双重保障
 	ctx = WithRequestID(ctx, pre)
+	select {
+	case <-ctx.Done():
+		err := fmt.Errorf("upload canceled before start: %w", ctx.Err())
+		logger.Error("GetTransferReader canceled", slog.String("pre", pre), slog.Any("err", err))
+		return nil, err
+	default:
+	}
+
 	var reader io.ReadCloser
 	var err error
 
