@@ -72,7 +72,12 @@ func DownloadFromGCSbyClient(
 	os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", credFile)
 
 	// 创建GCS客户端
-	client, err := storage.NewClient(ctx)
+
+	// 创建带超时的上下文
+	ctx_, cancel := context.WithTimeout(ctx, 1*time.Minute)
+	defer cancel()
+
+	client, err := storage.NewClient(ctx_)
 	if err != nil {
 		return nil, fmt.Errorf("create storage client failed: %w", err)
 	}
@@ -80,9 +85,6 @@ func DownloadFromGCSbyClient(
 	// 获取Bucket和Object
 	bucket := client.Bucket(bucketName)
 	obj := bucket.Object(objectName)
-
-	// 创建带超时的上下文
-	ctx_, cancel := context.WithTimeout(ctx, 1*time.Minute)
 
 	// 创建Reader（完整/分片读取）
 	var rc *storage.Reader
@@ -92,7 +94,6 @@ func DownloadFromGCSbyClient(
 		rc, err = obj.NewRangeReader(ctx_, start, length)
 	}
 	if err != nil {
-		cancel()
 		client.Close()
 		return nil, fmt.Errorf("create object reader failed: %w", err)
 	}

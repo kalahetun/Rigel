@@ -14,12 +14,7 @@ import (
 )
 
 const (
-	FileName       = "X-File-Name" // 通过 Header 传文件名
-	DataSourceType = "X-Data-Source-Type"
-	DataDestType   = "X-Data-Dest-Type"
-	ClientIP       = "X-Client-IP"
-	UserName       = "X-User-Name"
-	RoutingURL     = "/api/v1/routing"
+	RoutingURL = "/api/v1/routing"
 )
 
 // TransferConfig 适配Form表单传输的文件传输配置结构体
@@ -80,7 +75,7 @@ var (
 // 出参：构造好的UploadInfo / 是否已向客户端返回响应（避免重复响应）/ 错误信息
 func ParseHeadersAndBuildUploadInfo(c *gin.Context, pre string, logger *slog.Logger) (upload.UploadInfo, bool, error) {
 
-	fileName := c.GetHeader(FileName)
+	fileName := c.GetHeader(util.HeaderFileName)
 	logger.Info("Start parsing headers and building upload info", slog.String("pre", pre),
 		slog.String("fileName", fileName))
 
@@ -104,9 +99,9 @@ func ParseHeadersAndBuildUploadInfo(c *gin.Context, pre string, logger *slog.Log
 
 	// 2.1 必传项校验
 	requiredChecks := map[string]string{
-		FileName:       fileName,
-		DataSourceType: sourceType,
-		DataDestType:   destType,
+		util.HeaderFileName: fileName,
+		util.DataSourceType: sourceType,
+		util.DataDestType:   destType,
 	}
 	for header, value := range requiredChecks {
 		if value == "" {
@@ -306,9 +301,9 @@ func getRoutingInfoFromServiceB(c *gin.Context, requestID string, logger *slog.L
 	req.Header.Set("Content-Type", "application/json")
 	var userReq util.UserRouteRequest
 	_ = json.Unmarshal(bodyBytes, &userReq) // 仅用于设置Header，忽略错误（已在parseRequest校验）
-	req.Header.Set(FileName, userReq.FileName)
-	req.Header.Set(ClientIP, userReq.ClientIP)
-	req.Header.Set(UserName, userReq.Username)
+	req.Header.Set(util.HeaderFileName, userReq.FileName)
+	req.Header.Set(util.ClientIP, userReq.ClientIP)
+	req.Header.Set(util.UserName, userReq.Username)
 
 	// 发送请求到B服务
 	client := &http.Client{}

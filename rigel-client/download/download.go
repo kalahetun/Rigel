@@ -238,7 +238,7 @@ func GetGCSObjectSize(ctx context.Context, bucketName, objectName, credFile, pre
 	os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", credFile)
 
 	// 3. 创建 GCS 客户端（带超时控制）
-	ctx_, cancel := context.WithTimeout(ctx, 10*time.Second) // 10秒超时，避免卡住
+	ctx_, cancel := context.WithTimeout(ctx, 1*time.Minute) // 避免卡住
 	defer cancel()
 
 	client, err := storage.NewClient(ctx_)

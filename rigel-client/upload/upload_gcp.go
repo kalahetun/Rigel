@@ -60,7 +60,9 @@ func UploadToGCSbyClient(
 	os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", credFile)
 
 	// 创建GCS客户端（传入ctx，支持取消客户端创建过程）
-	client, err := storage.NewClient(ctx)
+	ctx_, cancel := context.WithTimeout(ctx, 1*time.Minute) // 避免卡住
+	defer cancel()
+	client, err := storage.NewClient(ctx_)
 	if err != nil {
 		logger.Error("Failed to create storage client",
 			slog.String("pre", pre),
@@ -73,7 +75,7 @@ func UploadToGCSbyClient(
 	bucket := client.Bucket(bucketName)
 
 	// 初始化GCS Writer（传入外层ctx，不重新创建超时）
-	wc := bucket.Object(objectName).NewWriter(ctx)
+	wc := bucket.Object(objectName).NewWriter(ctx_)
 	wc.StorageClass = "STANDARD"
 	wc.ContentType = "application/octet-stream"
 	defer func() {

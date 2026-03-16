@@ -32,6 +32,14 @@ func ChunkMergeClient(ctx context.Context, serverURL, finalFileName string,
 	logger.Info("ChunkMergeClient", slog.String("pre", pre),
 		slog.String("finalFileName", finalFileName), slog.Any("chunkNames", chunkNames))
 
+	select {
+	case <-ctx.Done():
+		err := fmt.Errorf("upload canceled: %w", ctx.Err())
+		logger.Error("ChunkMergeClient canceled before connect", slog.String("pre", pre), slog.Any("err", err))
+		return "", 0, err
+	default:
+	}
+
 	// 1. 校验必要参数
 	if serverURL == "" {
 		return "", 0, fmt.Errorf("server URL 不能为空")

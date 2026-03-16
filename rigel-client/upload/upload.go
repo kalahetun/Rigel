@@ -190,7 +190,7 @@ func StartChunkTimeoutChecker(
 	for {
 		select {
 		case <-ticker.C:
-			expired, finished, unfinished := CollectExpiredChunks(ctx, s, expire, pre, logger)
+			expired, finished, unfinished := CollectExpiredChunks(s, expire, pre, logger)
 
 			// 原有业务逻辑：检查分片状态并发送事件
 			if !unfinished {
@@ -226,7 +226,7 @@ func StartChunkTimeoutChecker(
 
 // CollectExpiredChunks 保留pre入参，状态枚举替换Acked
 func CollectExpiredChunks(
-	ctx context.Context,
+	//ctx context.Context,
 	s *util.SafeMap,
 	expire time.Duration,
 	pre string, // 保留pre入参

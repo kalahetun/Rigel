@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"time"
 )
 
 // finalizeObject 把临时文件复制到最终位置并删除临时文件
@@ -43,12 +44,25 @@ func ComposeTree(
 	pre string,
 	logger *slog.Logger,
 ) error {
+
+	select {
+	case <-ctx.Done():
+		err := fmt.Errorf("upload canceled: %w", ctx.Err())
+		logger.Error("GCP ComposeTree canceled before connect", slog.String("pre", pre), slog.Any("err", err))
+		return err
+	default:
+	}
+
 	// 1. 单文件场景特殊处理（核心优化）
 	if len(parts) == 1 {
 		// 设置GCP凭证环境变量
 		os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", credFile)
+
 		// 创建GCS客户端
-		client, err := storage.NewClient(ctx)
+		ctx_, cancel := context.WithTimeout(ctx, 1*time.Minute)
+		defer cancel()
+
+		client, err := storage.NewClient(ctx_)
 		if err != nil {
 			logger.Error("create GCS client failed", slog.String("pre", pre), slog.Any("err", err))
 			return fmt.Errorf("new storage client failed: %w", err)
@@ -73,7 +87,7 @@ func ComposeTree(
 			slog.String("to", objectName))
 
 		// 执行复制操作
-		_, err = bkt.Object(objectName).CopierFrom(bkt.Object(partName)).Run(ctx)
+		_, err = bkt.Object(objectName).CopierFrom(bkt.Object(partName)).Run(ctx_)
 		if err != nil {
 			logger.Error("copy single file failed",
 				slog.String("pre", pre),
@@ -88,7 +102,7 @@ func ComposeTree(
 			slog.String("to", objectName))
 
 		// 复制成功后删除源文件（容错：删除失败仅告警，不中断流程）
-		if delErr := bkt.Object(partName).Delete(ctx); delErr != nil {
+		if delErr := bkt.Object(partName).Delete(ctx_); delErr != nil {
 			logger.Warn("delete single source file failed (copy success)",
 				slog.String("pre", pre),
 				slog.String("partName", partName),
@@ -107,7 +121,10 @@ func ComposeTree(
 
 	// 2. 多文件场景：原有树形合成逻辑（保留）
 	os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", credFile)
-	client, err := storage.NewClient(ctx)
+	// 创建GCS客户端
+	ctx_, cancel := context.WithTimeout(ctx, 1*time.Minute)
+	defer cancel()
+	client, err := storage.NewClient(ctx_)
 	if err != nil {
 		logger.Error("create GCS client failed", slog.String("pre", pre), slog.Any("err", err))
 		return fmt.Errorf("new storage client failed: %w", err)
@@ -138,7 +155,7 @@ func ComposeTree(
 			}
 
 			// 执行合成操作
-			if _, err := bkt.Object(tmpObjectName).ComposerFrom(objs...).Run(ctx); err != nil {
+			if _, err := bkt.Object(tmpObjectName).ComposerFrom(objs...).Run(ctx_); err != nil {
 				logger.Error("compose temp object failed",
 					slog.String("pre", pre),
 					slog.String("tmpObjectName", tmpObjectName),
@@ -162,7 +179,7 @@ func ComposeTree(
 	}
 
 	// 3. 多文件合成最终步骤：临时文件→最终文件
-	if err := finalizeObject(ctx, bkt, current[0], objectName); err != nil {
+	if err := finalizeObject(ctx_, bkt, current[0], objectName); err != nil {
 		logger.Error("finalize object failed", slog.String("pre", pre), slog.Any("err", err))
 		return fmt.Errorf("finalize object failed: %w", err)
 	}
@@ -171,7 +188,7 @@ func ComposeTree(
 	// 4.1 删除中间临时文件（排除已在finalizeObject删除的最终临时文件）
 	for _, tmp := range tempObjects {
 		if tmp != current[0] {
-			if delErr := bkt.Object(tmp).Delete(ctx); delErr != nil {
+			if delErr := bkt.Object(tmp).Delete(ctx_); delErr != nil {
 				logger.Warn("delete temp object failed",
 					slog.String("pre", pre),
 					slog.String("tmp", tmp),
@@ -182,7 +199,7 @@ func ComposeTree(
 
 	// 4.2 删除原始分片文件
 	for _, p := range parts {
-		if delErr := bkt.Object(p).Delete(ctx); delErr != nil {
+		if delErr := bkt.Object(p).Delete(ctx_); delErr != nil {
 			logger.Warn("delete part object failed",
 				slog.String("pre", pre),
 				slog.String("part", p),

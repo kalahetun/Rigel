@@ -17,11 +17,6 @@ import (
 	"time"
 )
 
-const (
-	HeaderFileName  = "X-File-Name"  // 最终合并后的文件名
-	HeaderChunkName = "X-Chunk-Name" // 单个分片的自定义名称
-)
-
 // ChunkUploadRequest 分片上传请求参数
 type ChunkUploadRequest struct {
 	ServerURL     string // 接口地址（如 http://127.0.0.1:8080/api/v1/chunk/upload）
@@ -42,7 +37,7 @@ type ChunkUploadRequest struct {
 func UploadFileChunk(
 	ctx context.Context,
 	req ChunkUploadRequest,
-	inMemory bool,        // 新增：内存模式开关
+	inMemory bool, // 新增：内存模式开关
 	dataReader io.Reader, // 新增：内存模式的数据源Reader
 	pre string,
 	logger *slog.Logger,
@@ -146,8 +141,8 @@ func UploadFileChunk(
 
 	// 5. 设置请求头（严格匹配服务端要求，完全保留原逻辑）
 	httpReq.Header.Set("Content-Type", bodyWriter.FormDataContentType())
-	httpReq.Header.Set(HeaderFileName, req.FinalFileName)
-	httpReq.Header.Set(HeaderChunkName, req.ChunkName)
+	httpReq.Header.Set(util.HeaderFileName, req.FinalFileName)
+	httpReq.Header.Set(util.HeaderChunkName, req.ChunkName)
 
 	// 6. 配置 HTTP 客户端（适配 Linux 长连接/超时，完全保留原逻辑）
 	client := &http.Client{
@@ -284,8 +279,8 @@ func UploadFileChunkbyProxy(
 	req.Header.Set("X-Chunk-Index", "1")
 	req.Header.Set("X-Rate-Limit-Enable", "true")
 	req.Header.Set("X-Source-Type", task.Source.SourceType)
-	req.Header.Set(HeaderFileName, task.ObjectName)
-	req.Header.Set(HeaderChunkName, task.ObjectName)
+	req.Header.Set(util.HeaderFileName, task.ObjectName)
+	req.Header.Set(util.HeaderChunkName, task.ObjectName)
 	logger.Info("HTTP request headers set", slog.String("pre", pre))
 
 	// 发送请求
