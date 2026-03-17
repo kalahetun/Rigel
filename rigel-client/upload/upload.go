@@ -539,6 +539,7 @@ func StartChunkSubmitLoop(
 func Upload(uploadInfo UploadInfo,
 	handler func(ChunkTask, string, *rate.Limiter, bool, string, *slog.Logger) error,
 	routing util.RoutingInfo,
+	noSplit bool,
 	pre string, // 保留原有pre入参
 	logger *slog.Logger) error {
 
@@ -585,7 +586,7 @@ func Upload(uploadInfo UploadInfo,
 	// 4. 文件分块
 	chunks := util.NewSafeMap()
 	chunkSize, err := split.SplitFilebyRange(fileSize, uploadInfo.File.Start, uploadInfo.File.Length,
-		uploadInfo.File.FileName, uploadInfo.File.NewFileName, chunks, pre, logger)
+		uploadInfo.File.FileName, uploadInfo.File.NewFileName, noSplit, chunks, pre, logger)
 	if err != nil {
 		logger.Error("Split file failed", slog.String("pre", pre), slog.Any("err", err))
 		return fmt.Errorf("%w: %s", ErrChunkSplitFailed, err.Error())

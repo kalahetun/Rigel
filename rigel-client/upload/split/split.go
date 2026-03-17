@@ -19,17 +19,19 @@ type ChunkState struct {
 	Acked       int
 }
 
-// SplitFile 支持指定范围分片（length>0）或全文件分片（length≤0）
+// SplitFilebyRange 支持指定范围分片（length>0）或全文件分片（length≤0），新增noSplit参数控制是否不分片
 // 参数说明：
 //
 //	size: 全局文件总大小（字节）
 //	start: 分片起始字节（左闭，length≤0时，start=0则全文件，start>0则从start到文件末尾）
 //	length: 分片长度（字节）→ length>0：指定范围；length≤0：全量分片（从start到文件末尾）
 //	fileName: 原始文件名
+//	newFileName: 新文件名前缀
+//	noSplit: 是否不分片（true=整个范围只生成1个分片；false=按AutoSelectChunkSize拆分）
 //	chunks: 存储分片信息的安全Map
 //	pre: 日志前缀
 //	logger: 日志对象
-func SplitFilebyRange(size int64, start, length int64, fileName, newFileName string, chunks *util.SafeMap,
+func SplitFilebyRange(size int64, start, length int64, fileName, newFileName string, noSplit bool, chunks *util.SafeMap,
 	pre string, logger *slog.Logger) (int64, error) {
 
 	// -------------------------- 1. 核心逻辑：处理 length ≤ 0 的全量分片 --------------------------
@@ -74,10 +76,45 @@ func SplitFilebyRange(size int64, start, length int64, fileName, newFileName str
 		offset int64 = rangeStart // 分片起始偏移（从rangeStart开始）
 		index  int   = 0          // 分片索引
 	)
+
+	// -------------------------- 4. 执行分片（核心改造：支持noSplit） --------------------------
+	// 如果开启不分片，直接生成1个分片覆盖整个有效范围
+	if noSplit {
+		partName := fmt.Sprintf("%s.part.%05d", newFileName, index)
+		// 存储分片信息
+		chunks.Set(strconv.Itoa(index), &ChunkState{
+			Index:       strconv.Itoa(index),
+			FileName:    fileName,
+			NewFileName: newFileName,
+			ObjectName:  partName,
+			Offset:      rangeStart,
+			Size:        effectiveLength,
+			Acked:       0,
+		})
+
+		// 日志打印
+		logger.Info("SplitFile (不分片模式)", slog.String("pre", pre),
+			"partName", partName,
+			"global_start", rangeStart,
+			"global_end", rangeEnd,
+			"part_size", effectiveLength,
+			"range_start", rangeStart,
+			"range_end", rangeEnd,
+			"total_file_size", size)
+
+		logger.Info("分片完成（不分片模式）", slog.String("pre", pre),
+			"total_chunks", 1,
+			"range_start", rangeStart,
+			"range_end", rangeEnd,
+			"effective_length", effectiveLength)
+
+		// 不分片时返回整个有效长度作为分片大小
+		return effectiveLength, nil
+	}
+
 	// 自动选择分片大小（基于有效长度）
 	chunkSize := util.AutoSelectChunkSize(effectiveLength)
-
-	// -------------------------- 4. 执行分片（左闭右开） --------------------------
+	// 原有分片逻辑（noSplit=false时执行）
 	for offset < rangeEnd {
 		// 计算当前分片大小
 		partSize := chunkSize

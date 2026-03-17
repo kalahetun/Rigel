@@ -37,7 +37,7 @@ type ChunkUploadRequest struct {
 func UploadFileChunk(
 	ctx context.Context,
 	req ChunkUploadRequest,
-	inMemory bool,        // 新增：内存模式开关
+	inMemory bool, // 新增：内存模式开关
 	dataReader io.Reader, // 新增：内存模式的数据源Reader
 	pre string,
 	logger *slog.Logger,

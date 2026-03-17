@@ -189,7 +189,7 @@ func V2ClientUploadHandler(logger *slog.Logger) gin.HandlerFunc {
 		// 2. 调用客户端直传实现上传文件到存储服务（C服务）
 		// UploadDirectImp：客户端直传实现（区别于V1的代理转发实现）
 		// 参数说明：uploadInfo-上传信息；UploadDirectImp-直传实现函数；true-是否开启并发；requestID-请求标识；logger-日志实例
-		if err := upload.Upload(uploadInfo, upload.UploadDirectImp, util.RoutingInfo{}, requestID, logger); err != nil {
+		if err := upload.Upload(uploadInfo, upload.UploadDirectImp, util.RoutingInfo{}, false, requestID, logger); err != nil {
 			logger.Error("client direct upload failed", slog.String("requestID", requestID), slog.Any("err", err))
 			// 返回500内部错误，携带具体错误信息
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -234,7 +234,7 @@ func V1ProxyUploadHandler(logger *slog.Logger) gin.HandlerFunc {
 		}
 
 		// 3. 上传文件到C服务
-		if err := upload.Upload(uploadInfo, upload.UploadRedirectImp, routingInfo, requestID, logger); err != nil {
+		if err := upload.Upload(uploadInfo, upload.UploadRedirectImp, routingInfo, false, requestID, logger); err != nil {
 			handleError(c, logger, requestID, http.StatusInternalServerError, "upload to service C failed", err)
 			return
 		}
