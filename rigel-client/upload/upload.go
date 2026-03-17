@@ -89,11 +89,11 @@ const (
 	//LocalDisk  = "local-disk"
 
 	CheckInterval           = 10 * time.Second  // 分块超时检查间隔
-	ChunkExpireTime         = 60 * time.Second  // 分块超时重传阈值
-	UploadTimeout           = 5 * time.Minute   // 整体上传超时时间
+	ChunkExpireTime         = 10 * time.Second  // 分块超时重传阈值
+	UploadTimeout           = 3 * time.Minute   // 整体上传超时时间
 	ChunkSizeInMemory       = 512 * 1024 * 1024 // 512MB
-	TaskSubmitRetryInterval = 3 * time.Second
-	ChunkSubmitDelay        = 200 * time.Millisecond
+	TaskSubmitRetryInterval = 1 * time.Second
+	ChunkSubmitDelay        = 100 * time.Millisecond
 )
 
 // -------------------------- 5. 结构体定义（保留pre/RequestID，兼容原有逻辑） --------------------------
@@ -234,7 +234,7 @@ func StartChunkTimeoutChecker(
 
 // CollectExpiredChunks 保留pre入参，状态枚举替换Acked
 func CollectExpiredChunks(
-	//ctx context.Context,
+//ctx context.Context,
 	s *util.SafeMap,
 	expire time.Duration,
 	pre string, // 保留pre入参
