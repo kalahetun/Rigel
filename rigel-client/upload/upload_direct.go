@@ -36,7 +36,7 @@ func UploadDirectImp(task ChunkTask, hops string, rateLimiter *rate.Limiter, inM
 		Offset:      chunk.Offset,
 		Size:        chunk.Size,
 		LastSend:    time.Now(),
-		Acked:       1, // 1=开始传输
+		Acked:       int(ChunkStatusTransferring), // 1=开始传输
 	}
 	task.Chunks.Set(task.Index, initialChunkState)
 	logger.Info("set chunk initial state", slog.String("pre", pre), slog.String("index", task.Index), slog.Int("acked", 1))
@@ -54,7 +54,7 @@ func UploadDirectImp(task ChunkTask, hops string, rateLimiter *rate.Limiter, inM
 				Offset:      chunk.Offset,
 				Size:        chunk.Size,
 				LastSend:    initialChunkState.LastSend,
-				Acked:       0, // 0=传输失败
+				Acked:       int(ChunkStatusTransferFailed), // 2=传输失败
 			}
 			task.Chunks.Set(task.Index, errorChunkState)
 			logger.Error("chunk transfer failed, set acked=0", slog.String("pre", pre), slog.String("index", task.Index), slog.Any("err", finalErr))
@@ -141,7 +141,7 @@ func UploadDirectImp(task ChunkTask, hops string, rateLimiter *rate.Limiter, inM
 		Offset:      chunk.Offset,
 		Size:        chunk.Size,
 		LastSend:    initialChunkState.LastSend, // 保留开始传输时间
-		Acked:       2,                          // 2=传输成功
+		Acked:       int(ChunkStatusCompleted),  // 3=传输成功
 	}
 	task.Chunks.Set(task.Index, successChunkState)
 	logger.Info("chunk transfer success, set acked=2", slog.String("pre", pre), slog.String("index", task.Index))

@@ -28,25 +28,33 @@ var (
 )
 
 // -------------------------- 2. 分块状态枚举（替换原Acked 0/1/2） --------------------------
+// ChunkStatus 分片传输状态枚举（替代原Acked数值）
 type ChunkStatus int
 
 const (
-	ChunkStatusInit         ChunkStatus = 0 // 初始状态，未开始传输（对应原Acked=0）
-	ChunkStatusTransferring ChunkStatus = 1 // 传输中，已发送但未确认（对应原Acked=1）
-	ChunkStatusCompleted    ChunkStatus = 2 // 传输完成，已确认（对应原Acked=2）
+	// ChunkStatusInit 初始状态：未开始传输（对应原Acked=0）
+	ChunkStatusInit ChunkStatus = 0
+	// ChunkStatusTransferring 传输中：已开始发送但未完成/确认（对应原Acked=1）
+	ChunkStatusTransferring ChunkStatus = 1
+	// ChunkStatusTransferFailed 传输失败：发送过程中出错（新增状态）
+	ChunkStatusTransferFailed ChunkStatus = 2
+	// ChunkStatusCompleted 传输完成：已成功发送并确认（对应原Acked=2）
+	ChunkStatusCompleted ChunkStatus = 3
 )
 
-// String 状态转字符串，便于日志/调试
+// String 状态转易读字符串，便于日志输出和调试
 func (s ChunkStatus) String() string {
 	switch s {
 	case ChunkStatusInit:
-		return "init"
+		return "init" // 初始状态
 	case ChunkStatusTransferring:
-		return "transferring"
+		return "transferring" // 传输中（修正原错误的字符串）
+	case ChunkStatusTransferFailed:
+		return "transfer_failed" // 传输失败（下划线分隔，符合日志命名习惯）
 	case ChunkStatusCompleted:
-		return "completed"
+		return "completed" // 传输完成
 	default:
-		return fmt.Sprintf("unknown(%d)", s)
+		return fmt.Sprintf("unknown_chunk_status(%d)", s) // 明确标注未知状态类型
 	}
 }
 
@@ -190,10 +198,10 @@ func StartChunkTimeoutChecker(
 	for {
 		select {
 		case <-ticker.C:
-			expired, finished, unfinished := CollectExpiredChunks(s, expire, pre, logger)
+			expired, finished, hasInitSendingChunk := CollectExpiredChunks(s, expire, pre, logger)
 
 			// 原有业务逻辑：检查分片状态并发送事件
-			if !unfinished {
+			if !hasInitSendingChunk {
 				if finished {
 					events <- ChunkEvent{Type: ChunkFinished}
 					logger.Info("Chunk checker exit: all chunks finished", slog.String("pre", pre))
@@ -226,12 +234,12 @@ func StartChunkTimeoutChecker(
 
 // CollectExpiredChunks 保留pre入参，状态枚举替换Acked
 func CollectExpiredChunks(
-//ctx context.Context,
+	//ctx context.Context,
 	s *util.SafeMap,
 	expire time.Duration,
 	pre string, // 保留pre入参
 	logger *slog.Logger,
-) (expired map[string]*split.ChunkState, finished, unfinished bool) {
+) (expired map[string]*split.ChunkState, finished, hasInitSendingChunk bool) {
 	now := time.Now()
 	expired = make(map[string]*split.ChunkState)
 	finished = true // 先假设都 ack 了
@@ -248,16 +256,16 @@ func CollectExpiredChunks(
 
 		// 核心改造：用枚举替代原Acked数值判断
 		status := ChunkStatus(v_.Acked)
+
 		//还没发送完不能resubmit
 		if status == ChunkStatusInit {
-			logger.Info("还没发送完不能resubmit", slog.String("pre", pre),
-				slog.String("index", v_.Index))
+			logger.Warn("Resubmit rejected, initial transmission is still in progress",
+				slog.String("pre", pre), slog.String("index", v_.Index))
 			return expired, false, true
 		}
 
-		if status == ChunkStatusTransferring {
+		if status == ChunkStatusTransferring || status == ChunkStatusTransferFailed {
 			finished = false // 只要发现一个没 ack，就没完成
-
 			if !v_.LastSend.IsZero() && now.Sub(v_.LastSend) > expire {
 				expired[v_.Index] = v_
 			}
@@ -391,11 +399,11 @@ func ChunkEventLoop(ctx context.Context, chunks *util.SafeMap, workerPool *Worke
 			}
 			switch ev.Type {
 			case ChunkExpired:
-				logger.Warn("超时重传", slog.String("pre", pre), "indexes", ev.Indexes)
+				logger.Warn("ChunkExpired", slog.String("pre", pre), "indexes", ev.Indexes)
 				StartChunkSubmitLoop(ctx, chunks, workerPool, uploadInfo, true, ev.Indexes, pre, logger)
 
 			case ChunkFinished:
-				logger.Info("传输完成", slog.String("pre", pre),
+				logger.Info("ChunkFinished", slog.String("pre", pre),
 					slog.String("fileName", uploadInfo.File.NewFileName))
 
 				var parts []string
@@ -413,7 +421,7 @@ func ChunkEventLoop(ctx context.Context, chunks *util.SafeMap, workerPool *Worke
 						close(done)
 						return
 					}
-					logger.Info("传输完成", slog.String("pre", pre), slog.String("fileName",
+					logger.Info("upload success", slog.String("pre", pre), slog.String("fileName",
 						uploadInfo.File.NewFileName), "index", v_.Index, "ObjectName", v_.ObjectName)
 					parts = append(parts, v_.ObjectName)
 				}
