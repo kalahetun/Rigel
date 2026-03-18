@@ -234,7 +234,7 @@ func StartChunkTimeoutChecker(
 
 // CollectExpiredChunks 保留pre入参，状态枚举替换Acked
 func CollectExpiredChunks(
-//ctx context.Context,
+	//ctx context.Context,
 	s *util.SafeMap,
 	expire time.Duration,
 	pre string, // 保留pre入参
@@ -294,6 +294,7 @@ func NewWorkerPool(
 	}
 	logger.Info("NewWorkerPool", slog.String("pre", pre), "queueSize", queueSize)
 
+	//todo 支持多携程 如果 routing num 小于 MaxConcurrency
 	workerNum := len(routingInfo.Routing)
 	if workerNum <= 0 {
 		for i := 0; i < MaxConcurrency; i++ {
@@ -601,7 +602,7 @@ func Upload(uploadInfo UploadInfo,
 
 	//启动定时重传 & check传输完毕
 	done := make(chan struct{})
-	events := make(chan ChunkEvent, 100)
+	events := make(chan ChunkEvent, QueueBufferSize)
 	// 启动超时检查器（传入带超时的ctx）
 	go StartChunkTimeoutChecker(ctx, chunks, CheckInterval, ChunkExpireTime, UploadTimeout, events, pre, logger)
 
