@@ -1,5 +1,7 @@
 # Rigel: Global Cross-Cloud Bulk Data Transfer Platform
 
+![Service Architecture of the Rigel Platform](service_architecture.png)
+
 ## Overview
 Rigel is a high-performance bulk data transfer platform built on a global cross-cloud network, designed to address the key pain points of existing cloud-based data transfer solutions: high costs, single-cloud lock-in, and poor scalability across providers.
 
@@ -33,7 +35,7 @@ Rigel's underlying architecture enables global cross-cloud deployment:
 - **Nodes**: Grouped VMs mapping to cloud regions or availability zones (e.g., `europe-west4-b`), acting as the basic unit for resource management and scheduling.
 
 #### Decoupled Control–Data Plane
-- **Control Plane**: One instance per node, responsible for Lyapunov-based routing optimization and elastic scaling decisions.
+- **Control Plane**: Deployed at node level, responsible for Lyapunov-based routing optimization and elastic scaling decisions.
 - **Data Plane**: Deployed at VM level, running `data-plane` (resource metrics collection/network probing) and `data-proxy` (actual file forwarding/proxying) services.
 - **Edge Client**: `rigel-client` manages file chunking and multi-path parallel transmission for bulk data at the system edge.
 
