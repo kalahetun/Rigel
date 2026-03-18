@@ -19,8 +19,10 @@ import (
 )
 
 const (
-	HeaderHops  = "x-hops"
-	HeaderIndex = "x-index"
+	HeaderHops       = "x-hops"
+	HeaderIndex      = "x-index"
+	HeaderSourceTyep = "X-Source-Type"
+	RemoteDisk       = "remote-disk"
 	//HeaderHost      = "Host"
 	DefaultIndex    = "1"
 	ServerErrorCode = 503
@@ -140,8 +142,8 @@ func handler(logger *slog.Logger) http.HandlerFunc {
 		method := r.Method
 		//最后一跳的逻辑
 		if newIndex == len(hops) {
-			sourceType := r.Header.Get("X-Source-Type")
-			if sourceType != "remote-disk" {
+			sourceType := r.Header.Get(HeaderSourceTyep)
+			if sourceType != RemoteDisk {
 				scheme = "https"
 				method = "PUT"
 			}
