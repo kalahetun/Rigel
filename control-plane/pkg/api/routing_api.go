@@ -23,17 +23,6 @@ func NewUserRoutingAPIHandler(gm *routing.GraphManager, logger *slog.Logger) *Us
 	}
 }
 
-// RouteInfo 返回给用户的结构
-//type PathInfo struct {
-//	Hops string `json:"hops"`
-//	Rate int64  `json:"rate"`
-//	//Weight int64  `json:"weight"`
-//}
-//
-//type RoutingInfo struct {
-//	Routing []PathInfo `json:"routing"`
-//}
-
 // GetUserRoute 处理 POST /api/v1/routing
 func (h *UserRoutingAPIHandler) GetUserRoute(c *gin.Context) {
 
