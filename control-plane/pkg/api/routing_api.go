@@ -53,7 +53,7 @@ func (h *UserRoutingAPIHandler) GetUserRoute(c *gin.Context) {
 		slog.String("fileName", filename), slog.Any("endPoints", req))
 
 	//调用 GraphManager 获取最优路径 可以把 GetBestPath 改成支持从客户端到服务器
-	paths := h.GM.Routing(req.CloudRegion, req, pre, h.Logger)
+	paths := h.GM.Routing(req, pre, h.Logger)
 
 	h.Logger.Info("UserRoute POST response", slog.String("pre", pre),
 		slog.Any("routing", paths))

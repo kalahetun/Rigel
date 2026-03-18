@@ -203,8 +203,7 @@ func main() {
 			uu.DataDir, nodeName, logPre, logger)
 		if err != nil {
 			logger.Error("Failed to start embedded etcd",
-				slog.String("pre", logPre),
-				slog.Any("err", err))
+				slog.String("pre", logPre), slog.Any("err", err))
 		}
 		defer etcdServer.Close()
 	}
@@ -286,7 +285,7 @@ func main() {
 	_ = operator.InitEnvoyGlobalConfig(uu, 9901, logPre, logger)
 	err = operator.StartFirstEnvoy(logPre, logger, logger1)
 	if err != nil {
-		logger.Error("启动第一个Envoy失败", slog.String("pre", logPre), "error", err)
+		logger.Error("启动第一个Envoy失败", slog.String("pre", logPre), slog.Any("err", err))
 		return
 	}
 
@@ -309,9 +308,9 @@ func main() {
 	//手动控制scaling的接口
 	api.InitManualScalingRouter(router, es, logger, logger1)
 
-	logger.Info("Envoy端口管理API启动", slog.String("pre", logPre), "addr", ":8081") // 启动API服务
+	logger.Info("Envoy端口管理API启动", slog.String("pre", logPre), slog.String("addr", ":8081")) // 启动API服务
 	if err := router.Run(":8081"); err != nil {
-		logger.Error("API服务启动失败", slog.String("pre", logPre), "error", err)
+		logger.Error("API服务启动失败", slog.String("pre", logPre), slog.Any("err", err))
 		//os.Exit(1)
 		return
 	}

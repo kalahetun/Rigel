@@ -10,11 +10,9 @@ import (
 )
 
 // 输入是client区域和cloud storage 区域
-func (g *GraphManager) Routing(startContinent string, request util.EndPoints,
-	pre string, logger *slog.Logger) util.RoutingInfo {
+func (g *GraphManager) Routing(endPoints util.EndPoints, pre string, logger *slog.Logger) util.RoutingInfo {
 
-	logger.Info("Routing", slog.String("pre", pre),
-		"startContinent", startContinent, "userRouteRequest", request)
+	logger.Info("Routing", slog.String("pre", pre), slog.Any("endPoints", endPoints))
 
 	// 获取所有节点
 	allNodes := g.GetNodes()
@@ -23,25 +21,22 @@ func (g *GraphManager) Routing(startContinent string, request util.EndPoints,
 	var startNodes []*storage.NetworkTelemetry
 
 	for _, node := range allNodes {
-		if node.Continent == startContinent {
+		if node.Continent == endPoints.ClientRegion {
 			startNodes = append(startNodes, node)
 		}
 	}
 
 	//client所在大区没有接入点 直接公网传输
 	if len(startNodes) == 0 {
-		logger.Warn("No nodes found for start continent",
-			slog.String("pre", pre), "startContinent", startContinent)
+		logger.Warn("No nodes found for start continent", slog.String("pre", pre))
 		return util.RoutingInfo{}
 	}
 
-	cloudFull := fmt.Sprintf("%s_%s_%s",
-		request.CloudProvider, request.CloudRegion, request.CloudID)
+	serverFull := fmt.Sprintf("%s_%s_%s", endPoints.ServerProvider, endPoints.ServerRegion, endPoints.ServerID)
 
 	//没有到该cloud storage的路径
-	if _, ok := g.FindEdgeBySuffix(cloudFull); !ok {
-		logger.Warn("No cloud node found",
-			slog.String("pre", pre), "cloudFull", cloudFull)
+	if _, ok := g.FindEdgeBySuffix(serverFull); !ok {
+		logger.Warn("No cloud node found", slog.String("pre", pre), slog.String("serverFull", serverFull))
 		return util.RoutingInfo{}
 	}
 
@@ -54,7 +49,7 @@ func (g *GraphManager) Routing(startContinent string, request util.EndPoints,
 	var tempPaths []Path
 	minCost := math.Inf(1)
 	for _, sNode := range startNodes {
-		path, cost := g.Dijkstra(InNode(sNode.PublicIP), cloudFull)
+		path, cost := g.Dijkstra(InNode(sNode.PublicIP), serverFull)
 		if path == nil {
 			continue
 		}
@@ -65,16 +60,18 @@ func (g *GraphManager) Routing(startContinent string, request util.EndPoints,
 		}
 	}
 	logger.Info("All candidate paths", slog.String("pre", pre),
-		"paths", fmt.Sprintf("%+v", tempPaths))
+		slog.String("paths", fmt.Sprintf("%+v", tempPaths)))
 
 	// 输出结果
 	if len(bestPath) == 0 {
 		logger.Warn("No path found between continents", slog.String("pre", pre),
-			"startContinent", startContinent, "endContinent", cloudFull)
+			slog.String("startContinent", endPoints.ClientRegion),
+			slog.String("endContinent", serverFull))
 	} else {
-		logger.Info("Shortest path found",
-			slog.String("pre", pre), "startContinent", startContinent,
-			"endContinent", cloudFull, "path", bestPath, "totalRisk", minCost)
+		logger.Info("Shortest path found", slog.String("pre", pre),
+			slog.String("startContinent", endPoints.ClientRegion),
+			slog.String("endContinent", serverFull),
+			slog.Any("path", bestPath), slog.Any("totalRisk", minCost))
 	}
 
 	var hops []string
@@ -91,7 +88,7 @@ func (g *GraphManager) Routing(startContinent string, request util.EndPoints,
 		hops_ = append(hops_, hops[i]+":8090") //gateway port
 	}
 	merged := strings.Join(hops_, ",")
-	merged += "," + request.ServerIP
+	merged += "," + endPoints.ServerIP
 
 	//计算速率
 	rate := ComputeAdmissionRate(Task{WeightU: 1, MinRate: 10, MaxRate: 20},
