@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math/rand"
 	"time"
 
 	"golang.org/x/time/rate"
@@ -81,19 +82,14 @@ func GetRequestID(ctx context.Context) string {
 
 // -------------------------- 4. 原有常量定义（完全保留） --------------------------
 const (
-	MaxConcurrency  = 10  // 协程池最大并发数
-	QueueBufferSize = 100 // 任务队列缓冲大小
-
-	//GCPCLoud   = "gcp-cloud"
-	//RemoteDisk = "remote-disk"
-	//LocalDisk  = "local-disk"
-
-	CheckInterval           = 10 * time.Second  // 分块超时检查间隔
-	ChunkExpireTime         = 10 * time.Second  // 分块超时重传阈值
-	UploadTimeout           = 3 * time.Minute   // 整体上传超时时间
-	ChunkSizeInMemory       = 512 * 1024 * 1024 // 512MB
+	MaxConcurrency          = 10               // 协程池最大并发数
+	QueueBufferSize         = 100              // 任务队列缓冲大小
+	CheckInterval           = 10 * time.Second // 分块超时检查间隔
+	ChunkExpireTime         = 10 * time.Second // 分块超时重传阈值
+	UploadTimeout           = 3 * time.Minute  // 整体上传超时时间
 	TaskSubmitRetryInterval = 1 * time.Second
 	ChunkSubmitDelay        = 100 * time.Millisecond
+	ChunkSizeInMemory       = 512 * 1024 * 1024 // 512MB
 )
 
 // -------------------------- 5. 结构体定义（保留pre/RequestID，兼容原有逻辑） --------------------------
@@ -294,7 +290,6 @@ func NewWorkerPool(
 	}
 	logger.Info("NewWorkerPool", slog.String("pre", pre), "queueSize", queueSize)
 
-	//todo 支持多携程 如果 routing num 小于 MaxConcurrency
 	workerNum := len(routingInfo.Routing)
 	if workerNum <= 0 {
 		for i := 0; i < MaxConcurrency; i++ {
@@ -332,7 +327,12 @@ func NewWorkerPool(
 			}(i)
 		}
 	} else {
-		for i := 0; i < workerNum; i++ {
+
+		for i := 0; i < MaxConcurrency; i++ {
+
+			rand.Seed(time.Now().UnixNano())
+			index := rand.Intn(workerNum)
+
 			go func(workerID int, pathInfo util.PathInfo) {
 				rate_ := pathInfo.Rate
 				bytesPerSec := rate_ * 1024 * 1024 / 8 // Mbps → bytes/sec
@@ -369,7 +369,8 @@ func NewWorkerPool(
 						}
 					}
 				}
-			}(i, routingInfo.Routing[i])
+			}(i, routingInfo.Routing[index])
+
 		}
 	}
 	return p

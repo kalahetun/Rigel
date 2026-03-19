@@ -26,10 +26,9 @@ const (
 	HeaderIndex      = "x-index"
 	HeaderSourceTyep = "X-Source-Type"
 	RemoteDisk       = "remote-disk"
-	//HeaderHost      = "Host"
-	DefaultIndex    = "1"
-	ServerErrorCode = 503
-	BufferSize      = 64
+	DefaultIndex     = "1"
+	ServerErrorCode  = 503
+	BufferSize       = 64
 )
 
 // 自定义Handler：修复slog.Context为context.Context，兼容所有Go 1.21+版本
@@ -256,10 +255,6 @@ func main() {
 		panic(err)
 	}
 	defer logFile.Close()
-
-	//logger := slog.New(slog.NewTextHandler(logFile, &slog.HandlerOptions{
-	//	Level: slog.LevelInfo,
-	//}))
 
 	// 2. 配置基础TextHandler（保留原有Level等配置）
 	baseHandler := slog.NewTextHandler(logFile, &slog.HandlerOptions{
