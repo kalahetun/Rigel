@@ -1,4 +1,4 @@
-package download
+package gcp
 
 import (
 	"cloud.google.com/go/storage"
@@ -12,19 +12,37 @@ import (
 	"time"
 )
 
-// DownloadFromGCSbyClient 从GCS读取数据（支持内存流式/本地落盘两种模式）
-// 参数说明：
-//
-//	inMemory: true=返回流式Reader（不落盘），false=落盘到本地文件
-//	其他参数保持原有含义
-func DownloadFromGCSbyClient(
+type Download struct {
+	localBaseDir string
+	bucketName   string
+	credFile     string
+}
+
+func NewDownload(
+	localBaseDir, bucketName, credFile string, pre string, logger *slog.Logger,
+) *Download {
+	d := &Download{
+		localBaseDir: localBaseDir,
+		bucketName:   bucketName,
+		credFile:     credFile,
+	}
+	logger.Info("NewDownload", slog.String("pre", pre), slog.Any("Download", *d))
+	return d
+}
+
+func (d *Download) DownloadFile(
 	ctx context.Context,
-	LocalBaseDir, bucketName, objectName, newFileName, credFile string,
-	start, length int64,
+	filename string,
+	newFilename string,
+	start int64,
+	length int64,
+	bs string,
 	inMemory bool, // 新增：true=不落盘返回Reader，false=落盘
 	pre string,
 	logger *slog.Logger,
 ) (io.ReadCloser, error) { // 返回io.ReadCloser（兼容两种模式）
+
+	objectName := filename
 
 	select {
 	case <-ctx.Done():
@@ -39,12 +57,12 @@ func DownloadFromGCSbyClient(
 		if length <= 0 {
 			logger.Info("Reading full file from GCS (in-memory mode, no disk write)",
 				slog.String("pre", pre),
-				slog.String("bucketName", bucketName),
+				slog.String("bucketName", d.bucketName),
 				slog.String("objectName", objectName))
 		} else {
 			logger.Info("Reading file range from GCS (in-memory mode, no disk write)",
 				slog.String("pre", pre),
-				slog.String("bucketName", bucketName),
+				slog.String("bucketName", d.bucketName),
 				slog.String("objectName", objectName),
 				slog.Int64("start_byte", start),
 				slog.Int64("length_byte", length))
@@ -53,23 +71,23 @@ func DownloadFromGCSbyClient(
 		if length <= 0 {
 			logger.Info("Downloading full file from GCS (disk mode)",
 				slog.String("pre", pre),
-				slog.String("bucketName", bucketName),
+				slog.String("bucketName", d.bucketName),
 				slog.String("objectName", objectName),
-				slog.String("LocalBaseDir", LocalBaseDir))
+				slog.String("LocalBaseDir", d.localBaseDir))
 		} else {
 			logger.Info("Downloading file range from GCS (disk mode)",
 				slog.String("pre", pre),
-				slog.String("bucketName", bucketName),
+				slog.String("bucketName", d.bucketName),
 				slog.String("objectName", objectName),
-				slog.String("newFileName", newFileName),
-				slog.String("LocalBaseDir", LocalBaseDir),
+				slog.String("newFileName", newFilename),
+				slog.String("LocalBaseDir", d.localBaseDir),
 				slog.Int64("start_byte", start),
 				slog.Int64("length_byte", length))
 		}
 	}
 
 	// 设置GCS凭证
-	os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", credFile)
+	os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", d.credFile)
 
 	// 创建GCS客户端
 
@@ -83,7 +101,7 @@ func DownloadFromGCSbyClient(
 	}
 
 	// 获取Bucket和Object
-	bucket := client.Bucket(bucketName)
+	bucket := client.Bucket(d.bucketName)
 	obj := bucket.Object(objectName)
 
 	// 创建Reader（完整/分片读取）
@@ -115,9 +133,9 @@ func DownloadFromGCSbyClient(
 	}()
 
 	// 拼接本地文件路径
-	localFilePath := filepath.Join(LocalBaseDir, newFileName)
+	localFilePath := filepath.Join(d.localBaseDir, newFilename)
 	// 创建本地目录
-	if err := os.MkdirAll(LocalBaseDir, 0755); err != nil {
+	if err := os.MkdirAll(d.localBaseDir, 0755); err != nil {
 		return nil, fmt.Errorf("create local dir failed: %w", err)
 	}
 	// 创建本地文件

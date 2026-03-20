@@ -12,10 +12,8 @@ import (
 
 // 核心Header常量
 const (
-	//HeaderFileName     = "X-File-Name"     // 最终合并后的文件名
-	HeaderChunkName    = "X-Chunk-Name"    // 单个分片的自定义名称
-	HeaderChunkNames   = "X-Chunk-Names"   // 逗号分隔的分片名列表（合并顺序）
-	HeaderDeleteChunks = "X-Delete-Chunks" // 是否删除分片（true/false）
+	HeaderChunkName  = "X-Chunk-Name"  // 单个分片的自定义名称
+	HeaderChunkNames = "X-Chunk-Names" // 逗号分隔的分片名列表（合并顺序）
 )
 
 // ChunkMergeConfig 分片合并配置（适配发送端指定规则）

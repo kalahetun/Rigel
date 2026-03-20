@@ -1,4 +1,4 @@
-package download
+package remote_disk
 
 import (
 	"context"
@@ -13,61 +13,63 @@ import (
 	"time"
 )
 
-// SSHDDReadRangeChunk 读取指定范围/全部文件（保留原参数，新增inMemory支持双模式）
-// 核心规则：
-//  1. length ≤ 0 → 读取整个文件（忽略start，从0开始读全部）
-//  2. length > 0  → 读取 [start, start+length) 范围的内容
-//  3. inMemory=true → 内存流式（不落盘），false → 本地落盘（原逻辑）
-//
-// 参数说明（完全保留原参数顺序，仅最后新增inMemory）：
-//
-//	ctx: 上下文
-//	cfg: SSH连接配置
-//	remoteDir: 远端文件所在目录（如/mnt/remote-data）
-//	filename: 要读取的文件名（如bigfile.bin）
-//	newFilename: 本地落盘时的新文件名（inMemory=true时传空）
-//	localDir: 本地存储目录（inMemory=true时传空）
-//	start: 读取起始位置（字节）；length≤0时该参数无效
-//	length: 读取长度（字节）；≤0时读取全部文件
-//	bs: dd命令块大小（建议传空字符串，函数自动适配）
-//	pre: 日志前缀
-//	logger: 日志对象
-//	inMemory: 新增！true=内存流式（不落盘），false=本地落盘（默认兼容原逻辑）
-//
-// 返回值：
-//
-//	io.ReadCloser: 流式Reader（落盘模式返回本地文件Reader，内存模式返回SSH流式Reader）
-//	string: 本地文件路径（仅inMemory=false时有效，兼容原返回值）
-//	error: 错误信息
-func SSHDDReadRangeChunk(
+type Download struct {
+	user      string // 用户名
+	hostPort  string // 主机IP:端口（如192.168.1.20:22）
+	password  string // 密码（或用密钥认证）
+	remoteDir string
+	localDir  string
+}
+
+func NewDownload(
+	user, hostPort, password, remoteDir, localDir string,
+	pre string,          // 日志前缀（和之前保持一致）
+	logger *slog.Logger, // 日志实例（和之前保持一致）
+) *Download {
+	d := &Download{
+		user:      user,
+		hostPort:  hostPort,
+		password:  password,
+		remoteDir: remoteDir,
+		localDir:  localDir,
+	}
+	// 和其他初始化函数完全一致的日志打印逻辑
+	logger.Info("NewDownload", slog.String("pre", pre), slog.Any("Download", *d))
+	return d
+}
+
+func (d *Download) DownloadFile(
 	ctx context.Context,
-	cfg util.SSHConfig,
-	remoteDir, filename, newFilename, localDir string,
-	start, length int64,
+	filename string,
+	newFilename string,
+	start int64,
+	length int64,
 	bs string,
 	inMemory bool, // 新增参数放在最后，不影响原有调用
 	pre string,
 	logger *slog.Logger,
-) (io.ReadCloser, string, error) {
+) (io.ReadCloser, error) {
 
 	select {
 	case <-ctx.Done():
 		err := fmt.Errorf("upload canceled before start: %w", ctx.Err())
 		logger.Error("SSHDDReadRangeChunk canceled", slog.String("pre", pre), slog.Any("err", err))
-		return nil, "", err
+		return nil, err
 	default:
 	}
 
 	// 1. 拼接远端文件完整路径
-	remoteFile := filepath.Join(remoteDir, filename)
+	remoteFile := filepath.Join(d.remoteDir, filename)
 
 	// 2. 处理length ≤ 0的情况（读取全部文件）
 	var actualStart, actualLength int64
 	if length <= 0 {
 		// 获取远端文件总大小
-		fileSize, err := GetRemoteFileSize(ctx, cfg, remoteDir, filename, pre, logger)
+
+		gs := NewGetSize(d.user, d.hostPort, d.password, d.remoteDir, pre, logger)
+		fileSize, err := gs.GetFileSize(ctx, filename, pre, logger)
 		if err != nil {
-			return nil, "", fmt.Errorf("获取文件大小失败：%w", err)
+			return nil, fmt.Errorf("获取文件大小失败：%w", err)
 		}
 		actualStart = 0         // 从文件开头读取
 		actualLength = fileSize // 读取完整文件大小
@@ -78,7 +80,7 @@ func SSHDDReadRangeChunk(
 	} else {
 		// 验证start合法性（length>0时start不能为负）
 		if start < 0 {
-			return nil, "", fmt.Errorf("start不能小于0（length>0时）")
+			return nil, fmt.Errorf("start不能小于0（length>0时）")
 		}
 		actualStart = start
 		actualLength = length
@@ -100,7 +102,7 @@ func SSHDDReadRangeChunk(
 	// 4. 解析块大小为字节数
 	bsBytes, err := util.ParseBsToBytes(bs)
 	if err != nil {
-		return nil, "", fmt.Errorf("解析块大小失败：%w", err)
+		return nil, fmt.Errorf("解析块大小失败：%w", err)
 	}
 
 	// 5. 计算dd命令参数（skip=跳过的块数，count=读取的块数）
@@ -110,23 +112,23 @@ func SSHDDReadRangeChunk(
 
 	// 6. 初始化SSH客户端配置
 	sshConfig := &ssh.ClientConfig{
-		User:            cfg.User,
-		Auth:            []ssh.AuthMethod{ssh.Password(cfg.Password)},
+		User:            d.user,
+		Auth:            []ssh.AuthMethod{ssh.Password(d.password)},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // 生产环境建议替换为合法的密钥验证
 		Timeout:         1 * time.Minute,             // 增大超时适配大文件读取
 	}
 
 	// 7. 建立SSH连接
-	client, err := ssh.Dial("tcp", cfg.HostPort, sshConfig)
+	client, err := ssh.Dial("tcp", d.hostPort, sshConfig)
 	if err != nil {
-		return nil, "", fmt.Errorf("SSH连接失败：%w", err)
+		return nil, fmt.Errorf("SSH连接失败：%w", err)
 	}
 
 	// 8. 创建SSH会话
 	session, err := client.NewSession()
 	if err != nil {
 		client.Close()
-		return nil, "", fmt.Errorf("创建SSH会话失败：%w", err)
+		return nil, fmt.Errorf("创建SSH会话失败：%w", err)
 	}
 
 	// 9. 获取dd命令的标准输出管道
@@ -134,7 +136,7 @@ func SSHDDReadRangeChunk(
 	if err != nil {
 		session.Close()
 		client.Close()
-		return nil, "", fmt.Errorf("获取stdout管道失败：%w", err)
+		return nil, fmt.Errorf("获取stdout管道失败：%w", err)
 	}
 
 	// 10. 启动dd命令
@@ -144,7 +146,7 @@ func SSHDDReadRangeChunk(
 	if err := session.Start(ddCmd); err != nil {
 		session.Close()
 		client.Close()
-		return nil, "", fmt.Errorf("启动dd命令失败：%w，命令：%s", err, ddCmd)
+		return nil, fmt.Errorf("启动dd命令失败：%w，命令：%s", err, ddCmd)
 	}
 
 	// ==================== 模式1：inMemory=true → 内存流式（不落盘） ====================
@@ -164,24 +166,24 @@ func SSHDDReadRangeChunk(
 			actualLength: actualLength,
 			readDone:     false,
 		}
-		return readerWrapper, "", nil
+		return readerWrapper, nil
 	}
 
 	// ==================== 模式2：inMemory=false → 本地落盘（完全兼容原逻辑） ====================
 	// 11. 确保本地目录存在
-	if err := os.MkdirAll(localDir, 0755); err != nil {
+	if err := os.MkdirAll(d.localDir, 0755); err != nil {
 		session.Close()
 		client.Close()
-		return nil, "", fmt.Errorf("创建本地目录失败：%w", err)
+		return nil, fmt.Errorf("创建本地目录失败：%w", err)
 	}
 
 	// 12. 创建本地文件（覆盖已有文件）
-	localFilePath := filepath.Join(localDir, newFilename)
+	localFilePath := filepath.Join(d.localDir, newFilename)
 	localFd, err := os.Create(localFilePath)
 	if err != nil {
 		session.Close()
 		client.Close()
-		return nil, "", fmt.Errorf("创建本地文件失败：%w", err)
+		return nil, fmt.Errorf("创建本地文件失败：%w", err)
 	}
 	defer localFd.Close()
 
@@ -195,7 +197,7 @@ func SSHDDReadRangeChunk(
 	if err != nil {
 		session.Close()
 		client.Close()
-		return nil, "", fmt.Errorf("写入本地文件失败：%w", err)
+		return nil, fmt.Errorf("写入本地文件失败：%w", err)
 	}
 
 	// 等待dd命令执行完成
@@ -227,11 +229,11 @@ func SSHDDReadRangeChunk(
 	// 打开本地文件返回Reader（方便调用方后续读取）
 	localFileReader, err := os.Open(localFilePath)
 	if err != nil {
-		return nil, localFilePath, fmt.Errorf("打开本地文件失败：%w", err)
+		return nil, fmt.Errorf("打开本地文件失败：%w", err)
 	}
 
 	// 兼容原返回值：返回本地文件名（newFilename）和路径
-	return localFileReader, newFilename, nil
+	return localFileReader, nil
 }
 
 // sshReaderWrapper 封装stdout Reader + SSH资源清理逻辑（内存模式用）

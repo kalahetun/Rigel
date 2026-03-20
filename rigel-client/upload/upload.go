@@ -4,35 +4,25 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"golang.org/x/time/rate"
 	"io"
 	"log/slog"
 	"math/rand"
-	"time"
-
-	"golang.org/x/time/rate"
-
-	"rigel-client/download"
-	"rigel-client/upload/compose"
+	"rigel-client/upload/base"
 	"rigel-client/upload/split"
 	"rigel-client/util"
+	"time"
 )
 
-// -------------------------- 1. 包级哨兵错误定义 --------------------------
 var (
-	ErrFileSizeFailed   = errors.New("get file size failed")
-	ErrChunkSplitFailed = errors.New("split file failed")
-	ErrUploadTimeout    = errors.New("upload timeout")
-	ErrUnsupportedType  = errors.New("unsupported source/dest type")
-	//ErrChunkMergeFailed  = errors.New("merge chunks failed")
-	//ErrTaskSubmitFailed  = errors.New("task submit failed (queue full)")
-	//ErrInvalidChunkState = errors.New("invalid chunk state")
+	ErrFileSizeFailed          = errors.New("get file size failed")
+	ErrChunkSplitFailed        = errors.New("split file failed")
+	ErrUploadTimeout           = errors.New("upload timeout")
+	ErrInterfaceNotImplemented = errors.New("implementation is nil")
 )
 
-// -------------------------- 2. 分块状态枚举（替换原Acked 0/1/2） --------------------------
-// ChunkStatus 分片传输状态枚举（替代原Acked数值）
 type (
 	ChunkStatus int
-	ctxKey      string
 )
 
 const (
@@ -40,23 +30,19 @@ const (
 	ChunkStatusTransferring   ChunkStatus = 1
 	ChunkStatusTransferFailed ChunkStatus = 2
 	ChunkStatusCompleted      ChunkStatus = 3
-	CtxKeyRequestID           ctxKey      = "request_id"
-	MaxConcurrency                        = 10
-	QueueBufferSize                       = 100
-	CheckInterval                         = 10 * time.Second // 分块超时检查间隔
-	ChunkExpireTime                       = 10 * time.Second // 分块超时重传阈值
-	UploadTimeout                         = 3 * time.Minute  // 整体上传超时时间
-	TaskSubmitRetryInterval               = 1 * time.Second
-	ChunkSubmitDelay                      = 100 * time.Millisecond
-	ChunkSizeInMemory                     = 512 * 1024 * 1024 // 512MB
 )
 
-// WithRequestID 给上下文附加requestID（pre）
-func WithRequestID(ctx context.Context, requestID string) context.Context {
-	return context.WithValue(ctx, CtxKeyRequestID, requestID)
-}
+const (
+	MaxConcurrency          = 10
+	QueueBufferSize         = 100
+	CheckInterval           = 10 * time.Second // 分块超时检查间隔
+	ChunkExpireTime         = 10 * time.Second // 分块超时重传阈值
+	UploadTimeout           = 3 * time.Minute  // 整体上传超时时间
+	TaskSubmitRetryInterval = 1 * time.Second
+	ChunkSubmitDelay        = 100 * time.Millisecond
+	ChunkSizeInMemory       = 512 * 1024 * 1024 // 512MB
+)
 
-// -------------------------- 5. 结构体定义（保留pre/RequestID，兼容原有逻辑） --------------------------
 type ChunkEventType int
 
 const (
@@ -74,8 +60,18 @@ type ChunkTask struct {
 	Index      string
 	Chunks     *util.SafeMap
 	ObjectName string
-	Upload     util.UploadConfig
+	Upload     base.UploadStruct
 	Pre        string // 保留原有pre入参，完全兼容
+}
+
+type PathInfo struct {
+	Hops string `json:"hops"`
+	Rate int64  `json:"rate"`
+	//Weight int64  `json:"weight"`
+}
+
+type RoutingInfo struct {
+	Routing []PathInfo `json:"routing"`
 }
 
 type WorkerPool struct {
@@ -83,7 +79,7 @@ type WorkerPool struct {
 	cancel func() // 新增：协程池退出信号
 }
 
-// -------------------------- 6. 核心函数（保留pre入参 + 上下文透传 + 统一取消） --------------------------
+// -------------------------- 6. 核心函数 --------------------------
 
 // StartChunkTimeoutChecker 保留pre入参，同时用上下文透传，新增全局超时控制
 // 参数新增：
@@ -99,8 +95,6 @@ func StartChunkTimeoutChecker(
 	pre string, // 保留原有pre入参
 	logger *slog.Logger,
 ) {
-	// 1. 上下文附加pre，双重保障
-	ctx = WithRequestID(ctx, pre)
 
 	// 2. 构建带全局超时的上下文（核心修复：添加超时控制）
 	var cancel func()
@@ -143,7 +137,7 @@ func StartChunkTimeoutChecker(
 		case <-ctx.Done():
 			// 上下文结束（超时/手动取消），退出循环
 			err := ctx.Err()
-			if err == context.DeadlineExceeded {
+			if errors.Is(err, context.DeadlineExceeded) {
 				logger.Warn("Chunk checker exit: global timeout reached",
 					slog.String("pre", pre),
 					slog.Duration("timeout", globalTimeout))
@@ -159,7 +153,6 @@ func StartChunkTimeoutChecker(
 
 // CollectExpiredChunks 保留pre入参，状态枚举替换Acked
 func CollectExpiredChunks(
-//ctx context.Context,
 	s *util.SafeMap,
 	expire time.Duration,
 	pre string, // 保留pre入参
@@ -202,9 +195,10 @@ func CollectExpiredChunks(
 
 // NewWorkerPool 保留pre入参，上下文透传 + 新增取消逻辑
 func NewWorkerPool(
+	fo base.FileOperateInterfaces,
 	queueSize int,
-	routingInfo util.RoutingInfo,
-	handler func(ChunkTask, string, *rate.Limiter, bool, string, *slog.Logger) error,
+	routingInfo RoutingInfo,
+	handler func(base.FileOperateInterfaces, ChunkTask, string, *rate.Limiter, bool, string, *slog.Logger) error,
 	inMemory bool,
 	pre string, // 保留pre入参
 	logger *slog.Logger,
@@ -235,9 +229,9 @@ func NewWorkerPool(
 							logger.Info("Worker exit: task channel closed", slog.String("pre", pre), "worker", workerID)
 							return
 						}
-						// 上下文附加pre，确保task的ctx也带pre
-						task.Ctx = WithRequestID(task.Ctx, pre)
+
 						err := handler(
+							fo,
 							task,
 							"",
 							nil,
@@ -262,7 +256,7 @@ func NewWorkerPool(
 			rand.Seed(time.Now().UnixNano())
 			index := rand.Intn(workerNum)
 
-			go func(workerID int, pathInfo util.PathInfo) {
+			go func(workerID int, pathInfo PathInfo) {
 				rate_ := pathInfo.Rate
 				bytesPerSec := rate_ * 1024 * 1024 / 8 // Mbps → bytes/sec
 				limiter := rate.NewLimiter(rate.Limit(bytesPerSec), int(bytesPerSec))
@@ -280,9 +274,10 @@ func NewWorkerPool(
 							logger.Info("Worker exit: task channel closed", slog.String("pre", pre), "worker", workerID)
 							return
 						}
+
 						// 上下文附加pre
-						task.Ctx = WithRequestID(task.Ctx, pre)
 						err := handler(
+							fo,
 							task,
 							pathInfo.Hops,
 							limiter,
@@ -314,8 +309,8 @@ func (p *WorkerPool) Stop() {
 }
 
 // ChunkEventLoop 保留pre入参，状态枚举替换Acked + 监听取消信号
-func ChunkEventLoop(ctx context.Context, chunks *util.SafeMap, workerPool *WorkerPool,
-	uploadInfo util.UploadConfig, events <-chan ChunkEvent, done chan struct{}, inMemory bool,
+func ChunkEventLoop(ctx context.Context, fo base.FileOperateInterfaces, upload base.UploadStruct,
+	chunks *util.SafeMap, workerPool *WorkerPool, events <-chan ChunkEvent, done chan struct{}, inMemory bool,
 	pre string, logger *slog.Logger) {
 
 	logger.Info("ChunkEventLoop", slog.String("pre", pre))
@@ -331,11 +326,11 @@ func ChunkEventLoop(ctx context.Context, chunks *util.SafeMap, workerPool *Worke
 			switch ev.Type {
 			case ChunkExpired:
 				logger.Warn("ChunkExpired", slog.String("pre", pre), "indexes", ev.Indexes)
-				StartChunkSubmitLoop(ctx, chunks, workerPool, uploadInfo, true, ev.Indexes, pre, logger)
+				StartChunkSubmitLoop(ctx, chunks, workerPool, upload, true, ev.Indexes, pre, logger)
 
 			case ChunkFinished:
 				logger.Info("ChunkFinished", slog.String("pre", pre),
-					slog.String("fileName", uploadInfo.File.NewFileName))
+					slog.String("fileName", upload.File.NewFileName))
 
 				var parts []string
 				chunks_ := chunks.GetAll()
@@ -348,41 +343,30 @@ func ChunkEventLoop(ctx context.Context, chunks *util.SafeMap, workerPool *Worke
 					// 用枚举判断状态
 					if ChunkStatus(v_.Acked) != ChunkStatusCompleted {
 						logger.Error("upload failed", slog.String("pre", pre),
-							slog.String("fileName", uploadInfo.File.NewFileName), "index", v_.Index)
+							slog.String("fileName", upload.File.NewFileName), "index", v_.Index)
 						close(done)
 						return
 					}
 					logger.Info("upload success", slog.String("pre", pre), slog.String("fileName",
-						uploadInfo.File.NewFileName), "index", v_.Index, "ObjectName", v_.ObjectName)
+						upload.File.NewFileName), "index", v_.Index, "ObjectName", v_.ObjectName)
 					parts = append(parts, v_.ObjectName)
 				}
 
 				parts = util.SortPartStrings(parts)
 
 				var err error
-				if uploadInfo.Dest.DataDestType == util.GCPCLoud {
-					bucketName := uploadInfo.Dest.DestGCP.BucketName
-					credFile := uploadInfo.Dest.DestGCP.CredFile
-					fileName := uploadInfo.File.NewFileName
-					err = compose.ComposeTree(ctx, bucketName, fileName, credFile, parts, pre, logger)
-				} else if uploadInfo.Dest.DataDestType == util.RemoteDisk {
-					mergeURL := uploadInfo.Dest.DestDisk.Merge
-					finalFileName := uploadInfo.File.NewFileName
-					_, _, err = compose.ChunkMergeClient(ctx, mergeURL, finalFileName, parts, true, pre, logger)
+				if fo.ComposeFile.ComposeFile == nil {
+					logger.Error("ComposeFile is nil", slog.String("pre", pre))
+					return
 				}
-
+				err = fo.ComposeFile.ComposeFile(ctx, upload.File.NewFileName, parts, pre, logger)
 				if err != nil {
 					logger.Error("Compose failed", slog.String("pre", pre),
-						slog.String("fileName", uploadInfo.File.NewFileName), slog.Any("err", err))
+						slog.String("fileName", upload.File.NewFileName), slog.Any("err", err))
 				}
 				close(done)
 
-				//清理临时文件
-				if !inMemory {
-					if uploadInfo.Dest.DataDestType == util.GCPCLoud || uploadInfo.Dest.DataDestType == util.RemoteDisk {
-						_ = util.DeleteFilesInDir(uploadInfo.Proxy.LocalDir, parts, pre, logger)
-					}
-				}
+				_ = util.DeleteFilesInDir(upload.Proxy.LocalDir, parts, pre, logger)
 
 				return
 			}
@@ -411,7 +395,7 @@ func StartChunkSubmitLoop(
 	ctx context.Context,
 	chunks *util.SafeMap,
 	workerPool *WorkerPool,
-	uploadInfo util.UploadConfig,
+	uploadInfo base.UploadStruct,
 	resubmit bool,
 	resubmitIndexes map[string]*split.ChunkState,
 	pre string, // 保留pre入参
@@ -448,7 +432,7 @@ func StartChunkSubmitLoop(
 		}
 
 		task := ChunkTask{
-			Ctx:        WithRequestID(ctx, pre), // 上下文附加pre
+			Ctx:        ctx,
 			Index:      v_.Index,
 			Chunks:     chunks,
 			ObjectName: v_.ObjectName,
@@ -457,7 +441,6 @@ func StartChunkSubmitLoop(
 		}
 
 		if !workerPool.Submit(task) {
-			// 队列满了，本轮结束，等下个 tick
 			logger.Warn("workerPool full", slog.String("pre", pre))
 			time.Sleep(TaskSubmitRetryInterval)
 			break
@@ -466,14 +449,16 @@ func StartChunkSubmitLoop(
 }
 
 // Upload 核心入口：保留pre入参，上下文透传 + 统一取消所有goroutine
-func Upload(uploadInfo util.UploadConfig,
-	handler func(ChunkTask, string, *rate.Limiter, bool, string, *slog.Logger) error,
-	routing util.RoutingInfo,
-	noSplit bool,
+func UploadFunc(
+	cleintB bool,
+	us base.UploadStruct,
+	handler func(base.FileOperateInterfaces, ChunkTask, string, *rate.Limiter, bool, string, *slog.Logger) error,
+	routing RoutingInfo,
+	noSplitB bool,
 	pre string, // 保留原有pre入参
 	logger *slog.Logger) error {
 
-	logger.Info("Upload", slog.String("pre", pre), slog.Any("uploadInfo", uploadInfo))
+	logger.Info("Upload", slog.String("pre", pre), slog.Any("us", us))
 
 	// 核心修复1：创建带全局超时的可取消上下文（管控所有goroutine）
 	ctx, cancel := context.WithTimeout(context.Background(), UploadTimeout)
@@ -482,41 +467,27 @@ func Upload(uploadInfo util.UploadConfig,
 		logger.Info("Upload context canceled", slog.String("pre", pre))
 	}()
 
-	// 上下文附加pre
-	ctx = WithRequestID(ctx, pre)
+	// 1. 初始化接口
+	fo := base.InitInterface(cleintB, us, pre, logger)
 
 	// 3. 获取文件真实长度
 	var fileSize int64
 	var err error
-	switch uploadInfo.Source.DataSourceType {
-	case util.GCPCLoud:
-		fileSize, err = download.GetGCSObjectSize(ctx, uploadInfo.Source.SourceGCP.BucketName,
-			uploadInfo.File.FileName, uploadInfo.Source.SourceGCP.CredFile, pre, logger)
-
-	case util.RemoteDisk:
-		RemoteDiskSSHConfig := util.SSHConfig{
-			User:     uploadInfo.Source.SourceDisk.User,
-			HostPort: uploadInfo.Source.SourceDisk.SSHPort,
-			Password: uploadInfo.Source.SourceDisk.Password,
-		}
-		fileSize, err = download.GetRemoteFileSize(ctx, RemoteDiskSSHConfig,
-			uploadInfo.Source.SourceDisk.RemoteDir, uploadInfo.File.FileName, pre, logger)
-
-	case util.LocalDisk:
-		fileSize, err = download.GetLocalFileSize(ctx, uploadInfo.Proxy.LocalDir, uploadInfo.File.FileName, pre, logger)
+	if fo.GetFileSize.GetFileSize == nil {
+		logger.Info("GetFileSize is nil, use default implementation")
+		return fmt.Errorf("%w: GetFileSize is nil", ErrInterfaceNotImplemented)
 	}
-
+	fileSize, err = fo.GetFileSize.GetFileSize(ctx, us.File.FileName, pre, logger)
 	if err != nil {
 		logger.Error("Get file size failed", slog.String("pre", pre), slog.Any("err", err))
 		return fmt.Errorf("%w: %s", ErrFileSizeFailed, err.Error())
 	}
-
 	logger.Info("Get file size success", slog.String("pre", pre), slog.Int64("size", fileSize))
 
 	// 4. 文件分块
 	chunks := util.NewSafeMap()
-	_, err = split.SplitFilebyRange(fileSize, uploadInfo.File.FileStart, uploadInfo.File.FileLength,
-		uploadInfo.File.FileName, uploadInfo.File.NewFileName, noSplit, chunks, pre, logger)
+	_, err = split.SplitFilebyRange(fileSize, us.File.FileStart, us.File.FileLength,
+		us.File.FileName, us.File.NewFileName, noSplitB, chunks, pre, logger)
 	if err != nil {
 		logger.Error("Split file failed", slog.String("pre", pre), slog.Any("err", err))
 		return fmt.Errorf("%w: %s", ErrChunkSplitFailed, err.Error())
@@ -536,18 +507,16 @@ func Upload(uploadInfo util.UploadConfig,
 	go StartChunkTimeoutChecker(ctx, chunks, CheckInterval, ChunkExpireTime, UploadTimeout, events, pre, logger)
 
 	//启动消费者 默认一个http并发度
-	workerPool := NewWorkerPool(QueueBufferSize, routing, handler, inMemory, pre, logger)
+	workerPool := NewWorkerPool(fo, QueueBufferSize, routing, handler, inMemory, pre, logger)
 	defer workerPool.Stop() // 核心修复2：退出时终止协程池
 
 	//events 消费（传入带超时的ctx）
-	go ChunkEventLoop(ctx, chunks, workerPool, uploadInfo, events, done, inMemory, pre, logger)
+	go ChunkEventLoop(ctx, fo, us, chunks, workerPool, events, done, inMemory, pre, logger)
 
 	// 4. 启动分片上传（传入带超时的ctx）
-	go StartChunkSubmitLoop(ctx, chunks, workerPool, uploadInfo, false, nil, pre, logger)
+	go StartChunkSubmitLoop(ctx, chunks, workerPool, us, false, nil, pre, logger)
 
-	newFileName := uploadInfo.File.NewFileName
-
-	// 核心修复3：监听ctx.Done()而非time.After，统一超时逻辑
+	newFileName := us.File.NewFileName
 	select {
 	case <-done:
 		logger.Info("Function finished", slog.String("pre", pre), slog.String("newFileName", newFileName))
@@ -569,15 +538,15 @@ func Upload(uploadInfo util.UploadConfig,
 // GetTransferReader 保留pre入参，上下文透传
 func GetTransferReader(
 	ctx context.Context,
-	upload util.UploadConfig,
+	fo base.FileOperateInterfaces,
+	upload base.UploadStruct,
 	start, length int64,
 	objectName string,
 	inMemory bool,
 	pre string, // 保留pre入参
 	logger *slog.Logger,
 ) (io.ReadCloser, error) {
-	// 上下文附加pre，双重保障
-	ctx = WithRequestID(ctx, pre)
+
 	select {
 	case <-ctx.Done():
 		err := fmt.Errorf("upload canceled before start: %w", ctx.Err())
@@ -588,75 +557,19 @@ func GetTransferReader(
 
 	var reader io.ReadCloser
 	var err error
-
-	switch upload.Source.DataSourceType {
-	case util.GCPCLoud: // GCS云存储源
-		reader, err = download.DownloadFromGCSbyClient(
-			ctx,
-			upload.Proxy.LocalDir,
-			upload.Source.SourceGCP.BucketName,
-			upload.File.FileName,
-			objectName,
-			upload.Source.SourceGCP.CredFile,
-			start,
-			length,
-			inMemory,
-			pre, // 传递pre入参
-			logger,
-		)
-		if err != nil {
-			logger.Error("DownloadFromGCSbyClient failed", slog.String("pre", pre), slog.Any("err", err))
-			return nil, err
-		}
-
-	case util.RemoteDisk: // 远程磁盘（SSH）源
-		remoteDiskSSHConfig := util.SSHConfig{
-			User:     upload.Source.SourceDisk.User,
-			HostPort: upload.Source.SourceDisk.SSHPort,
-			Password: upload.Source.SourceDisk.Password,
-		}
-
-		reader, _, err = download.SSHDDReadRangeChunk(
-			ctx,
-			remoteDiskSSHConfig,
-			upload.Source.SourceDisk.RemoteDir,
-			upload.File.FileName,
-			objectName,
-			upload.Proxy.LocalDir,
-			start,
-			length,
-			"", // bs参数传空，函数内部自动适配
-			inMemory,
-			pre, // 传递pre入参
-			logger,
-		)
-		if err != nil {
-			logger.Error("SSHDDReadRangeChunk failed", slog.String("pre", pre), slog.Any("err", err))
-			return nil, err
-		}
-
-	case util.LocalDisk: // 本地磁盘源
-		reader, _, err = download.LocalReadRangeChunk(
-			ctx,
-			upload.Proxy.LocalDir,
-			upload.File.FileName,
-			start,
-			length,
-			pre, // 传递pre入参
-			logger,
-		)
-		if err != nil {
-			logger.Error("LocalReadRangeChunk failed", slog.String("pre", pre), slog.Any("err", err))
-			return nil, err
-		}
-
-	default: // 未知源类型
-		return nil, fmt.Errorf("%w: %s", ErrUnsupportedType, upload.Source.DataSourceType)
+	if fo.DownloadFile.DownloadFile == nil {
+		logger.Error("DownloadFile is nil", slog.String("pre", pre))
+		return nil, fmt.Errorf("%w: DownloadFile is nil", ErrInterfaceNotImplemented)
+	}
+	reader, err = fo.DownloadFile.DownloadFile(ctx, upload.File.FileName, objectName,
+		start, length, "", inMemory, pre, logger)
+	if err != nil {
+		logger.Error("GetTransferReader failed", slog.String("pre", pre), slog.Any("err", err))
+		return nil, err
 	}
 
 	logger.Info("GetTransferReader success",
 		slog.String("pre", pre),
-		slog.String("sourceType", upload.Source.DataSourceType),
 		slog.String("fileName", upload.File.FileName),
 		slog.Int64("start", start),
 		slog.Int64("length", length),

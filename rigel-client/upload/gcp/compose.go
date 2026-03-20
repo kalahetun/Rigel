@@ -1,4 +1,4 @@
-package compose
+package gcp
 
 import (
 	"cloud.google.com/go/storage"
@@ -9,41 +9,37 @@ import (
 	"time"
 )
 
-// finalizeObject 把临时文件复制到最终位置并删除临时文件
-// 仅用于多文件合成的最终步骤
-func finalizeObject(ctx context.Context, bkt *storage.BucketHandle, tempName, finalName string) error {
-	// 复制临时文件到最终文件
-	_, err := bkt.Object(finalName).
-		CopierFrom(bkt.Object(tempName)).
-		Run(ctx)
-	if err != nil {
-		return fmt.Errorf("copy temp to final failed: %w", err)
-	}
-
-	// 删除临时文件
-	if err := bkt.Object(tempName).Delete(ctx); err != nil {
-		return fmt.Errorf("delete temp object failed: %w", err)
-	}
-	return nil
+type Compose struct {
+	bucket   string
+	credFile string
 }
 
-// ComposeTree GCS文件树形合成（修复单文件逻辑，单文件复制后删除源文件带容错）
-// 参数说明：
-//
-//	ctx: 上下文
-//	bucket: GCS存储桶名
-//	objectName: 最终合成的文件名
-//	credFile: GCP凭证文件路径
-//	parts: 待合成的分片文件列表
-//	pre: 日志前缀（用于追踪请求）
-//	logger: 日志实例
-func ComposeTree(
+func NewCompose(
+	bucket, credFile string,
+	pre string, // 日志前缀（和之前保持一致）
+	logger *slog.Logger, // 日志实例（和之前保持一致）
+) *Compose {
+	c := &Compose{
+		bucket:   bucket,
+		credFile: credFile,
+	}
+	// 和其他初始化函数完全一致的日志打印逻辑
+	logger.Info("NewCompose", slog.String("pre", pre), slog.Any("Compose", *c))
+	return c
+}
+
+func (c *Compose) ComposeFile(
 	ctx context.Context,
-	bucket, objectName, credFile string,
+	objectName string,
 	parts []string,
 	pre string,
 	logger *slog.Logger,
 ) error {
+
+	bucket := c.bucket
+	//objectName := c.objectName
+	credFile := c.credFile
+	//parts := c.parts
 
 	select {
 	case <-ctx.Done():
@@ -210,5 +206,23 @@ func ComposeTree(
 	logger.Info("multi file compose success",
 		slog.String("pre", pre),
 		slog.String("finalObject", objectName))
+	return nil
+}
+
+// finalizeObject 把临时文件复制到最终位置并删除临时文件
+// 仅用于多文件合成的最终步骤
+func finalizeObject(ctx context.Context, bkt *storage.BucketHandle, tempName, finalName string) error {
+	// 复制临时文件到最终文件
+	_, err := bkt.Object(finalName).
+		CopierFrom(bkt.Object(tempName)).
+		Run(ctx)
+	if err != nil {
+		return fmt.Errorf("copy temp to final failed: %w", err)
+	}
+
+	// 删除临时文件
+	if err := bkt.Object(tempName).Delete(ctx); err != nil {
+		return fmt.Errorf("delete temp object failed: %w", err)
+	}
 	return nil
 }

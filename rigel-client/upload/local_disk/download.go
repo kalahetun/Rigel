@@ -1,4 +1,4 @@
-package download
+package local_disk
 
 import (
 	"context"
@@ -9,40 +9,46 @@ import (
 	"path/filepath"
 )
 
-// LocalReadRangeChunk 本地文件范围读取函数（返回流式Reader，支持范围/完整读取）
-// 核心规则：
-//  1. length ≤ 0 → 读取整个文件（忽略start，从0开始读全部）
-//  2. length > 0  → 读取 [start, start+length) 范围的内容
-//
-// 参数说明（修正语法问题后）：
-//
-//	ctx: 上下文（预留，便于扩展超时/取消逻辑）
-//	localDir: 本地文件所在目录（如 /home/matth/upload）
-//	filename: 要读取的文件名（如 bigfile.bin）
-//	start: 读取起始位置（字节）；length≤0时该参数无效
-//	length: 读取长度（字节）；≤0时读取全部文件
-//	pre: 日志前缀（用于定位请求）
-//	logger: 日志对象
-//
-// 返回值：
-//
-//	io.ReadCloser: 流式读取的Reader（调用方需Close释放文件句柄）
-//	string: 本地文件完整路径（便于日志/校验）
-//	error: 错误信息
-func LocalReadRangeChunk(
-	ctx context.Context,
+type Download struct {
+	localDir string
+}
+
+func NewDownload(
 	localDir string,
+	pre string, // 日志前缀（和之前保持一致）
+	logger *slog.Logger, // 日志实例（和之前保持一致）
+) *Download {
+	d := &Download{
+		localDir: localDir,
+	}
+	// 和其他初始化函数完全一致的日志打印逻辑
+	logger.Info("NewDownload", slog.String("pre", pre), slog.Any("Download", *d))
+	return d
+}
+
+func (d *Download) DownloadFile(
+	ctx context.Context,
 	filename string,
-	start, length int64,
+	newFilename string,
+	start int64,
+	length int64,
+	bs string,
+	inMemory bool, // 新增参数放在最后，不影响原有调用
 	pre string,
 	logger *slog.Logger,
-) (io.ReadCloser, string, error) {
+) (io.ReadCloser, error) {
+
+	inMemory = true
+	localDir := d.localDir
+	//filename := d.filename
+	//start := d.start
+	//length := d.length
 
 	select {
 	case <-ctx.Done():
 		err := fmt.Errorf("upload canceled before start: %w", ctx.Err())
 		logger.Error("LocalReadRangeChunk canceled", slog.String("pre", pre), slog.Any("err", err))
-		return nil, "", err
+		return nil, err
 	default:
 	}
 
@@ -60,16 +66,16 @@ func LocalReadRangeChunk(
 	fileInfo, err := os.Stat(localFilePath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, "", fmt.Errorf("file does not exist: %s", localFilePath)
+			return nil, fmt.Errorf("file does not exist: %s", localFilePath)
 		}
-		return nil, "", fmt.Errorf("failed to get file info: %w", err)
+		return nil, fmt.Errorf("failed to get file info: %w", err)
 	}
 	if fileInfo.IsDir() {
-		return nil, "", fmt.Errorf("%s is a directory, not a file", localFilePath)
+		return nil, fmt.Errorf("%s is a directory, not a file", localFilePath)
 	}
 	fileTotalSize := fileInfo.Size()
 	if fileTotalSize == 0 {
-		return nil, "", fmt.Errorf("file %s is empty", localFilePath)
+		return nil, fmt.Errorf("file %s is empty", localFilePath)
 	}
 
 	// 3. 处理读取范围（兼容完整读取/范围读取）
@@ -85,10 +91,10 @@ func LocalReadRangeChunk(
 	} else {
 		// 范围读取：校验起始位置和长度合法性
 		if start < 0 {
-			return nil, "", fmt.Errorf("起始位置start不能为负: %d", start)
+			return nil, fmt.Errorf("起始位置start不能为负: %d", start)
 		}
 		if start >= fileTotalSize {
-			return nil, "", fmt.Errorf("起始位置%d超出文件总大小%d", start, fileTotalSize)
+			return nil, fmt.Errorf("起始位置%d超出文件总大小%d", start, fileTotalSize)
 		}
 
 		actualStart = start
@@ -112,13 +118,13 @@ func LocalReadRangeChunk(
 	// 4. 打开文件（只读模式）
 	file, err := os.Open(localFilePath)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to open file: %w", err)
+		return nil, fmt.Errorf("failed to open file: %w", err)
 	}
 
 	// 5. 定位到读取起始位置
 	if _, err := file.Seek(actualStart, io.SeekStart); err != nil {
 		file.Close() // 失败时关闭文件句柄
-		return nil, "", fmt.Errorf("failed to seek to start position %d: %w", actualStart, err)
+		return nil, fmt.Errorf("failed to seek to start position %d: %w", actualStart, err)
 	}
 
 	// 6. 封装Reader：限制读取长度 + 实现ReadCloser（统一资源释放）
@@ -139,7 +145,7 @@ func LocalReadRangeChunk(
 		slog.Int64("readStart", actualStart),
 		slog.Int64("readLength", actualLength))
 
-	return readerWrapper, localFilePath, nil
+	return readerWrapper, nil
 }
 
 // localFileReaderWrapper 封装本地文件Reader，实现ReadCloser接口

@@ -23,6 +23,15 @@ var (
 	CloudStorageMap map[string]CloudStorageTarget
 )
 
+type ProbeTask struct {
+	TargetType string
+	Provider   string
+	IP         string
+	Port       int
+	Region     string
+	ID         string
+}
+
 // NodeProbeAPIHandler 提供获取节点探测任务的接口
 type NodeProbeAPIHandler struct {
 	etcdClient *clientv3.Client
@@ -109,7 +118,7 @@ func (h *NodeProbeAPIHandler) GetProbeTasks(c *gin.Context) {
 	}
 
 	// 2. 解析每个节点JSON，生成Targets列表
-	var tasks []util.ProbeTask
+	var tasks []ProbeTask
 	ip_, _ := util.GetPublicIP()
 	for k, nodeJson := range nodeMap {
 		var telemetry storage.NetworkTelemetry
@@ -124,7 +133,7 @@ func (h *NodeProbeAPIHandler) GetProbeTasks(c *gin.Context) {
 		}
 
 		//选取controller作为 node代理节点进行探测
-		tasks = append(tasks, util.ProbeTask{
+		tasks = append(tasks, ProbeTask{
 			TargetType: "node",
 			Provider:   telemetry.Provider,
 			IP:         telemetry.PublicIP,
@@ -134,7 +143,7 @@ func (h *NodeProbeAPIHandler) GetProbeTasks(c *gin.Context) {
 	}
 
 	for _, v := range CloudStorageMap {
-		tasks = append(tasks, util.ProbeTask{
+		tasks = append(tasks, ProbeTask{
 			TargetType: "cloud_storage",
 			Provider:   v.Provider,
 			IP:         v.IP,

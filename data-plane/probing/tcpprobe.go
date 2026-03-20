@@ -12,11 +12,11 @@ import (
 
 // Result 保存探测结果
 type Result struct {
-	Target   util.ProbeTask `json:"target"`    // 探测目标 IP/host
-	Attempts int            `json:"attempts"`  // 探测次数
-	Failures int            `json:"failures"`  // 失败次数
-	LossRate float64        `json:"loss_rate"` // 丢包率
-	AvgRTT   time.Duration  `json:"avg_rtt"`   // 成功连接平均时延
+	Target   ProbeTask     `json:"target"`    // 探测目标 IP/host
+	Attempts int           `json:"attempts"`  // 探测次数
+	Failures int           `json:"failures"`  // 失败次数
+	LossRate float64       `json:"loss_rate"` // 丢包率
+	AvgRTT   time.Duration `json:"avg_rtt"`   // 成功连接平均时延
 }
 
 // Config 配置
@@ -117,8 +117,8 @@ func StartProbePeriodically(ctx context.Context, controlHost string, cfg Config,
 
 // ----------------- 单轮探测函数 -----------------
 
-func doProbeLossRTT(targets []util.ProbeTask, cfg Config, pre string, logger *slog.Logger) {
-	jobs := make(chan util.ProbeTask)
+func doProbeLossRTT(targets []ProbeTask, cfg Config, pre string, logger *slog.Logger) {
+	jobs := make(chan ProbeTask)
 	var wg sync.WaitGroup
 	roundResults := make([]Result, 0, len(targets))
 	var roundMu sync.Mutex

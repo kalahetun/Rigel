@@ -4,12 +4,14 @@ import (
 	"fmt"
 	"golang.org/x/time/rate"
 	"log/slog"
+	"rigel-client/upload/base"
 	"rigel-client/upload/split"
-	"rigel-client/util"
 	"time"
 )
 
-func DirectImp(task ChunkTask, hops string, rateLimiter *rate.Limiter, inMemory bool, pre string, logger *slog.Logger) error {
+func DirectImp(
+	fo base.FileOperateInterfaces,
+	task ChunkTask, hops string, rateLimiter *rate.Limiter, inMemory bool, pre string, logger *slog.Logger) error {
 	logger.Info("UploadDirectImp", slog.String("pre", pre), slog.String("index", task.Index)) // 优化：只打印index，避免task序列化过大
 
 	// --------------- 第一步：初始状态设置（Acked=1）---------------
@@ -75,7 +77,7 @@ func DirectImp(task ChunkTask, hops string, rateLimiter *rate.Limiter, inMemory 
 	upload := task.Upload
 	start := chunk.Offset
 	length := chunk.Size
-	reader, err := GetTransferReader(ctx, upload, start, length, task.ObjectName, inMemory, pre, logger)
+	reader, err := GetTransferReader(ctx, fo, upload, start, length, task.ObjectName, inMemory, pre, logger)
 	if err != nil {
 		finalErr = err
 		return finalErr
@@ -98,25 +100,15 @@ func DirectImp(task ChunkTask, hops string, rateLimiter *rate.Limiter, inMemory 
 	default:
 	}
 
-	if upload.Dest.DataDestType == util.GCPCLoud {
-		if err := UploadToGCSbyClient(ctx, upload.Proxy.LocalDir, upload.Dest.DestGCP.BucketName,
-			task.ObjectName, upload.Dest.DestGCP.CredFile, inMemory, reader, pre, logger); err != nil {
-			logger.Error("UploadToGCSbyClient failed", slog.String("pre", pre), slog.String("index", task.Index), slog.Any("err", err))
-			finalErr = err
-			return finalErr
-		}
-	} else if upload.Dest.DataDestType == util.RemoteDisk {
-		req := ChunkUploadRequest{
-			ServerURL:     upload.Dest.DestDisk.Upload,
-			FinalFileName: task.ObjectName,
-			ChunkName:     task.ObjectName,
-			LocalBaseDir:  upload.Proxy.LocalDir,
-		}
-		if _, err := UploadFileChunk(ctx, req, inMemory, reader, pre, logger); err != nil {
-			logger.Error("ChunkUploadHandler failed", slog.String("pre", pre), slog.String("index", task.Index), slog.Any("err", err))
-			finalErr = err
-			return finalErr
-		}
+	if fo.UploadFile.UploadFile == nil {
+		logger.Error("UploadFile is nil", slog.String("pre", pre))
+		return fmt.Errorf("%w: UploadFile is nil", ErrInterfaceNotImplemented)
+	}
+	err = fo.UploadFile.UploadFile(ctx, task.ObjectName, hops, rateLimiter, reader, inMemory, pre, logger)
+	if err != nil {
+		logger.Error("UploadFile failed", slog.String("pre", pre),
+			slog.String("index", task.Index), slog.Any("err", err))
+		return err
 	}
 
 	// --------------- 第四步：成功状态更新（Acked=2）---------------

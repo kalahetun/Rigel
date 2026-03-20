@@ -1,7 +1,6 @@
 package probing
 
 import (
-	"data-plane/util"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,20 +8,19 @@ import (
 )
 
 const (
-	//ControlHost    = "http://34.69.185.247:8081"
 	ProbingTaskURL = "/api/v1/probe/tasks"
 )
 
-//type ProbeTask struct {
-//	TargetType string // "node" | "cloud_storage"
-//	Provider   string // node 可为空，cloud storage 用 google/aws/azure
-//	IP         string
-//	Port       int
-//	Region     string // cloud storage 用，node 可为空
-//	City       string // cloud storage 用，node 可为空
-//}
+type ProbeTask struct {
+	TargetType string // "node" | "cloud_storage"
+	Provider   string // node 可为空，cloud storage 用 google/aws/azure
+	IP         string
+	Port       int
+	Region     string // cloud storage 用，node 可为空
+	City       string // cloud storage 用，node 可为空
+}
 
-func GetProbeTasks(pre, controlHost string) ([]util.ProbeTask, error) {
+func GetProbeTasks(pre, controlHost string) ([]ProbeTask, error) {
 
 	url := controlHost + ProbingTaskURL
 
@@ -41,9 +39,9 @@ func GetProbeTasks(pre, controlHost string) ([]util.ProbeTask, error) {
 
 	// 3. 定义服务端返回结构
 	var serverResp struct {
-		Code int              `json:"code"`
-		Msg  string           `json:"msg"`
-		Data []util.ProbeTask `json:"data"`
+		Code int         `json:"code"`
+		Msg  string      `json:"msg"`
+		Data []ProbeTask `json:"data"`
 	}
 
 	// 4. 解析 JSON

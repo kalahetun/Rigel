@@ -1,0 +1,132 @@
+package base
+
+import (
+	"context"
+	"golang.org/x/time/rate"
+	"io"
+	"log/slog"
+	"rigel-client/upload/gcp"
+	"rigel-client/upload/gcp_client"
+	"rigel-client/upload/local_disk"
+	"rigel-client/upload/remote_disk"
+	"rigel-client/upload/remote_disk_client"
+	"rigel-client/util"
+)
+
+type EndPoint struct {
+	IP       string `json:"ip"`
+	Provider string `json:"provider"`
+	Region   string `json:"region"`
+	ID       string `json:"id"`
+}
+
+type EndPoints struct {
+	Source EndPoint `json:"source"`
+	Dest   EndPoint `json:"dest"`
+}
+
+type User struct {
+	Username string `json:"username" form:"username"` // 客户端用户名
+	Priority int    `json:"priority" form:"priority"` // 优先级
+}
+
+type File struct {
+	FileName    string `json:"file_name" form:"file_name"`         // 源文件名（如test.zip）
+	FileStart   int64  `json:"file_start" form:"file_start"`       // 文件起始偏移（字节，默认0）
+	FileLength  int64  `json:"file_length" form:"file_length"`     // 文件传输长度（字节，0=整个文件）
+	NewFileName string `json:"new_file_name" form:"new_file_name"` // 目标文件名
+}
+
+type Proxy struct {
+	LocalDir string `json:"local_dir" form:"local_dir"`
+}
+
+type End struct {
+	Type      string      `json:"type" form:"type"` // 源类型
+	Interface interface{} `json:"interface" form:"interface"`
+}
+
+type UploadStruct struct {
+	User      User      `json:"user" form:"user"`
+	File      File      `json:"file" form:"file"`
+	Proxy     Proxy     `json:"proxy" form:"proxy"`
+	Source    End       `json:"source" form:"source"`
+	Dest      End       `json:"dest" form:"dest"`
+	EndPoints EndPoints `json:"end_points"`
+}
+
+type GetFileSizeInterface interface {
+	GetFileSize(ctx context.Context, filename string, pre string, logger *slog.Logger) (int64, error)
+}
+
+type ComposeFileInterface interface {
+	ComposeFile(ctx context.Context, objectName string, parts []string, pre string, logger *slog.Logger) error
+}
+
+type DownloadFileInterface interface {
+	DownloadFile(ctx context.Context, filename string, newFilename string, start int64,
+		length int64, bs string, inMemory bool, pre string, logger *slog.Logger) (io.ReadCloser, error)
+}
+
+type UploadFileInterface interface {
+	UploadFile(ctx context.Context, objectName string, hops string, rateLimiter *rate.Limiter,
+		reader io.ReadCloser, inMemory bool, pre string, logger *slog.Logger) error
+}
+
+type FileOperateInterfaces struct {
+	GetFileSize  GetFileSizeInterface  // 获取文件大小接口
+	ComposeFile  ComposeFileInterface  // 文件合并接口
+	DownloadFile DownloadFileInterface // 文件下载接口
+	UploadFile   UploadFileInterface   // 文件上传接口
+}
+
+func InitInterface(clientB bool, us UploadStruct, pre string, logger *slog.Logger) FileOperateInterfaces {
+
+	var fo FileOperateInterfaces
+
+	if us.Source.Type == util.GCPCLoud {
+		gcp_ := ExtractGCPFromInterface(us.Source.Interface, pre, logger)
+		if gcp_ == nil {
+			return fo
+		}
+		fo.GetFileSize = gcp.NewGetSize(gcp_.BucketName, gcp_.CredFile, pre, logger)
+		fo.DownloadFile = gcp.NewDownload(us.Proxy.LocalDir, gcp_.BucketName, gcp_.CredFile, pre, logger)
+	} else if us.Source.Type == util.LocalDisk {
+		fo.GetFileSize = local_disk.NewGetSize(us.Proxy.LocalDir, pre, logger)
+		fo.DownloadFile = local_disk.NewDownload(us.Proxy.LocalDir, pre, logger)
+	} else if us.Source.Type == util.RemoteDisk {
+		sd := ExtractSourceDiskFromInterface(us.Source.Interface, pre, logger)
+		if sd == nil {
+			return fo
+		}
+		fo.GetFileSize = remote_disk.NewGetSize(sd.User, sd.Host, sd.Password, sd.RemoteDir, pre, logger)
+		fo.DownloadFile = remote_disk.NewDownload(sd.User, sd.Host, sd.Password, sd.RemoteDir, us.Proxy.LocalDir, pre, logger)
+	}
+
+	if us.Dest.Type == util.GCPCLoud {
+		gcp_ := ExtractGCPFromInterface(us.Dest.Interface, pre, logger)
+		if gcp_ == nil {
+			return fo
+		}
+		if clientB {
+			fo.UploadFile = gcp_client.NewUpload(us.Proxy.LocalDir, gcp_.BucketName, gcp_.CredFile, pre, logger)
+			fo.ComposeFile = nil
+		} else {
+			fo.UploadFile = gcp.NewUpload(us.Proxy.LocalDir, gcp_.BucketName, gcp_.CredFile, pre, logger)
+			fo.ComposeFile = gcp.NewCompose(gcp_.BucketName, gcp_.CredFile, pre, logger)
+		}
+	} else if us.Dest.Type == util.RemoteDisk {
+		ck_ := ExtractChunkFromInterface(us.Dest.Interface, pre, logger)
+		if ck_ == nil {
+			return fo
+		}
+		if clientB {
+			fo.UploadFile = remote_disk_client.NewUpload(ck_.Upload, us.Proxy.LocalDir, pre, logger)
+			fo.ComposeFile = nil
+		} else {
+			fo.UploadFile = remote_disk.NewUpload(us.Proxy.LocalDir, ck_.Upload, pre, logger)
+			fo.ComposeFile = remote_disk.NewCompose(ck_.Merge, true, pre, logger)
+		}
+	}
+	return fo
+}

@@ -2,15 +2,36 @@ package routing
 
 import (
 	"control-plane/storage"
-	"control-plane/util"
 	"fmt"
 	"log/slog"
 	"math"
 	"strings"
 )
 
+type PathInfo struct {
+	Hops string `json:"hops"`
+	Rate int64  `json:"rate"`
+	//Weight int64  `json:"weight"`
+}
+
+type RoutingInfo struct {
+	Routing []PathInfo `json:"routing"`
+}
+
+type EndPoint struct {
+	IP       string `json:"ip"`
+	Provider string `json:"provider"`
+	Region   string `json:"region"`
+	ID       string `json:"id"`
+}
+
+type EndPoints struct {
+	Source EndPoint `json:"source"`
+	Dest   EndPoint `json:"dest"`
+}
+
 // 输入是client区域和cloud storage 区域
-func (g *GraphManager) Routing(endPoints util.EndPoints, pre string, logger *slog.Logger) util.RoutingInfo {
+func (g *GraphManager) Routing(endPoints EndPoints, pre string, logger *slog.Logger) RoutingInfo {
 
 	logger.Info("Routing", slog.String("pre", pre), slog.Any("endPoints", endPoints))
 
@@ -34,7 +55,7 @@ func (g *GraphManager) Routing(endPoints util.EndPoints, pre string, logger *slo
 	//todo 即使client所在区域没有覆盖也可以提供routing
 	if len(startNodes) == 0 {
 		logger.Warn("No nodes found for start continent", slog.String("pre", pre))
-		return util.RoutingInfo{}
+		return RoutingInfo{}
 	}
 
 	serverFull := fmt.Sprintf("%s_%s_%s",
@@ -43,7 +64,7 @@ func (g *GraphManager) Routing(endPoints util.EndPoints, pre string, logger *slo
 	//没有到该cloud storage的路径
 	if _, ok := g.FindEdgeBySuffix(serverFull); !ok {
 		logger.Warn("No cloud node found", slog.String("pre", pre), slog.String("serverFull", serverFull))
-		return util.RoutingInfo{}
+		return RoutingInfo{}
 	}
 
 	// 遍历 start × end 节点组合，寻找最短路径
@@ -97,10 +118,10 @@ func (g *GraphManager) Routing(endPoints util.EndPoints, pre string, logger *slo
 	merged += "," + endPoints.Dest.IP
 
 	//计算速率
-	var paths []util.PathInfo
+	var paths []PathInfo
 	rate := ComputeAdmissionRate(Task{WeightU: 1, MinRate: 10, MaxRate: 20}, minCost, 1.0, 100, pre, g.logger)
-	paths = append(paths, util.PathInfo{Hops: merged, Rate: int64(rate)})
-	rout := util.RoutingInfo{Routing: paths}
+	paths = append(paths, PathInfo{Hops: merged, Rate: int64(rate)})
+	rout := RoutingInfo{Routing: paths}
 	logger.Info("routing result", slog.String("pre", pre), slog.Any("rout", rout))
 	return rout
 }

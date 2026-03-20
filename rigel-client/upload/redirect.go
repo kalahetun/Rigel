@@ -4,12 +4,14 @@ import (
 	"fmt"
 	"golang.org/x/time/rate"
 	"log/slog"
+	"rigel-client/upload/base"
 	"rigel-client/upload/split"
-	"rigel-client/util"
 	"time"
 )
 
-func RedirectImp(task ChunkTask, hops string, rateLimiter *rate.Limiter, inMemory bool, pre string, logger *slog.Logger) error {
+func RedirectImp(
+	fo base.FileOperateInterfaces,
+	task ChunkTask, hops string, rateLimiter *rate.Limiter, inMemory bool, pre string, logger *slog.Logger) error {
 
 	logger.Info("UploadRedirectImp", slog.String("pre", pre), slog.Any("task", task))
 
@@ -76,7 +78,7 @@ func RedirectImp(task ChunkTask, hops string, rateLimiter *rate.Limiter, inMemor
 	upload := task.Upload
 	start := chunk.Offset
 	length := chunk.Size
-	reader, err := GetTransferReader(ctx, upload, start, length, task.ObjectName, inMemory, pre, logger)
+	reader, err := GetTransferReader(ctx, fo, upload, start, length, task.ObjectName, inMemory, pre, logger)
 	if err != nil {
 		return err
 	}
@@ -98,16 +100,15 @@ func RedirectImp(task ChunkTask, hops string, rateLimiter *rate.Limiter, inMemor
 	default:
 	}
 
-	if upload.Dest.DataDestType == util.GCPCLoud {
-		if err := UploadToGCSbyProxy(task, hops, rateLimiter, reader, inMemory, pre, logger); err != nil {
-			logger.Error("UploadToGCSbyProxy failed", slog.String("pre", pre), slog.Any("err", err))
-			return err
-		}
-	} else if upload.Dest.DataDestType == util.RemoteDisk {
-		if err := UploadFileChunkbyProxy(task, hops, rateLimiter, reader, inMemory, pre, logger); err != nil {
-			logger.Error("UploadFileChunkbyProxy failed", slog.String("pre", pre), slog.Any("err", err))
-			return err
-		}
+	if fo.UploadFile.UploadFile == nil {
+		logger.Error("UploadFile is nil", slog.String("pre", pre))
+		return fmt.Errorf("%w: UploadFile is nil", ErrInterfaceNotImplemented)
+	}
+	err = fo.UploadFile.UploadFile(ctx, task.ObjectName, hops, rateLimiter, reader, inMemory, pre, logger)
+	if err != nil {
+		logger.Error("UploadFile failed", slog.String("pre", pre),
+			slog.String("index", task.Index), slog.Any("err", err))
+		return err
 	}
 
 	// --------------- 第四步：成功状态更新（Acked=2）---------------

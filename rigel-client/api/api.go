@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"rigel-client/config"
 	"rigel-client/upload"
+	"rigel-client/upload/base"
 	"rigel-client/util"
 	"time"
 )
@@ -26,21 +27,19 @@ var (
 // ParseHeadersAndBuildUploadInfo 一站式处理请求头解析、校验、UploadInfo构造
 // 入参：Gin上下文、日志前缀、日志器
 // 出参：构造好的UploadInfo / 是否已向客户端返回响应（避免重复响应）/ 错误信息
-func ParseHeadersAndBuildUploadInfo(c *gin.Context, pre string, logger *slog.Logger) (util.UploadConfig, error) {
+func ParseHeadersAndBuildUploadInfo(c *gin.Context, pre string, logger *slog.Logger) (base.UploadStruct, error) {
 
-	fileName := c.GetHeader(util.HeaderFileName)
-	logger.Info("Start parsing headers and building upload info", slog.String("pre", pre),
-		slog.String("fileName", fileName))
+	logger.Info("Start parsing upload info", slog.String("pre", pre))
 
-	var req util.UploadConfig
+	var req base.UploadStruct
 	if err := c.ShouldBindJSON(&req); err != nil {
 		errMsg := fmt.Sprintf("Failed to parse request body: %v", err)
 		logger.Error(errMsg, slog.String("pre", pre))
 		c.JSON(http.StatusBadRequest, gin.H{"error": errMsg})
-		return util.UploadConfig{}, fmt.Errorf(errMsg)
+		return base.UploadStruct{}, fmt.Errorf(errMsg)
 	}
 
-	if req.Source.DataSourceType == util.LocalDisk {
+	if req.Source.Type == util.LocalDisk {
 		req.Proxy.LocalDir = LocalBaseDir
 	}
 
@@ -67,8 +66,10 @@ func V2ClientUploadHandler(logger *slog.Logger) gin.HandlerFunc {
 		// 2. 调用客户端直传实现上传文件到存储服务（C服务）
 		// UploadDirectImp：客户端直传实现（区别于V1的代理转发实现）
 		// 参数说明：uploadInfo-上传信息；UploadDirectImp-直传实现函数；true-是否开启并发；requestID-请求标识；logger-日志实例
-		if err := upload.Upload(uploadInfo, upload.DirectImp, util.RoutingInfo{}, false, requestID, logger); err != nil {
-			logger.Error("client direct upload failed", slog.String("requestID", requestID), slog.Any("err", err))
+		if err := upload.UploadFunc(true, uploadInfo, upload.DirectImp,
+			upload.RoutingInfo{}, false, requestID, logger); err != nil {
+			logger.Error("client direct upload failed", slog.String("requestID", requestID),
+				slog.Any("err", err))
 			// 返回500内部错误，携带具体错误信息
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -112,7 +113,8 @@ func V1ProxyUploadHandler(logger *slog.Logger) gin.HandlerFunc {
 		}
 
 		// 3. 上传文件到C服务
-		if err := upload.Upload(uploadInfo, upload.RedirectImp, routingInfo, false, pre, logger); err != nil {
+		if err := upload.UploadFunc(false, uploadInfo, upload.RedirectImp,
+			routingInfo, false, pre, logger); err != nil {
 			handleError(c, logger, pre, http.StatusInternalServerError, "upload to service C failed", err)
 			return
 		}
@@ -130,14 +132,14 @@ func V1ProxyUploadHandler(logger *slog.Logger) gin.HandlerFunc {
 }
 
 // getRoutingInfoFromServiceB 调用B服务获取路由信息
-func getRoutingInfoFromServiceControlPlane(uploadInfo util.UploadConfig, pre string, logger *slog.Logger) (util.RoutingInfo, error) {
+func getRoutingInfoFromServiceControlPlane(uploadInfo base.UploadStruct, pre string, logger *slog.Logger) (upload.RoutingInfo, error) {
 
 	// 构建调用B服务的请求
 	reqBodyBytes, _ := json.Marshal(uploadInfo.EndPoints)
 	req, err := http.NewRequest("POST", config.Config_.ControlHost+RoutingURL, bytes.NewReader(reqBodyBytes))
 	if err != nil {
 		logger.Error("build service B request failed", slog.String("pre", pre), slog.String("err", err.Error()))
-		return util.RoutingInfo{}, err
+		return upload.RoutingInfo{}, err
 	}
 
 	// 设置请求头
@@ -149,7 +151,7 @@ func getRoutingInfoFromServiceControlPlane(uploadInfo util.UploadConfig, pre str
 	resp, err := client.Do(req)
 	if err != nil {
 		logger.Error("call service B failed", slog.String("pre", pre), slog.String("err", err.Error()))
-		return util.RoutingInfo{}, err
+		return upload.RoutingInfo{}, err
 	}
 	defer resp.Body.Close()
 
@@ -157,23 +159,29 @@ func getRoutingInfoFromServiceControlPlane(uploadInfo util.UploadConfig, pre str
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		logger.Error("read service B response failed", slog.String("pre", pre), slog.String("err", err.Error()))
-		return util.RoutingInfo{}, err
+		return upload.RoutingInfo{}, err
+	}
+
+	type ApiResponse struct {
+		Code int         `json:"code"` // 200=成功，400=参数错误，500=服务端错误
+		Msg  string      `json:"msg"`  // 提示信息
+		Data interface{} `json:"data"` // 业务数据
 	}
 
 	// 解析B服务响应
-	var apiResp util.ApiResponse
+	var apiResp ApiResponse
 	if err := json.Unmarshal(respBody, &apiResp); err != nil {
 		logger.Error("unmarshal service B response failed", slog.String("pre", pre), slog.String("err", err.Error()))
-		return util.RoutingInfo{}, err
+		return upload.RoutingInfo{}, err
 	}
 
 	// 解析路由信息
 	reqDataBytes, _ := json.Marshal(apiResp.Data)
 	logger.Info("get service control plane response", slog.String("pre", pre), slog.String("responseData", string(reqDataBytes)))
-	var routingInfo util.RoutingInfo
+	var routingInfo upload.RoutingInfo
 	if err := json.Unmarshal(reqDataBytes, &routingInfo); err != nil {
 		logger.Error("unmarshal routing info failed", slog.String("pre", pre), slog.String("err", err.Error()))
-		return util.RoutingInfo{}, err
+		return upload.RoutingInfo{}, err
 	}
 
 	logger.Info("get routing info success", slog.String("pre", pre), slog.Any("routingInfo", routingInfo))
