@@ -1,18 +1,21 @@
 package util
 
 const (
-	GCPCLoud               = "gcp-cloud"
-	RemoteDisk             = "remote-disk"
-	LocalDisk              = "local-disk"
+	GCPCLoud   = "gcp-cloud"
+	RemoteDisk = "remote-disk"
+	LocalDisk  = "local-disk"
+)
+
+const (
 	HeaderFileName         = "X-File-Name"  // 最终合并后的文件名
 	HeaderChunkName        = "X-Chunk-Name" // 单个分片的自定义名称
-	DataSourceType         = "X-Data-Source-Type"
-	DataDestType           = "X-Data-Dest-Type"
 	HeaderXHops            = "X-Hops"
 	HeaderXChunkIndex      = "X-Chunk-Index"
 	HeaderXRateLimitEnable = "X-Rate-Limit-Enable"
-	HeaderXSourceType      = "X-Source-Type"
 	HeaderDestTyep         = "X-Dest-Type"
+	DataSourceType         = "X-Data-Source-Type"
+	DataDestType           = "X-Data-Dest-Type"
+	HeaderXSourceType      = "X-Source-Type"
 )
 
 type ApiResponse struct {
@@ -42,11 +45,6 @@ type SSHConfig struct {
 	User     string // 用户名
 	HostPort string // 主机IP:端口（如192.168.1.20:22）
 	Password string // 密码（或用密钥认证）
-}
-
-type FileSys struct {
-	Upload string // 上传接口地址 // ``
-	Merge  string // 合并接口地址
 }
 
 type EndPoint struct {
