@@ -45,60 +45,6 @@ type SSHConfig struct {
 	PrivateKey string // 私钥文件路径
 }
 
-// sshToMatthAndDeployBinary SSH 连接到服务器，上传二进制文件并启动它
-//func sshToDeployBinary(config *SSHConfig, localPath, remotePath, binaryString, pre string, logger *slog.Logger) error {
-//	// 创建 SSH 客户端配置，使用系统默认的 SSH 配置
-//	clientConfig := &ssh.ClientConfig{
-//		User:            config.Username,
-//		Auth:            []ssh.AuthMethod{ssh.PublicKeysCallback(agentCallback())}, // 使用默认 SSH 密钥
-//		HostKeyCallback: ssh.InsecureIgnoreHostKey(),                               // 忽略主机密钥验证（生产环境中应谨慎）
-//	}
-//
-//	logger.Info("sshToDeployBinary", slog.String("pre", pre))
-//
-//	// 连接到 SSH 服务器
-//	conn, err := ssh.Dial("tcp", fmt.Sprintf("%s:%s", config.Host, config.Port), clientConfig)
-//	if err != nil {
-//		return fmt.Errorf("failed to dial: %v", err)
-//	}
-//	defer conn.Close()
-//
-//	logger.Info("ssh Dial success", slog.String("pre", pre))
-//
-//	// 打开远程会话
-//	session, err := conn.NewSession()
-//	if err != nil {
-//		return fmt.Errorf("failed to create session: %v", err)
-//	}
-//	defer session.Close()
-//
-//	logger.Info("NewSession success", slog.String("pre", pre))
-//
-//	// 读取本地二进制文件
-//	//data, err := ioutil.ReadFile(localBinaryPath)
-//	//if err != nil {
-//	//	return fmt.Errorf("failed to read binary file: %v", err)
-//	//}
-//
-//	// 上传二进制文件到远程服务器的 /home/matth 目录
-//	err = UploadDirSFTP(conn, localPath, remotePath)
-//	if err != nil {
-//		return fmt.Errorf("failed to upload binary: %v", err)
-//	}
-//
-//	logger.Info("UploadDirSFTP success", slog.String("pre", pre))
-//
-//	// 执行远程命令来启动二进制文件
-//	err = startBinaryInBackground(session, remotePath, binaryString, logger)
-//	if err != nil {
-//		return fmt.Errorf("failed to start binary: %v", err)
-//	}
-//
-//	logger.Info("startBinaryInBackground success", slog.String("pre", pre))
-//
-//	return nil
-//}
-
 func sshToDeployBinary(config *SSHConfig, localPath_, remotePath_, binaryString_,
 	pre string, logger *slog.Logger) error {
 
@@ -182,40 +128,6 @@ func sshToDeployBinary(config *SSHConfig, localPath_, remotePath_, binaryString_
 
 	return nil
 }
-
-//// agentCallback 用于获取默认 SSH agent 中的密钥
-//func agentCallback() func() ([]ssh.Signer, error) {
-//	// 返回一个闭包函数，符合 PublicKeysCallback 的要求
-//	return func() ([]ssh.Signer, error) {
-//		// 获取 SSH agent
-//		sshAgent := agent.NewClient(os.Stdin) // 使用 os.Stdin 连接到默认的 SSH agent
-//		if sshAgent == nil {
-//			return nil, fmt.Errorf("failed to connect to SSH agent")
-//		}
-//
-//		// 获取密钥列表
-//		keys, err := sshAgent.List()
-//		if err != nil {
-//			return nil, fmt.Errorf("failed to list keys: %v", err)
-//		}
-//
-//		if len(keys) == 0 {
-//			return nil, fmt.Errorf("no keys found in the agent")
-//		}
-//
-//		// 将 ssh.Key 转换为 ssh.Signer
-//		var signers []ssh.Signer
-//		for _, key := range keys {
-//			signer, err := ssh.NewSignerFromKey(key)
-//			if err != nil {
-//				return nil, fmt.Errorf("failed to create signer: %v", err)
-//			}
-//			signers = append(signers, signer)
-//		}
-//
-//		return signers, nil
-//	}
-//}
 
 // uploadBinaryToRemote 上传二进制文件到远程服务器
 func UploadDirSFTP(sshClient *ssh.Client, localDir, remoteDir string) error {

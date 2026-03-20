@@ -3,6 +3,7 @@ package storage
 import (
 	"control-plane/etcd_client"
 	"control-plane/util"
+	"control-plane/vm_info"
 	"encoding/json"
 	"fmt"
 	clientv3 "go.etcd.io/etcd/client/v3"
@@ -33,23 +34,14 @@ type NodeCongestionInfo struct {
 	CalculateTime      time.Time `json:"calculate_time"`       // 计算时间
 }
 
-//type ProbeTask struct {
-//	TargetType string // "node" | "cloud_storage"
-//	Provider   string // node 可为空，cloud storage 用 google/aws/azure
-//	IP         string
-//	Port       int
-//	Region     string // cloud storage 用，node 可为空
-//	City       string // cloud storage 用，node 可为空
-//}
-
 // 链路拥塞信息
 type LinkCongestionInfo struct {
-	TargetIP       string         `json:"target_ip"` // 目标节点 IP
-	Target         util.ProbeTask `json:"target"`
-	PacketLoss     float64        `json:"packet_loss"`     // 丢包率，百分比
-	WeightedCache  float64        `json:"weighted_cache"`  // 链路缓存情况（可选）
-	AverageLatency float64        `json:"average_latency"` // 平均延迟（毫秒）
-	BandwidthUsage float64        `json:"bandwidth_usage"` // 带宽利用率（可选百分比）
+	TargetIP       string            `json:"target_ip"` // 目标节点 IP
+	Target         vm_info.ProbeTask `json:"target"`
+	PacketLoss     float64           `json:"packet_loss"`     // 丢包率，百分比
+	WeightedCache  float64           `json:"weighted_cache"`  // 链路缓存情况（可选）
+	AverageLatency float64           `json:"average_latency"` // 平均延迟（毫秒）
+	BandwidthUsage float64           `json:"bandwidth_usage"` // 带宽利用率（可选百分比）
 }
 
 // 节点遥测数据
@@ -75,10 +67,10 @@ func CalcClusterWeightedAvg(fs *FileStorage, interval time.Duration,
 
 	// 临时链路统计结构体，补充json tag适配JSON解析/序列化
 	type tempLinksCongStruct struct {
-		TargetIP         string         `json:"target_ip"`
-		PacketLosses     []float64      `json:"packet_losses"`     // 若为单个丢包率则用packet_loss，数组用packet_losses
-		AverageLatencies []float64      `json:"average_latencies"` // 单个延迟则用average_latency，数组用average_latencies
-		ProbeTask        util.ProbeTask `json:"probe_task"`
+		TargetIP         string            `json:"target_ip"`
+		PacketLosses     []float64         `json:"packet_losses"`     // 若为单个丢包率则用packet_loss，数组用packet_losses
+		AverageLatencies []float64         `json:"average_latencies"` // 单个延迟则用average_latency，数组用average_latencies
+		ProbeTask        vm_info.ProbeTask `json:"probe_task"`
 	}
 
 	// 3. 无限循环，定时触发核心逻辑（复用GetAll()）

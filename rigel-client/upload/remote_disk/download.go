@@ -23,7 +23,7 @@ type Download struct {
 
 func NewDownload(
 	user, hostPort, password, remoteDir, localDir string,
-	pre string,          // 日志前缀（和之前保持一致）
+	pre string, // 日志前缀（和之前保持一致）
 	logger *slog.Logger, // 日志实例（和之前保持一致）
 ) *Download {
 	d := &Download{

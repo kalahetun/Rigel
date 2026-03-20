@@ -87,14 +87,14 @@ func (s *Scaler) calculateDelta(node *NodeState) float64 {
 		return *s.Override.Delta
 	}
 
-	// 1️⃣ 当前扰动量
+	// 当前扰动量
 	P := node.P
 	Z := node.Z
 
-	// 2️⃣ 成本，根据节点当前状态
+	// 成本，根据节点当前状态
 	cost := s.calculateCost(node)
 
-	// 3️⃣ 公式
+	// 公式
 	delta := -s.Config.DecayFactor*s.Config.VolatilityWeight*s.Config.QueueWeight*Z*P +
 		s.Config.CostWeight*cost
 
@@ -138,7 +138,7 @@ func (s *Scaler) autoScaling() {
 
 	//-----------------------------------------------------------------------------------------------------------------/
 
-	// 1️⃣ 判断当前节点状态，如果不需要扩容则直接返回
+	// 判断当前节点状态，如果不需要扩容则直接返回
 	s.ScalerDump(pre+"-1", s.logger) //打印 node
 	node := s.Node
 	switch s.getState() {
@@ -174,13 +174,13 @@ func (s *Scaler) autoScaling() {
 
 	//-----------------------------------------------------------------------------------------------------------------
 
-	// 1️⃣ 计算当前扰动量 P 和波动值 Z
+	// 计算当前扰动量 P 和波动值 Z
 	node.P = s.calculatePerturbation(pre)
 	node.Z = s.calculateVolatilityAccumulation()
 	delta := s.calculateDelta(s.Node)
 	s.ScalerDump(pre+"-2", s.logger)
 	s.logger.Info("calculate delta", slog.String("pre", pre), slog.Float64("delta", delta))
-	// 2️⃣ 判断是否需要触发扩容
+	// 判断是否需要触发扩容
 	if delta < 0 {
 		switch s.getState() {
 		case Inactive:
@@ -225,7 +225,7 @@ func (s *Scaler) autoScaling() {
 
 	//-----------------------------------------------------------------------------------------------------------------/
 
-	// 3️⃣ 如果没有触发扩容，根据当前状态处理
+	// 如果没有触发扩容，根据当前状态处理
 	switch s.getState() {
 	case Dormant, Permanent:
 		s.logger.Info("node is dormant or permanent, and retention time reached", slog.String("pre", pre))
@@ -245,63 +245,6 @@ func (s *Scaler) autoScaling() {
 
 	return
 }
-
-// triggerScaling 模拟扩容动作
-//func (s *Scaler) triggerScaling1(n int, pre string, logger *slog.Logger) (bool, VM) {
-//
-//	logger.Info("triggerScaling1", slog.String("pre", pre), "n", n)
-//
-//	//获取本节点配置信息
-//	//扩容
-//	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
-//	defer cancel() // 确保上下文最终被释放
-//
-//	gcp := util.Config_.GCP
-//	vmName := gcp.VMPrefix + util.GenerateRandomLetters1(5)
-//	err := CreateVM(ctx, gcp.ProjectID, gcp.Zone, vmName, gcp.CredFile, pre, logger)
-//
-//	if err != nil {
-//		logger.Error("创建 VM 失败", slog.String("pre", pre), "error", err)
-//		return false, VM{}
-//	}
-//
-//	// 在创建虚拟机后等待一定时间，确保 VM 启动完成
-//	logger.Info("Waiting for VM to start...", slog.String("pre", pre), "vmName", vmName)
-//	time.Sleep(3 * time.Minute) // 等待 10 分钟
-//
-//	//获取ip等信息用于管理
-//	ip, err := GetVMExternalIP(ctx, logger, gcp.ProjectID, gcp.Zone, vmName, gcp.CredFile, pre)
-//	if err != nil {
-//		logger.Error("获取 VM 外部 IP 失败", slog.String("pre", pre), "error", err)
-//		return false, VM{}
-//	}
-//
-//	logger.Info("Scaling node", slog.String("pre", pre), slog.String("zone", gcp.Zone),
-//		slog.String("vm name", vmName), slog.String("ip", ip))
-//
-//	//安装环境 启动 触发envoy
-//	err = deployBinaryToServer(username, ip, "22", localPathProxy, remotePathProxy, binaryProxy, logger)
-//	if err != nil {
-//		logger.Error("部署二进制文件失败", slog.String("pre", pre),
-//			slog.String("remote proxy", remotePathProxy), "error", err)
-//		return false, VM{}
-//	}
-//	err = deployBinaryToServer(username, ip, "22", localPathPlane, remotePathPlane, binaryPlane, logger)
-//	if err != nil {
-//		logger.Error("部署二进制文件失败", slog.String("pre", pre),
-//			slog.String("remote proxy", remotePathProxy), "error", err)
-//		return false, VM{}
-//	}
-//
-//	//关联到envoy
-//	_, err = sendAddTargetIpsRequest([]envoy_manager.EnvoyTargetAddr{envoy_manager.EnvoyTargetAddr{ip, 8095}})
-//	if err != nil {
-//		logger.Error("关联到envoy失败", "error", err)
-//		return false, VM{}
-//	}
-//
-//	return true, VM{ip, vmName, s.now(), Triggered}
-//}
 
 func (s *Scaler) triggerScaling2(vm_ VM, pre string) bool {
 

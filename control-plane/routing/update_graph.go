@@ -14,22 +14,17 @@ import (
 
 // Edge 表示两个节点之间的边（逻辑或物理）
 type Edge struct {
-	SourceIp      string `json:"source_ip"`      // A 节点名/ID
-	DestinationIp string `json:"destination_ip"` // B 节点名/ID
-
-	// 节点额外信息
-	SourceProvider       string `json:"source_provider"`       // A 节点云服务商
-	SourceContinent      string `json:"source_continent"`      // A 节点大区
-	DestinationProvider  string `json:"destination_provider"`  // B 节点云服务商
-	DestinationContinent string `json:"destination_continent"` // B 节点大区
-
-	// 网络/缓存信息
-	//BandwidthPrice  float64 `json:"bandwidth_price"`   // A 节点出口带宽价格 ($/GB)
-	//Latency         float64 `json:"latency"`           // A->B 时延
-	//Loss            float64 `json:"loss"`              //A->B 丢包率
+	SourceIp             string  `json:"source_ip"`             // A 节点名/ID
+	DestinationIp        string  `json:"destination_ip"`        // B 节点名/ID
+	SourceProvider       string  `json:"source_provider"`       // A 节点云服务商 // 节点额外信息
+	SourceContinent      string  `json:"source_continent"`      // A 节点大区
+	DestinationProvider  string  `json:"destination_provider"`  // B 节点云服务商
+	DestinationContinent string  `json:"destination_continent"` // B 节点大区
+	EdgeWeight           float64 `json:"edge_weight"`           // 综合权重，用于最短路径计算
+	//BandwidthPrice float64 `json:"bandwidth_price"` // A 节点出口带宽价格 ($/GB)// 网络/缓存信息
+	//Latency float64 `json:"latency"` // A->B 时延
+	//Loss float64 `json:"loss"` //A->B 丢包率
 	//CacheUsageRatio float64 `json:"cache_usage_ratio"` // 缓存占用比例 [0,1]
-	EdgeWeight float64 `json:"edge_weight"` // 综合权重，用于最短路径计算
-
 	mu sync.RWMutex // 保护动态字段（BandwidthPrice, Latency, CacheUsageRatio, EdgeWeight）
 }
 
@@ -266,17 +261,12 @@ func EdgeRisk(cacheUtil, cost, lossRate float64, pre string, l *slog.Logger) flo
 		slog.Any("cost", cost), slog.Any("lossRate", lossRate))
 
 	const (
-		// Cache policy
-		cacheThreshold = 0.6
+		cacheThreshold = 0.6 // Cache policy
 		cacheScale     = 0.4
-
-		// Cost policy
-		costBaseline = 0.2
-
-		// Weights (value priorities)
-		wCache = 0.5
-		wCost  = 0.4
-		wLoss  = 0.1
+		costBaseline   = 0.2 // Cost policy
+		wCache         = 0.5 // Weights (value priorities)
+		wCost          = 0.4
+		wLoss          = 0.1
 	)
 
 	var cacheRisk float64

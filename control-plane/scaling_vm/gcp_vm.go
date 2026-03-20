@@ -32,7 +32,7 @@ func CreateVM(
 	pre string,
 	logger *slog.Logger,
 ) error {
-	// 1️⃣ 创建客户端（直接使用凭证文件）
+	// 创建客户端（直接使用凭证文件）
 	instancesClient, err := compute.NewInstancesRESTClient(ctx, option.WithCredentialsFile(credFile))
 	if err != nil {
 		logger.Error("创建 Instances 客户端失败", slog.String("pre", pre), "error", err)
@@ -40,10 +40,10 @@ func CreateVM(
 	}
 	defer instancesClient.Close()
 
-	// 2️⃣ SSH 公钥
+	// SSH 公钥
 	sshKey := util.Config_.SshKey
 
-	// 3️⃣ 启动盘配置
+	// 启动盘配置
 	bootDisk := &computepb.AttachedDisk{
 		AutoDelete: proto.Bool(true),
 		Boot:       proto.Bool(true),
@@ -55,7 +55,7 @@ func CreateVM(
 	}
 	// 设置用于SSH访问的公钥
 
-	// 4️⃣ 网络接口配置（默认网络，带公网IP）
+	// 网络接口配置（默认网络，带公网IP）
 	networkInterface := &computepb.NetworkInterface{
 		// 配置虚拟机的启动盘，包括自动删除、启动类型、源镜像和磁盘大小
 		Network: proto.String("global/networks/default"),
@@ -67,7 +67,7 @@ func CreateVM(
 		}, // 10GB大小
 	}
 
-	// 5️⃣ 构建 VM 实例对象
+	// 构建 VM 实例对象
 	instance := &computepb.Instance{
 		// 配置网络接口，使用默认网络并启用公网IP
 		Name:        proto.String(vmName),
@@ -90,14 +90,14 @@ func CreateVM(
 		},
 	}
 
-	// 6️⃣ 创建请求
+	// 创建请求
 	req := &computepb.InsertInstanceRequest{
 		Project:          projectID,
 		Zone:             zone,
 		InstanceResource: instance,
 	}
 
-	// 7️⃣ 发送请求
+	// 发送请求
 	op, err := instancesClient.Insert(ctx, req)
 	if err != nil {
 		logger.Error("创建 VM 失败", slog.String("pre", pre),

@@ -23,49 +23,32 @@ const (
 
 // ScaleConfig 定义弹性伸缩相关参数
 type ScaleConfig struct {
-	// 队列与波动相关
-	VolatilityWeight    float64 `json:"volatility_weight"`
-	QueueWeight         float64 `json:"queue_weight"`
-	DecayFactor         float64 `json:"decay_factor"`
-	VolatilityThreshold float64 `json:"volatility_threshold"`
-
-	// DPP 控制参数
-	CostWeight float64 `json:"cost_weight"`
-
-	// 成本相关
-	ScalingCostFixed    float64 `json:"scaling_cost_fixed"`
-	ScalingCostVariable float64 `json:"scaling_cost_variable"`
-	ScalingRatio        float64 `json:"scaling_ratio"`
-
-	// 保留机制
-	BaseRetentionTime  time.Duration `json:"base_retention_time"`
-	RetentionAmplifier float64       `json:"retention_amplifier"`
-	RetentionDecay     time.Duration `json:"retention_decay"`
-	PermanentThreshold time.Duration `json:"permanent_threshold"`
-	PermanentDuration  time.Duration `json:"permanent_duration"`
-
-	// 定时任务
-	TickerInterval time.Duration `json:"ticker_interval"`
+	VolatilityWeight    float64       `json:"volatility_weight"` // 队列与波动相关
+	QueueWeight         float64       `json:"queue_weight"`
+	DecayFactor         float64       `json:"decay_factor"`
+	VolatilityThreshold float64       `json:"volatility_threshold"`
+	CostWeight          float64       `json:"cost_weight"`        // DPP 控制参数
+	ScalingCostFixed    float64       `json:"scaling_cost_fixed"` // 成本相关
+	ScalingCostVariable float64       `json:"scaling_cost_variable"`
+	ScalingRatio        float64       `json:"scaling_ratio"`
+	BaseRetentionTime   time.Duration `json:"base_retention_time"` // 保留机制
+	RetentionAmplifier  float64       `json:"retention_amplifier"`
+	RetentionDecay      time.Duration `json:"retention_decay"`
+	PermanentThreshold  time.Duration `json:"permanent_threshold"`
+	PermanentDuration   time.Duration `json:"permanent_duration"`
+	TickerInterval      time.Duration `json:"ticker_interval"` // 定时任务
 }
 
 // NodeState 表示每个节点的弹性伸缩状态
 type NodeState struct {
-	ID string `json:"id"`
-
-	// 波动队列（只暴露 snapshot）
-	VolatilityQueue *util.FixedQueue `json:"volatility_queue,omitempty"`
-
-	Z float64 `json:"z"`
-
-	State NodeStatus `json:"state"`
-
-	ScaleHistory []ScaleEvent `json:"scale_history,omitempty"`
-
-	ScaledVMs []VM `json:"scaled_vms,omitempty"` //目前只能单个轮次转动这个状态机
-
-	RetainTime time.Time `json:"retain_time"`
-
-	P float64 `json:"p"`
+	ID              string           `json:"id"`
+	VolatilityQueue *util.FixedQueue `json:"volatility_queue,omitempty"` // 波动队列（只暴露 snapshot）
+	Z               float64          `json:"z"`
+	State           NodeStatus       `json:"state"`
+	ScaleHistory    []ScaleEvent     `json:"scale_history,omitempty"`
+	ScaledVMs       []VM             `json:"scaled_vms,omitempty"` //目前只能单个轮次转动这个状态机
+	RetainTime      time.Time        `json:"retain_time"`
+	P               float64          `json:"p"`
 }
 
 type ScaleEvent struct {
@@ -91,25 +74,12 @@ type ScalerOverride struct {
 
 // Scaler 弹性伸缩控制器
 type Scaler struct {
-
-	// 配置
-	Config *ScaleConfig `json:"config"`
-
-	// 单节点状态
-	Node *NodeState `json:"node"`
-
-	// 定时任务停止通道
-	stopChan chan struct{}
-
-	//日志
-	logger *slog.Logger
-
-	// 读写锁，保护 node 状态并发访问
-	tryMu TryMutex
-
-	// ====== 测试 / 模拟用 ======
-	Override *ScalerOverride `json:"override,omitempty"`
-
+	Config       *ScaleConfig    `json:"config"` // 配置
+	Node         *NodeState      `json:"node"`   // 单节点状态
+	stopChan     chan struct{}   // 定时任务停止通道
+	logger       *slog.Logger    //日志
+	tryMu        TryMutex        // 读写锁，保护 node 状态并发访问
+	Override     *ScalerOverride `json:"override,omitempty"` // ====== 测试 / 模拟用 ======
 	ManualAction string
 }
 
@@ -135,29 +105,20 @@ func (m *TryMutex) Unlock() {
 // NewDefaultScaleConfig 返回带默认值的 ScaleConfig
 func NewDefaultScaleConfig() *ScaleConfig {
 	return &ScaleConfig{
-		// 队列与波动相关
-		VolatilityWeight:    1.0,
+		VolatilityWeight:    1.0, // 队列与波动相关
 		QueueWeight:         1.0,
 		DecayFactor:         0.8,
-		VolatilityThreshold: 0.3, // 小波动忽略
-
-		// DPP 控制参数
-		CostWeight: 1.0, // 默认成本敏感度
-
-		// 成本相关
-		ScalingCostFixed:    10.0, // 举例
+		VolatilityThreshold: 0.3,  // 小波动忽略
+		CostWeight:          1.0,  // 默认成本敏感度	// DPP 控制参数
+		ScalingCostFixed:    10.0, // 举例// 成本相关
 		ScalingCostVariable: 1.0,
-		ScalingRatio:        0.1, // 默认扩容 1 台
-
-		// 保留机制
-		BaseRetentionTime:  5 * time.Minute,
-		RetentionAmplifier: 1.0,
-		RetentionDecay:     10 * time.Minute,
-		PermanentThreshold: 1 * time.Hour,
-		PermanentDuration:  1 * time.Hour,
-
-		// 定时任务
-		TickerInterval: 30 * time.Second,
+		ScalingRatio:        0.1,             // 默认扩容 1 台
+		BaseRetentionTime:   5 * time.Minute, // 保留机制
+		RetentionAmplifier:  1.0,
+		RetentionDecay:      10 * time.Minute,
+		PermanentThreshold:  1 * time.Hour,
+		PermanentDuration:   1 * time.Hour,
+		TickerInterval:      30 * time.Second, // 定时任务
 	}
 }
 
@@ -180,9 +141,7 @@ func NewScaler(nodeID string, config *ScaleConfig, queue *util.FixedQueue,
 	pre string, logger *slog.Logger) *Scaler {
 
 	configJSON, _ := json.Marshal(config)
-	//queueJSON, _ := json.Marshal(queue)
-	logger.Info("NewScaler", slog.String("pre", pre),
-		"nodeID", nodeID, "config", configJSON)
+	logger.Info("NewScaler", slog.String("pre", pre), "nodeID", nodeID, "config", configJSON)
 
 	if config == nil {
 		config = NewDefaultScaleConfig()
@@ -204,7 +163,7 @@ func (s *Scaler) ScalerDump(pre string, logger *slog.Logger) {
 	nodeJSON, _ := json.Marshal(s.Node)
 	overrideJSON, _ := json.Marshal(s.Override)
 
-	s.logger.Info("scalar dump", slog.String("pre", pre),
+	logger.Info("scalar dump", slog.String("pre", pre),
 		slog.String("config", string(configJSON)),
 		slog.String("node", string(nodeJSON)),
 		slog.String("override", string(overrideJSON)))

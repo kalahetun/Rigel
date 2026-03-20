@@ -17,20 +17,13 @@ import (
 
 const (
 	probeTargets = "probe_targets.json"
+	CloudStorage = "cloud_storage"
+	Node         = "node"
 )
 
 var (
 	CloudStorageMap map[string]CloudStorageTarget
 )
-
-type ProbeTask struct {
-	TargetType string
-	Provider   string
-	IP         string
-	Port       int
-	Region     string
-	ID         string
-}
 
 // NodeProbeAPIHandler 提供获取节点探测任务的接口
 type NodeProbeAPIHandler struct {
@@ -45,15 +38,6 @@ type CloudStorageTarget struct {
 	Region   string `json:"region"`
 	ID       string `json:"id"`
 }
-
-//type ProbeTask struct {
-//	TargetType string // "node" | "cloud_storage"
-//	Provider   string // node 可为空，cloud storage 用 google/aws/azure
-//	IP         string
-//	Port       int
-//	Region     string // cloud storage 用，node 可为空
-//	City       string // cloud storage 用，node 可为空
-//}
 
 func LoadCloudStorageTargetsFromExeDir() (map[string]CloudStorageTarget, error) {
 	// 1. 获取可执行文件路径
@@ -118,7 +102,7 @@ func (h *NodeProbeAPIHandler) GetProbeTasks(c *gin.Context) {
 	}
 
 	// 2. 解析每个节点JSON，生成Targets列表
-	var tasks []ProbeTask
+	var tasks []model.ProbeTask
 	ip_, _ := util.GetPublicIP()
 	for k, nodeJson := range nodeMap {
 		var telemetry storage.NetworkTelemetry
@@ -133,8 +117,8 @@ func (h *NodeProbeAPIHandler) GetProbeTasks(c *gin.Context) {
 		}
 
 		//选取controller作为 node代理节点进行探测
-		tasks = append(tasks, ProbeTask{
-			TargetType: "node",
+		tasks = append(tasks, model.ProbeTask{
+			TargetType: Node,
 			Provider:   telemetry.Provider,
 			IP:         telemetry.PublicIP,
 			Port:       8081,
@@ -143,8 +127,8 @@ func (h *NodeProbeAPIHandler) GetProbeTasks(c *gin.Context) {
 	}
 
 	for _, v := range CloudStorageMap {
-		tasks = append(tasks, ProbeTask{
-			TargetType: "cloud_storage",
+		tasks = append(tasks, model.ProbeTask{
+			TargetType: CloudStorage,
 			Provider:   v.Provider,
 			IP:         v.IP,
 			Port:       v.Port,

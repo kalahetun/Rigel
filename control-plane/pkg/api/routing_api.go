@@ -39,7 +39,7 @@ func (h *UserRoutingAPIHandler) GetUserRoute(c *gin.Context) {
 	filename := c.GetHeader("X-File-Name")
 
 	// 解析 body JSON
-	var req util.EndPoints
+	var req routing.EndPoints
 	if err := c.ShouldBindJSON(&req); err != nil {
 		resp.Code = 400
 		resp.Msg = "请求体解析失败：" + err.Error()
