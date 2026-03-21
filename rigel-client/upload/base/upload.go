@@ -80,30 +80,41 @@ type FileOperateInterfaces struct {
 	UploadFile   UploadFileInterface   // 文件上传接口
 }
 
+// InitInterface 初始化文件操作接口
 func InitInterface(clientB bool, us UploadStruct, pre string, logger *slog.Logger) FileOperateInterfaces {
-
 	var fo FileOperateInterfaces
 
-	if us.Source.Type == util.GCPCLoud {
+	// 第一步：初始化 读取/下载 相关接口（按Source.Type分支）
+	switch us.Source.Type {
+	case util.GCPCLoud:
 		gcp_ := ExtractGCPFromInterface(us.Source.Interface, pre, logger)
 		if gcp_ == nil {
 			return fo
 		}
 		fo.GetFileSize = gcp.NewGetSize(gcp_.BucketName, gcp_.CredFile, pre, logger)
 		fo.DownloadFile = gcp.NewDownload(us.Proxy.LocalDir, gcp_.BucketName, gcp_.CredFile, pre, logger)
-	} else if us.Source.Type == util.LocalDisk {
+
+	case util.LocalDisk:
 		fo.GetFileSize = local_disk.NewGetSize(us.Proxy.LocalDir, pre, logger)
 		fo.DownloadFile = local_disk.NewDownload(us.Proxy.LocalDir, pre, logger)
-	} else if us.Source.Type == util.RemoteDisk {
+
+	case util.RemoteDisk:
 		sd := ExtractSourceDiskFromInterface(us.Source.Interface, pre, logger)
 		if sd == nil {
 			return fo
 		}
 		fo.GetFileSize = remote_disk.NewGetSize(sd.User, sd.Host, sd.Password, sd.RemoteDir, pre, logger)
 		fo.DownloadFile = remote_disk.NewDownload(sd.User, sd.Host, sd.Password, sd.RemoteDir, us.Proxy.LocalDir, pre, logger)
+
+	// 可选：添加default分支，增强容错性
+	default:
+		logger.Warn("Unsupported Source.Type", slog.String("pre", pre), slog.String("type", string(us.Source.Type)))
+		return fo
 	}
 
-	if us.Dest.Type == util.GCPCLoud {
+	// 第二步：初始化 上传/合并 相关接口（按Dest.Type分支）
+	switch us.Dest.Type {
+	case util.GCPCLoud:
 		gcp_ := ExtractGCPFromInterface(us.Dest.Interface, pre, logger)
 		if gcp_ == nil {
 			return fo
@@ -115,7 +126,8 @@ func InitInterface(clientB bool, us UploadStruct, pre string, logger *slog.Logge
 			fo.UploadFile = gcp.NewUpload(us.Proxy.LocalDir, gcp_.BucketName, gcp_.CredFile, pre, logger)
 			fo.ComposeFile = gcp.NewCompose(gcp_.BucketName, gcp_.CredFile, pre, logger)
 		}
-	} else if us.Dest.Type == util.RemoteDisk {
+
+	case util.RemoteDisk:
 		ck_ := ExtractChunkFromInterface(us.Dest.Interface, pre, logger)
 		if ck_ == nil {
 			return fo
@@ -127,6 +139,12 @@ func InitInterface(clientB bool, us UploadStruct, pre string, logger *slog.Logge
 			fo.UploadFile = remote_disk.NewUpload(us.Proxy.LocalDir, ck_.Upload, pre, logger)
 			fo.ComposeFile = remote_disk.NewCompose(ck_.Merge, true, pre, logger)
 		}
+
+	// 可选：添加default分支，增强容错性
+	default:
+		logger.Warn("Unsupported Dest.Type", slog.String("pre", pre), slog.String("type", string(us.Dest.Type)))
+		// 此处不return，保留已初始化的GetFileSize/DownloadFile
 	}
+
 	return fo
 }
