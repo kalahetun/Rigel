@@ -5,7 +5,7 @@ import (
 	"context"
 	"control-plane/pkg/api"
 	"control-plane/pkg/envoy_manager"
-	envoymanager2 "control-plane/pkg/envoy_manager"
+	envoy "control-plane/pkg/envoy_manager"
 	"control-plane/routing"
 	"control-plane/scaling_vm"
 	"control-plane/storage"
@@ -280,7 +280,7 @@ func main() {
 	// 1. 固定配置文件路径（matth目录）
 	configPath := uu.EnvoyConfig
 	// 2. 创建Envoy操作器（固定管理地址+matth配置路径）
-	operator := envoymanager2.NewEnvoyOperator("http://127.0.0.1:9901", configPath)
+	operator := envoy.NewEnvoyOperator("http://127.0.0.1:9901", configPath)
 	// 初始化全局配置（管理端口9901）
 	_ = operator.InitEnvoyGlobalConfig(uu, 9901, logPre, logger)
 	err = operator.StartFirstEnvoy(logPre, logger, logger1)

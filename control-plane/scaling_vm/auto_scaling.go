@@ -3,7 +3,7 @@ package scaling_vm
 import (
 	"bytes"
 	"context"
-	"control-plane/pkg/envoy_manager"
+	em "control-plane/pkg/envoy_manager"
 	"control-plane/storage"
 	"control-plane/util"
 	"encoding/json"
@@ -20,13 +20,13 @@ import (
 
 // StartTicker 启动定时任务
 func (s *Scaler) StartAutoScalingTicker(pre string) {
-	s.logger.Info("start ticker", "pre", pre)
+	s.logger.Info("start ticker", slog.String("pre", pre))
 	ticker := time.NewTicker(s.Config.TickerInterval)
 	go func() {
 		for {
 			select {
 			case <-ticker.C:
-				s.autoScaling()
+				s.AutoScaling()
 			case <-s.stopChan:
 				ticker.Stop()
 				return
@@ -59,7 +59,7 @@ func (s *Scaler) calculatePerturbation(pre string) float64 {
 	if (avgCache <= s.Config.VolatilityThreshold && avgCache_ <= s.Config.VolatilityThreshold) ||
 		(avgCache >= s.Config.VolatilityThreshold && avgCache_ >= s.Config.VolatilityThreshold) {
 
-		s.logger.Info("latest volatility is insignificant",
+		s.logger.Info("Latest volatility is insignificant",
 			slog.String("pre", pre),
 			slog.Float64("avg_cache_curr", avgCache),
 			slog.Float64("avg_cache_prev", avgCache_),
@@ -115,77 +115,66 @@ func (s *Scaler) calculateCost(node *NodeState) float64 {
 
 // evaluateScaling 核心扩容判断逻辑
 // evaluateScaling 核心扩容判断与状态管理逻辑
-func (s *Scaler) autoScaling() {
+func (s *Scaler) AutoScaling() {
 
 	pre := util.GenerateRandomLetters(5)
+	s.logger.Info("AutoScaling", slog.String("pre", pre))
 
 	// 尝试获取锁，若获取不到则直接返回
 	if !s.tryMu.TryLock() {
-		s.logger.Warn("cannot get lock", slog.String("pre", pre),
-			slog.Any("err", "cannot get lock"),
-		)
+		s.logger.Warn("cannot get lock", slog.String("pre", pre))
 		return
 	}
 	defer s.tryMu.Unlock()
 
-	s.logger.Info("autoScaling", slog.String("pre", pre))
-
-	if s.ManualAction != "init" {
-		s.logger.Info("in the manual mode", slog.String("pre", pre),
-			slog.String("action", s.ManualAction))
+	if s.ManualAction != ScalingActionInit {
+		s.logger.Info("In the manual mode", slog.String("pre", pre), slog.String("action", s.ManualAction))
 		return
 	}
 
-	//-----------------------------------------------------------------------------------------------------------------/
+	s.scalerDump(pre+"-before-switch-state", s.logger)
 
-	// 判断当前节点状态，如果不需要扩容则直接返回
-	s.ScalerDump(pre+"-1", s.logger) //打印 node
 	node := s.Node
 	switch s.getState() {
 	case ScalingUp:
-		s.logger.Info("node is scaling up", slog.String("pre", pre))
+		s.logger.Info("Node is scaling up", slog.String("pre", pre))
 		return
 	case Releasing:
-		s.logger.Info("node is releasing", slog.String("pre", pre))
+		s.logger.Info("Node is releasing", slog.String("pre", pre))
 		return
 	case Triggered:
 		if s.now().Before(s.getRetainTime()) {
-			s.logger.Info("node is triggered, but retention time not reached",
-				slog.String("pre", pre))
+			s.logger.Info("Node is triggered, but retention time not reached", slog.String("pre", pre))
 			return
 		}
 		//往下走就是已经超时
 	case Dormant, Permanent:
 		if s.now().Before(s.getRetainTime()) {
-			s.logger.Info("node is dormant or permanent, but retention time not reached",
-				slog.String("pre", pre))
-			// 后面检验一下是不是需要扩容 如果扩容这个状态就会被change
-		} else {
-			s.logger.Info("node is dormant or permanent, and retention time reached",
-				slog.String("pre", pre))
-			//如果后面不触发 Triggered 走到最后就会被删除
-			node.State = Releasing
+			s.logger.Info("Node is dormant or permanent, but retention time not reached", slog.String("pre", pre))
+		} else { // 后面检验一下是不是需要扩容 如果扩容这个状态就会被change
+			s.logger.Info("Node is dormant or permanent, and retention time reached", slog.String("pre", pre))
+			node.State = Releasing //如果后面不触发 Triggered 走到最后就会被删除
 		}
 	case Inactive:
-		s.logger.Info("node is inactive", slog.String("pre", pre))
+		s.logger.Info("Node is inactive", slog.String("pre", pre))
 	default:
-		s.logger.Warn("unhandled default case", slog.String("pre", pre))
+		s.logger.Warn("Unhandled default case", slog.String("pre", pre))
 	}
-
-	//-----------------------------------------------------------------------------------------------------------------
 
 	// 计算当前扰动量 P 和波动值 Z
 	node.P = s.calculatePerturbation(pre)
 	node.Z = s.calculateVolatilityAccumulation()
 	delta := s.calculateDelta(s.Node)
-	s.ScalerDump(pre+"-2", s.logger)
-	s.logger.Info("calculate delta", slog.String("pre", pre), slog.Float64("delta", delta))
+
+	s.scalerDump(pre+"-after-calculate-delta", s.logger)
+	s.logger.Info("Calculate delta", slog.String("pre", pre), slog.Float64("delta", delta))
+
 	// 判断是否需要触发扩容
 	if delta < 0 {
 		switch s.getState() {
 		case Inactive:
 			node.State = ScalingUp
-			ok, vm := s.triggerScaling1_(1, VM{}, pre, s.logger)
+			ok, vm := s.triggerScalingFromInit(1, VM{}, pre, s.logger)
 			if vm.PublicIP != "" {
 				node.ScaledVMs = append(node.ScaledVMs, vm)
 			}
@@ -199,11 +188,11 @@ func (s *Scaler) autoScaling() {
 					node.State = Permanent
 				}
 			} else {
-				s.logger.Error("triggerScaling1 failed", slog.String("pre", pre))
+				s.logger.Error("TriggerScalingFromInit failed", slog.String("pre", pre))
 			}
 		case Dormant:
 			node.State = Triggered
-			if s.triggerScaling2(VM{}, pre) {
+			if s.triggerScalingFromDormant(VM{}, pre) {
 				node.State = Triggered
 				node.ScaleHistory = append(node.ScaleHistory, ScaleEvent{Time: s.now(), Amount: 1})
 				retain, state := s.calculateRetention(pre)
@@ -212,23 +201,22 @@ func (s *Scaler) autoScaling() {
 					node.State = Permanent
 				}
 			} else {
-				s.logger.Error("triggerScaling2 failed", slog.String("pre", pre))
+				s.logger.Error("TriggerScalingFromDormant failed", slog.String("pre", pre))
 			}
 		default:
-			s.logger.Warn("unhandled default case", slog.String("pre", pre))
+			s.logger.Warn("Unhandled default case", slog.String("pre", pre))
 		}
 	}
-	s.ScalerDump(pre+"-3", s.logger) //打印 node
+
+	s.scalerDump(pre+"-after-scaling", s.logger)
 	if node.State == ScalingUp || node.State == Triggered || node.State == Permanent {
 		return
 	}
 
-	//-----------------------------------------------------------------------------------------------------------------/
-
 	// 如果没有触发扩容，根据当前状态处理
 	switch s.getState() {
 	case Dormant, Permanent:
-		s.logger.Info("node is dormant or permanent, and retention time reached", slog.String("pre", pre))
+		s.logger.Info("Node is dormant or permanent, and retention time reached", slog.String("pre", pre))
 		node.State = Releasing
 		s.triggerRelease(VM{}, pre)
 		node.State = Inactive
@@ -237,18 +225,18 @@ func (s *Scaler) autoScaling() {
 		node.RetainTime = retain
 		node.State = Dormant
 		s.triggerDormant(VM{}, pre)
-		s.logger.Info("the state of node is changed to dormant from scaling up", slog.String("pre", pre))
+		s.logger.Info("The state of node is changed to dormant from scaling up", slog.String("pre", pre))
 	default:
-		s.logger.Warn("unhandled default case", slog.String("pre", pre))
+		s.logger.Warn("Unhandled default case", slog.String("pre", pre))
 	}
-	s.ScalerDump(pre+"-4", s.logger) //打印 node
 
+	s.scalerDump(pre+"-before-end", s.logger)
 	return
 }
 
-func (s *Scaler) triggerScaling2(vm_ VM, pre string) bool {
+func (s *Scaler) triggerScalingFromDormant(vm_ VM, pre string) bool {
 
-	s.logger.Info("triggerScaling2", slog.String("pre", pre), slog.Any("vm", vm_))
+	s.logger.Info("TriggerScalingFromDormant", slog.String("pre", pre), slog.Any("vm", vm_))
 
 	var ip, setState string
 
@@ -274,7 +262,7 @@ func (s *Scaler) triggerScaling2(vm_ VM, pre string) bool {
 
 func (s *Scaler) triggerDormant(vm_ VM, pre string) bool {
 
-	s.logger.Info("triggerDormant", slog.String("pre", pre), slog.Any("vm", vm_))
+	s.logger.Info("TriggerDormant", slog.String("pre", pre), slog.Any("vm", vm_))
 
 	var ip, setState string
 
@@ -301,7 +289,7 @@ func (s *Scaler) triggerDormant(vm_ VM, pre string) bool {
 // triggerRelease 模拟释放动作
 func (s *Scaler) triggerRelease(vm_ VM, pre string) bool {
 
-	s.logger.Info("triggerRelease", slog.String("pre", pre), slog.Any("vm", vm_))
+	s.logger.Info("TriggerRelease", slog.String("pre", pre), slog.Any("vm", vm_))
 
 	var vm VM
 	if vm_.PublicIP != "" {
@@ -322,17 +310,17 @@ func (s *Scaler) triggerRelease(vm_ VM, pre string) bool {
 	gcp := util.Config_.GCP
 	err := DeleteVM(ctx, logger, gcp.ProjectID, gcp.Zone, vm.VMName, gcp.CredFile, pre)
 	if err != nil {
-		s.logger.Error("删除 VM 失败", slog.String("pre", pre), "error", err)
+		s.logger.Error("删除 VM 失败", slog.String("pre", pre), slog.Any("err", err))
 	}
 
 	//update envoy 配置
-	if _, err := sendAddTargetIpsRequest(
-		[]envoy_manager.EnvoyTargetAddr{{vm.PublicIP, 8095}},
-		"del", pre, logger); err != nil {
-		s.logger.Error("sendAddTargetIpsRequest failed", slog.String("pre", pre),
+	if _, err := sendAddTargetIpsRequest([]em.EnvoyTargetAddr{{vm.PublicIP, 8095}}, DelAction, pre, logger); err != nil {
+
+		s.logger.Error("SendAddTargetIpsRequest failed", slog.String("pre", pre),
 			slog.Any("vm", vm_), slog.Any("err", err))
 	} else {
-		s.logger.Info("sendAddTargetIpsRequest success", slog.String("pre", pre),
+
+		s.logger.Info("SendAddTargetIpsRequest success", slog.String("pre", pre),
 			slog.Any("vm", vm_))
 	}
 
@@ -395,8 +383,10 @@ func setHealthState(apiHost, setState, pre string, logger *slog.Logger) bool {
 
 	// 根据响应状态码处理结果
 	if resp.StatusCode == http.StatusOK {
+
 		logger.Info("健康状态已成功设置为", slog.String("pre", pre), slog.String("set state", setState))
 	} else {
+
 		logger.Error("健康状态设置失败状态码", slog.String("pre", pre),
 			slog.Int64("status code", int64(resp.StatusCode)))
 		return false
@@ -405,8 +395,9 @@ func setHealthState(apiHost, setState, pre string, logger *slog.Logger) bool {
 }
 
 // sendRequest 向指定的 API 路由发送请求
-func sendAddTargetIpsRequest(targetIps []envoy_manager.EnvoyTargetAddr,
-	action, pre string, logger *slog.Logger) (*envoy_manager.APICommonResp, error) {
+func sendAddTargetIpsRequest(targetIps []em.EnvoyTargetAddr,
+	action, pre string, logger *slog.Logger) (*em.APICommonResp, error) {
+
 	// 构建请求体
 	url := "http://127.0.0.1:8081/envoy/cfg/setTargetIps"
 	body, err := json.Marshal(targetIps)
@@ -414,7 +405,7 @@ func sendAddTargetIpsRequest(targetIps []envoy_manager.EnvoyTargetAddr,
 		return nil, fmt.Errorf("failed to marshal request body: %v", err)
 	}
 
-	logger.Info("sendAddTargetIpsRequest", slog.String("pre", pre),
+	logger.Info("SendAddTargetIpsRequest", slog.String("pre", pre),
 		slog.String("action", action), slog.Any("addr", targetIps))
 
 	// 构建请求
@@ -436,7 +427,7 @@ func sendAddTargetIpsRequest(targetIps []envoy_manager.EnvoyTargetAddr,
 	defer resp.Body.Close()
 
 	// 解析响应体
-	var response envoy_manager.APICommonResp
+	var response em.APICommonResp
 	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %v", err)
 	}
@@ -453,11 +444,8 @@ func (s *Scaler) createVM(
 	gcp := util.Config_.GCP
 	vmName := gcp.VMPrefix + util.GenerateRandomLetters1(5)
 
-	logger.Info("creating VM",
-		slog.String("pre", pre),
-		slog.String("vmName", vmName),
-		slog.String("zone", gcp.Zone),
-	)
+	logger.Info("Creating VM", slog.String("pre", pre),
+		slog.String("vmName", vmName), slog.String("zone", gcp.Zone))
 
 	if err := CreateVM(
 		ctx,
@@ -471,13 +459,9 @@ func (s *Scaler) createVM(
 		return VM{}, err
 	}
 
-	logger.Info("waiting for VM startup",
-		slog.String("pre", pre),
-		slog.String("vmName", vmName),
-	)
+	logger.Info("Waiting for VM startup", slog.String("pre", pre), slog.String("vmName", vmName))
 
 	time.Sleep(2 * time.Minute)
-
 	ip, err := GetVMExternalIP(
 		ctx,
 		logger,
@@ -500,11 +484,7 @@ func (s *Scaler) deployAndAttachVM(
 	logger *slog.Logger,
 ) error {
 
-	b, _ := json.Marshal(vm)
-	logger.Info("deploying binaries to VM",
-		slog.String("pre", pre),
-		slog.String("vm", string(b)),
-	)
+	logger.Info("Deploying binaries to VM", slog.String("pre", pre), slog.Any("vm", vm))
 
 	if err := deployBinaryToServer(
 		username,
@@ -516,17 +496,18 @@ func (s *Scaler) deployAndAttachVM(
 		pre,
 		logger,
 	); err != nil {
-		s.logger.Error("deployAndAttachVM failed", slog.String("pre", pre),
-			slog.String("binaryPlane", binaryPlane), slog.String("vm", string(b)), slog.Any("err", err))
+
+		s.logger.Error("DeployAndAttachVM failed", slog.String("pre", pre),
+			slog.String("binaryPlane", binaryPlane), slog.Any("vm", vm), slog.Any("err", err))
 		return err
 	} else {
+
 		s.logger.Info("deployAndAttachVM success", slog.String("pre", pre),
-			slog.String("binaryPlane", binaryPlane), slog.String("vm", string(b)))
+			slog.String("binaryPlane", binaryPlane), slog.Any("vm", vm))
 	}
 
 	//确保proxy启动完
 	time.Sleep(2 * time.Second)
-
 	if err := deployBinaryToServer(
 		username,
 		vm.PublicIP,
@@ -537,63 +518,64 @@ func (s *Scaler) deployAndAttachVM(
 		pre,
 		logger,
 	); err != nil {
-		s.logger.Error("deployAndAttachVM failed", slog.String("pre", pre),
-			slog.String("binaryPlane", binaryPlane), slog.String("vm", string(b)), slog.Any("err", err))
+
+		s.logger.Error("DeployAndAttachVM failed", slog.String("pre", pre),
+			slog.String("binaryPlane", binaryPlane), slog.Any("vm", vm), slog.Any("err", err))
 		return err
 	} else {
-		s.logger.Info("deployAndAttachVM success", slog.String("pre", pre),
-			slog.String("binaryPlane", binaryPlane), slog.String("vm", string(b)))
+
+		s.logger.Info("DeployAndAttachVM success", slog.String("pre", pre),
+			slog.String("binaryPlane", binaryPlane), slog.Any("vm", vm))
 	}
 
-	if _, err := sendAddTargetIpsRequest(
-		[]envoy_manager.EnvoyTargetAddr{{vm.PublicIP, 8095}},
-		"add", pre, logger); err != nil {
-		s.logger.Error("sendAddTargetIpsRequest failed", slog.String("pre", pre),
-			slog.String("vm", string(b)), slog.Any("err", err))
+	if _, err := sendAddTargetIpsRequest([]em.EnvoyTargetAddr{{vm.PublicIP, 8095}}, AddAction, pre, logger); err != nil {
+		s.logger.Error("SendAddTargetIpsRequest failed", slog.String("pre", pre),
+			slog.Any("vm", vm), slog.Any("err", err))
 		return err
 	} else {
+
 		s.logger.Info("sendAddTargetIpsRequest success", slog.String("pre", pre),
-			slog.String("vm", string(b)))
+			slog.Any("vm", vm))
 	}
 	return nil
 }
 
-func (s *Scaler) triggerScaling1_(n int, vm_ VM, pre string, logger *slog.Logger) (bool, VM) {
+func (s *Scaler) triggerScalingFromInit(n int, vm_ VM, pre string, logger *slog.Logger) (bool, VM) {
 
-	logger.Info("triggerScaling1_", slog.String("pre", pre), "n", n, slog.Any("vm", vm_))
+	logger.Info("TriggerScalingFromInit", slog.String("pre", pre), "n", n, slog.Any("vm", vm_))
 
 	vm := VM{}
 	var err error
 
 	if vm_.PublicIP != "" {
-		s.logger.Info("specific vm action", slog.String("pre", pre))
+		s.logger.Info("Specific vm action", slog.String("pre", pre))
 		vm = vm_
 	} else {
 		if len(s.Node.ScaledVMs) == 0 {
-			s.logger.Info("crete new vm", slog.String("pre", pre))
+
+			s.logger.Info("Crete new vm", slog.String("pre", pre))
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 			defer cancel() // 确保上下文最终被释放
 			vm, err = s.createVM(ctx, pre, logger)
 			if err != nil {
-				s.logger.Error("createVM failed", slog.String("pre", pre), slog.Any("err", err))
+				s.logger.Error("CreateVM failed", slog.String("pre", pre), slog.Any("err", err))
 				return false, VM{}
 			}
 		} else {
+
 			vm = s.Node.ScaledVMs[0]
-			s.logger.Info("already exist vm", slog.String("pre", pre))
+			s.logger.Info("Already exist vm", slog.String("pre", pre))
 		}
 	}
 
-	b, _ := json.Marshal(vm)
-	logger.Info("createVM success", slog.String("pre", pre), slog.String("vm", string(b)))
+	logger.Info("CreateVM success", slog.String("pre", pre), slog.Any("vm", vm))
 
 	err = s.deployAndAttachVM(vm, pre, logger)
 	if err != nil {
-		s.logger.Error("deployAndAttachVM failed", slog.String("pre", pre), slog.Any("err", err))
+		s.logger.Error("DeployAndAttachVM failed", slog.String("pre", pre), slog.Any("err", err))
 		return false, vm
 	}
 
-	s.logger.Info("deployAndAttachVM success", slog.String("pre", pre), slog.String("vm", string(b)))
-
+	s.logger.Info("DeployAndAttachVM success", slog.String("pre", pre), slog.Any("vm", vm))
 	return true, vm
 }

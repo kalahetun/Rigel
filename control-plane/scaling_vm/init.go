@@ -21,6 +21,19 @@ const (
 	End
 )
 
+const (
+	ScalingActionInit    = "init"
+	ScalingActionScaleUp = "scale_up"
+	ScalingActionSleep   = "sleep"
+	ScalingActionStart   = "start"
+	ScalingActionRelease = "release"
+)
+
+const (
+	AddAction = "add"
+	DelAction = "del"
+)
+
 // ScaleConfig 定义弹性伸缩相关参数
 type ScaleConfig struct {
 	VolatilityWeight    float64       `json:"volatility_weight"` // 队列与波动相关
@@ -141,7 +154,7 @@ func NewScaler(nodeID string, config *ScaleConfig, queue *util.FixedQueue,
 	pre string, logger *slog.Logger) *Scaler {
 
 	configJSON, _ := json.Marshal(config)
-	logger.Info("NewScaler", slog.String("pre", pre), "nodeID", nodeID, "config", configJSON)
+	logger.Info("NewScaler", slog.String("pre", pre), slog.String("nodeID", nodeID), slog.Any("config", configJSON))
 
 	if config == nil {
 		config = NewDefaultScaleConfig()
@@ -157,16 +170,11 @@ func NewScaler(nodeID string, config *ScaleConfig, queue *util.FixedQueue,
 	}
 }
 
-func (s *Scaler) ScalerDump(pre string, logger *slog.Logger) {
-
-	configJSON, _ := json.Marshal(s.Config)
-	nodeJSON, _ := json.Marshal(s.Node)
-	overrideJSON, _ := json.Marshal(s.Override)
-
-	logger.Info("scalar dump", slog.String("pre", pre),
-		slog.String("config", string(configJSON)),
-		slog.String("node", string(nodeJSON)),
-		slog.String("override", string(overrideJSON)))
+func (s *Scaler) scalerDump(pre string, logger *slog.Logger) {
+	logger.Info("Scalar dump", slog.String("pre", pre),
+		slog.Any("config", s.Config),
+		slog.Any("node", s.Node),
+		slog.Any("override", s.Override))
 }
 
 func (s *Scaler) now() time.Time {

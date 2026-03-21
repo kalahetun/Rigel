@@ -4,20 +4,14 @@ import (
 	"log/slog"
 )
 
-//init | scale_up | deploy_proxy | deploy_plane | attach_envoy | sleep | start | release
-
 func (s *Scaler) ManualScaling(pre, action, ip, vmName string) {
 
-	// 尝试获取锁，若获取不到则直接返回
 	if !s.tryMu.TryLock() {
-		s.logger.Warn("cannot get lock", slog.String("pre", pre),
-			slog.Any("err", "cannot get lock"),
-		)
+		s.logger.Warn("Cannot get lock", slog.String("pre", pre))
 		return
 	}
 	defer s.tryMu.Unlock()
 
-	//---------------------------------------------------------------
 	vm_ := VM{}
 	if ip != "" && vmName != "" {
 		s.logger.Info("ManualScaling", slog.String("pre", pre),
@@ -27,35 +21,33 @@ func (s *Scaler) ManualScaling(pre, action, ip, vmName string) {
 	}
 
 	switch action {
-	case "scale_up":
-		ok, vm := s.triggerScaling1_(1, vm_, pre, s.logger)
+	case ScalingActionScaleUp:
+		ok, vm := s.triggerScalingFromInit(1, vm_, pre, s.logger)
 		if vm.PublicIP == "" {
-			s.logger.Error("create vm failed", slog.String("pre", pre))
+			s.logger.Error("Create vm failed", slog.String("pre", pre))
 		} else if vm.PublicIP != "" && !ok {
-			s.logger.Warn("create vm success but deploy failed",
+			s.logger.Warn("Create vm success but deploy failed",
 				slog.String("pre", pre), slog.String("vm", vm.PublicIP))
 		} else if vm.PublicIP != "" && ok {
-			s.logger.Info("triggerScaling1_ success", slog.String("pre", pre))
+			s.logger.Info("TriggerScalingFromInit success", slog.String("pre", pre))
 		}
 
-	case "sleep":
+	case ScalingActionSleep:
 		s.triggerDormant(vm_, pre)
 
-	case "start":
-		s.triggerScaling2(vm_, pre)
+	case ScalingActionStart:
+		s.triggerScalingFromDormant(vm_, pre)
 
-	case "release":
+	case ScalingActionRelease:
 		s.triggerRelease(vm_, pre)
 
 	default:
-		s.logger.Warn("the action is nonexist", slog.String("pre", pre), slog.String("odd action", action))
-
+		s.logger.Warn("The action is nonexist", slog.String("pre", pre), slog.String("odd action", action))
 	}
 
-	//-----------------------------------------------------------------------------
-
-	s.ScalerDump(pre, nil)
+	s.scalerDump(pre, nil)
 	s.logger.Info("ManualScaling state change", slog.String("pre", pre),
 		slog.String("old state", s.ManualAction), slog.String("new state", action))
 	s.ManualAction = action
+	return
 }
