@@ -1,7 +1,7 @@
 package api
 
 import (
-	"control-plane/scaling_vm"
+	"control-plane/scaling"
 	"control-plane/util"
 	model "control-plane/vm_info"
 	"encoding/json"
@@ -21,13 +21,13 @@ type ManualScalingRequest struct {
 
 // ManualScalingHandler 封装manual scaling API逻辑
 type ManualScalingAPIHandler struct {
-	Scaler  *scaling_vm.Scaler
+	Scaler  *scaling.Scaler
 	Logger  *slog.Logger
 	logger1 *slog.Logger
 }
 
 // NewManualScalingAPIHandler 初始化Handler
-func NewManualScalingAPIHandler(s *scaling_vm.Scaler, logger, logger1 *slog.Logger) *ManualScalingAPIHandler {
+func NewManualScalingAPIHandler(s *scaling.Scaler, logger, logger1 *slog.Logger) *ManualScalingAPIHandler {
 	return &ManualScalingAPIHandler{Scaler: s, Logger: logger, logger1: logger1}
 }
 
@@ -60,7 +60,7 @@ func (h *ManualScalingAPIHandler) PostManualScaling(c *gin.Context) {
 }
 
 // InitManualScalingRouter 注册manual scaling路由
-func InitManualScalingRouter(router *gin.Engine, s *scaling_vm.Scaler, logger, logger1 *slog.Logger) *gin.Engine {
+func InitManualScalingRouter(router *gin.Engine, s *scaling.Scaler, logger, logger1 *slog.Logger) *gin.Engine {
 	r := router
 	apiV1 := r.Group("/api/v1")
 	{

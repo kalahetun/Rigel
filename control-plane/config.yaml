@@ -18,27 +18,25 @@ scaling:
   remote_path_plane: "/root/data-plane"
   binary_plane: "data-plane"
   private_key: "/root/.ssh/id_rsa"
-
-ssh_key: "matth:ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCyKfXWsf5A1H2Ga0OYZDb2LPhpivEoQatdOBfssmhJxxlNQ4m+TkzVMZGZfFYWUpBigbRKfOtoAGPR0wIc/qEmRpRF6L+9FvBFJZG1t0BnC1uZiydoK8f7taVz9kcHScAjdxXF1malRPGL0su5MLMvwQ5HYyevYpfHlvhTZziVqnTJZR6mnaVYb5vezYZPTgTyKEZABZxpxsc8wUQum7wcr2OffqVJItQa65XJyxHtASNlY8YxQevPuOHUzaX/d6yoCtZMYVTf68JE0etQ+0Fx/HPdlGAlccXiZIyC6vVGQfYylnTo7yl29FpaMhfM/IHc2nPERcPslQKnestE+Z0+IjJXJMtbGYKUrwxhFtYqy22JD2rKLy6r2kR7rKoi3+e9n+GdbH8jranccnrWkj1/rtP7YG8hniXwgoOB86TJp+OoWkiRDtCXE++jxsiegMAcF/gVmChDzH42+5v+vMYI9MI1Prjd4CLqbWDKffuUg94MTJILbKMZIbwqYAkBQtk= matth@instance-20260202-081539"
+  config: "{}"
+  ssh_key: "matth:ssh-rsa AAAA= matth@instance-20260202-081539"
 
 node:
   provider: "vultr"        # gcp | aws | azure | vultr | digitalocean | onprem
   continent: "Asia"      # ONLY field used for bandwidth / cost query
   country: "Asia"          # 可选，用于日志/解释/未来扩展
   city: "tokyo"          # 可选，用于日志/解释/未来扩展
-
   ip:
     private: "0.0.0.0"  # 内网 IP
     public: "149.28.134.50" # 公网 IP 作为hostname
-
-  # 节点相关配置结束
 
 proxy:
   ips:
     - "149.28.134.50"
 
-gcp:
-  projectID: "civil-honor-480405-e0"      # 替换为你的 GCP 项目 ID
-  zone: "asia-east2-c"                   # 机房
-  vmPrefix: "scaling-vm-"                     # VM 名称前缀（不是具体名字）
-  credFile: "/root/civil-honor-480405-e0-e62b994bbc27.json"  # GCP 凭证文件路径
+# scaling的config代替
+#gcp:
+#  projectID: "civil-honor-480405-e0"      # 替换为你的 GCP 项目 ID
+#  zone: "asia-east2-c"                   # 机房
+#  vmPrefix: "scaling-vm-"                     # VM 名称前缀（不是具体名字）
+#  credFile: "/root/civil-honor-480405-e0-e62b994bbc27.json"  # GCP 凭证文件路径

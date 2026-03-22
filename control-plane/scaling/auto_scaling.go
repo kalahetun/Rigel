@@ -1,4 +1,4 @@
-package scaling_vm
+package scaling
 
 import (
 	"bytes"
@@ -442,7 +442,7 @@ func (s *Scaler) createVM(
 ) (VM, error) {
 
 	gcp := util.Config_.GCP
-	vmName := gcp.VMPrefix + util.GenerateRandomLetters1(5)
+	vmName := gcp.VMPrefix + util.GenerateRandomLetters_(5)
 
 	logger.Info("Creating VM", slog.String("pre", pre),
 		slog.String("vmName", vmName), slog.String("zone", gcp.Zone))

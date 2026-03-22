@@ -7,7 +7,7 @@ import (
 	"control-plane/pkg/envoy_manager"
 	envoy "control-plane/pkg/envoy_manager"
 	"control-plane/routing"
-	"control-plane/scaling_vm"
+	"control-plane/scaling"
 	"control-plane/storage"
 	"control-plane/sync/etcd_client"
 	"control-plane/sync/etcd_server"
@@ -182,7 +182,7 @@ func main() {
 		slog.String("config", string(b)))
 	envoy_manager.EnvoyPath = uu.EnvoyPath
 	envoy_manager.EnvoyLog = uu.EnvoyLog
-	scaling_vm.InitScalingConfig()
+	scaling.InitScalingConfig()
 
 	//初始化 bandwidth cost信息
 	err = util.LoadBandwidthCost(logger)
@@ -290,7 +290,7 @@ func main() {
 	}
 
 	//elastic scaling
-	es := scaling_vm.NewScaler("", nil, queue, logPre, logger)
+	es := scaling.NewScaler("", nil, queue, logPre, logger)
 	es.StartAutoScalingTicker(logPre)
 
 	// 初始化Gin路由

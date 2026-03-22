@@ -1,4 +1,4 @@
-package scaling_vm
+package scaling
 
 import (
 	"control-plane/util"

@@ -14,26 +14,17 @@ var Config_ *Config
 
 // Config 代表整个配置文件的结构
 type Config struct {
-	EnvoyPathBase string   `yaml:"envoy_path_base"` // Envoy 可执行文件路径（基础路径）
-	EnvoyPath     string   `yaml:"envoy_path"`      // Envoy 可执行文件路径
-	EnvoyLog      string   `yaml:"envoy_log"`
-	EnvoyConfig   string   `yaml:"envoy_config"`
-	ServerList    []string `yaml:"server_list"` // Etcd 集群所有节点的地址
-	ServerIP      string   `yaml:"server_ip"`   // 当前节点 IP
-	DataDir       string   `yaml:"data_dir"`    // Etcd 数据目录
 	//Name       string   `yaml:"name"`         // 当前节点名字
-
-	Scaling ScalingConfig `yaml:"scaling"`
-
-	SshKey string `yaml:"ssh_key"` // SSH Key 路径
-
-	// Node 配置
-	Node NodeConfig `yaml:"node"`
-
-	Proxy ProxyConfig `yaml:"proxy"`
-
-	// GCP 配置
-	GCP GCPConfig `yaml:"gcp"`
+	EnvoyPathBase string        `yaml:"envoy_path_base"` // Envoy 可执行文件路径（基础路径）
+	EnvoyPath     string        `yaml:"envoy_path"`      // Envoy 可执行文件路径
+	EnvoyLog      string        `yaml:"envoy_log"`
+	EnvoyConfig   string        `yaml:"envoy_config"`
+	ServerList    []string      `yaml:"server_list"` // Etcd 集群所有节点的地址
+	ServerIP      string        `yaml:"server_ip"`   // 当前节点 IP
+	DataDir       string        `yaml:"data_dir"`    // Etcd 数据目录
+	Scaling       ScalingConfig `yaml:"scaling"`
+	Node          NodeConfig    `yaml:"node"`
+	Proxy         ProxyConfig   `yaml:"proxy"`
 }
 
 type ScalingConfig struct {
@@ -44,8 +35,18 @@ type ScalingConfig struct {
 	LocalPathPlane  string `yaml:"local_path_plane"`
 	RemotePathPlane string `yaml:"remote_path_plane"`
 	BinaryPlane     string `yaml:"binary_plane"`
+	ScalingConfig   string `yaml:"scaling_config"`
 	PrivateKey      string `yaml:"private_key"`
+	SshKey          string `yaml:"ssh_key"`
 }
+
+// GCPConfig--ScalingConfig
+//type GCPConfig struct {
+//	ProjectID string `yaml:"projectID"` // GCP 项目 ID
+//	Zone      string `yaml:"zone"`      // 机房
+//	VMPrefix  string `yaml:"vmPrefix"`  // VM 名称前缀（不是具体名字）
+//	CredFile  string `yaml:"credFile"`  // GCP 凭证文件路径
+//}
 
 type ProxyConfig struct {
 	IPs []string `yaml:"ips"`
@@ -57,22 +58,13 @@ type NodeConfig struct {
 	Continent string `yaml:"continent"` // 仅用于 bandwidth / cost 查询
 	Country   string `yaml:"country"`   // 可选，用于日志/可解释性
 	City      string `yaml:"city"`      // 可选，用于日志/可解释性
-
-	IP NodeIP `yaml:"ip"` // 内外网 IP
+	IP        NodeIP `yaml:"ip"`        // 内外网 IP
 }
 
 // NodeIP 内外网 IP
 type NodeIP struct {
 	Private string `yaml:"private"` // 内网 IP
 	Public  string `yaml:"public"`  // 公网 IP（可选）
-}
-
-// GCPConfig 对应 GCP 配置
-type GCPConfig struct {
-	ProjectID string `yaml:"projectID"` // GCP 项目 ID
-	Zone      string `yaml:"zone"`      // 机房
-	VMPrefix  string `yaml:"vmPrefix"`  // VM 名称前缀（不是具体名字）
-	CredFile  string `yaml:"credFile"`  // GCP 凭证文件路径
 }
 
 // ReadYamlConfig 读取同层级的config.yaml配置
@@ -116,7 +108,7 @@ func GenerateRandomLetters(length int) string {
 	return result
 }
 
-func GenerateRandomLetters1(length int) string {
+func GenerateRandomLetters_(length int) string {
 	rand.Seed(time.Now().UnixNano())                  // 使用当前时间戳作为随机数种子
 	letters := "abcdefghijklmnopqrstuvwxyz0123456789" // 字母范围（大小写）
 	var result string

@@ -1,4 +1,4 @@
-package scaling_vm
+package scaling
 
 import (
 	"context"
@@ -13,7 +13,6 @@ import (
 )
 
 const (
-	//SshKey = "matth:ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCyKfXWsf5A1H2Ga0OYZDb2LPhpivEoQatdOBfssmhJxxlNQ4m+TkzVMZGZfFYWUpBigbRKfOtoAGPR0wIc/qEmRpRF6L+9FvBFJZG1t0BnC1uZiydoK8f7taVz9kcHScAjdxXF1malRPGL0su5MLMvwQ5HYyevYpfHlvhTZziVqnTJZR6mnaVYb5vezYZPTgTyKEZABZxpxsc8wUQum7wcr2OffqVJItQa65XJyxHtASNlY8YxQevPuOHUzaX/d6yoCtZMYVTf68JE0etQ+0Fx/HPdlGAlccXiZIyC6vVGQfYylnTo7yl29FpaMhfM/IHc2nPERcPslQKnestE+Z0+IjJXJMtbGYKUrwxhFtYqy22JD2rKLy6r2kR7rKoi3+e9n+GdbH8jranccnrWkj1/rtP7YG8hniXwgoOB86TJp+OoWkiRDtCXE++jxsiegMAcF/gVmChDzH42+5v+vMYI9MI1Prjd4CLqbWDKffuUg94MTJILbKMZIbwqYAkBQtk= matth@instance-20260202-081539"
 	FireWallTag  = "default-allow-internal"
 	InstanceType = "e2-medium"
 	SourceImage  = "projects/debian-cloud/global/images/family/debian-12"
@@ -100,14 +99,13 @@ func CreateVM(
 	// 发送请求
 	op, err := instancesClient.Insert(ctx, req)
 	if err != nil {
-		logger.Error("创建 VM 失败", slog.String("pre", pre),
-			"vmName", vmName, "zone", zone, "error", err)
+		logger.Error("创建 VM 失败", slog.String("pre", pre), slog.String("vmName", vmName),
+			slog.String("zone", zone), slog.Any("err", err))
 		return err
 	}
 
 	logger.Info("VM 创建操作已启动", slog.String("pre", pre),
-		"vmName", vmName, "operation", op.Proto().GetName())
-
+		slog.String("vmName", vmName), slog.String("operation", op.Proto().GetName()))
 	logger.Info("检查操作状态",
 		slog.String("pre", pre),
 		slog.String("operation", op.Proto().GetName()),
@@ -155,6 +153,7 @@ func GetVMExternalIP(ctx context.Context, logger *slog.Logger,
 // DeleteVM 删除指定的 VM
 func DeleteVM(ctx context.Context, logger *slog.Logger,
 	projectID, zone, vmName, credFile, pre string) error {
+
 	// 创建客户端（使用凭证文件）
 	instancesClient, err := compute.NewInstancesRESTClient(ctx, option.WithCredentialsFile(credFile))
 	if err != nil {
@@ -178,7 +177,6 @@ func DeleteVM(ctx context.Context, logger *slog.Logger,
 	}
 
 	logger.Info("VM 删除操作已启动", slog.String("pre", pre), "vmName", vmName, "operation", op.Proto().GetName())
-
 	logger.Info("可通过命令检查状态",
 		slog.String("pre", pre),
 		slog.String("operation", op.Proto().GetName()),
