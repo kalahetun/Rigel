@@ -1,4 +1,4 @@
-package scaling
+package vultr
 
 import (
 	"bytes"

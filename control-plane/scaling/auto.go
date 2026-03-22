@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	em "control-plane/pkg/envoy_manager"
+	gcp2 "control-plane/scaling/gcp"
 	"control-plane/storage"
 	"control-plane/util"
 	"encoding/json"
@@ -20,7 +21,7 @@ import (
 
 // StartTicker 启动定时任务
 func (s *Scaler) StartAutoScalingTicker(pre string) {
-	s.logger.Info("start ticker", slog.String("pre", pre))
+	s.logger.Info("StartAutoScalingTicker", slog.String("pre", pre))
 	ticker := time.NewTicker(s.Config.TickerInterval)
 	go func() {
 		for {
@@ -45,10 +46,8 @@ func (s *Scaler) calculatePerturbation(pre string) float64 {
 
 	var queue []interface{}
 	queue = s.Node.VolatilityQueue.SnapshotLatestFirst()
-
-	//还没有足够数据
-	if len(queue) <= 1 {
-		s.logger.Info("the data of volatility queue is spare", slog.String("pre", pre))
+	if len(queue) <= 1 { //还没有足够数据
+		s.logger.Info("The data of volatility queue is spare", slog.String("pre", pre))
 		return 0
 	}
 
@@ -95,9 +94,7 @@ func (s *Scaler) calculateDelta(node *NodeState) float64 {
 	cost := s.calculateCost(node)
 
 	// 公式
-	delta := -s.Config.DecayFactor*s.Config.VolatilityWeight*s.Config.QueueWeight*Z*P +
-		s.Config.CostWeight*cost
-
+	delta := -s.Config.DecayFactor*s.Config.VolatilityWeight*s.Config.QueueWeight*Z*P + s.Config.CostWeight*cost
 	return delta
 }
 
@@ -122,7 +119,7 @@ func (s *Scaler) AutoScaling() {
 
 	// 尝试获取锁，若获取不到则直接返回
 	if !s.tryMu.TryLock() {
-		s.logger.Warn("cannot get lock", slog.String("pre", pre))
+		s.logger.Warn("Cannot get lock", slog.String("pre", pre))
 		return
 	}
 	defer s.tryMu.Unlock()
@@ -308,7 +305,7 @@ func (s *Scaler) triggerRelease(vm_ VM, pre string) bool {
 	defer cancel() // 确保上下文最终被释放
 
 	gcp := util.Config_.GCP
-	err := DeleteVM(ctx, logger, gcp.ProjectID, gcp.Zone, vm.VMName, gcp.CredFile, pre)
+	err := gcp2.DeleteVM(ctx, logger, gcp.ProjectID, gcp.Zone, vm.VMName, gcp.CredFile, pre)
 	if err != nil {
 		s.logger.Error("删除 VM 失败", slog.String("pre", pre), slog.Any("err", err))
 	}
@@ -447,7 +444,7 @@ func (s *Scaler) createVM(
 	logger.Info("Creating VM", slog.String("pre", pre),
 		slog.String("vmName", vmName), slog.String("zone", gcp.Zone))
 
-	if err := CreateVM(
+	if err := gcp2.CreateVM(
 		ctx,
 		gcp.ProjectID,
 		gcp.Zone,
@@ -462,7 +459,7 @@ func (s *Scaler) createVM(
 	logger.Info("Waiting for VM startup", slog.String("pre", pre), slog.String("vmName", vmName))
 
 	time.Sleep(2 * time.Minute)
-	ip, err := GetVMExternalIP(
+	ip, err := gcp2.GetVMExternalIP(
 		ctx,
 		logger,
 		gcp.ProjectID,

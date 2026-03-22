@@ -40,14 +40,6 @@ type ScalingConfig struct {
 	SshKey          string `yaml:"ssh_key"`
 }
 
-// GCPConfig--ScalingConfig
-//type GCPConfig struct {
-//	ProjectID string `yaml:"projectID"` // GCP 项目 ID
-//	Zone      string `yaml:"zone"`      // 机房
-//	VMPrefix  string `yaml:"vmPrefix"`  // VM 名称前缀（不是具体名字）
-//	CredFile  string `yaml:"credFile"`  // GCP 凭证文件路径
-//}
-
 type ProxyConfig struct {
 	IPs []string `yaml:"ips"`
 }

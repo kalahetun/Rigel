@@ -1,15 +1,15 @@
-package scaling
+package gcp
 
 import (
-	"context"
-	"control-plane/util"
-	"fmt"
-	"log/slog"
-
 	compute "cloud.google.com/go/compute/apiv1"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"google.golang.org/api/option"
 	computepb "google.golang.org/genproto/googleapis/cloud/compute/v1"
 	"google.golang.org/protobuf/proto"
+	"log/slog"
 )
 
 const (
@@ -18,21 +18,52 @@ const (
 	SourceImage  = "projects/debian-cloud/global/images/family/debian-12"
 )
 
+type GCPConfig struct {
+	ProjectID string `json:"projectID"` // GCP 项目 ID
+	Zone      string `json:"zone"`      // 机房
+	VMPrefix  string `json:"vmPrefix"`  // VM 名称前缀（不是具体名字）
+	CredFile  string `json:"credFile"`  // GCP 凭证文件路径
+}
+
+//todo new
+
+// ExtractGCPFromInterface 解析JSON字符串为*GCPConfig，自动填充常量默认值
+func ExtractGCPFromInterface(data string) (*GCPConfig, error) {
+	if data == "" {
+		return nil, errors.New("输入的JSON字符串为空")
+	}
+
+	config := &GCPConfig{}
+	if err := json.Unmarshal([]byte(data), config); err != nil {
+		return nil, err
+	}
+
+	return config, nil
+}
+
+type ScalingOperate struct {
+	projectID    string
+	zone         string
+	vmPrefix     string
+	credFile     string
+	fireWallTag  string
+	instanceType string
+	sourceImage  string
+	sshKey       string
+}
+
 // CreateVM 创建GCP Compute Engine虚拟机实例
 // credFile: JSON格式的服务账号凭证文件
 // zone: 例如 "us-central1-a"
 // vmName: VM名字
-func CreateVM(
+func (gc *ScalingOperate) CreateVM(
 	ctx context.Context,
-	projectID string,
-	zone string,
 	vmName string,
-	credFile string,
 	pre string,
 	logger *slog.Logger,
 ) error {
 	// 创建客户端（直接使用凭证文件）
-	instancesClient, err := compute.NewInstancesRESTClient(ctx, option.WithCredentialsFile(credFile))
+	instancesClient, err := compute.NewInstancesRESTClient(ctx, option.WithCredentialsFile(gc.credFile))
 	if err != nil {
 		logger.Error("创建 Instances 客户端失败", slog.String("pre", pre), "error", err)
 		return err
@@ -40,7 +71,7 @@ func CreateVM(
 	defer instancesClient.Close()
 
 	// SSH 公钥
-	sshKey := util.Config_.SshKey
+	sshKey := gc.sshKey
 
 	// 启动盘配置
 	bootDisk := &computepb.AttachedDisk{
@@ -48,7 +79,7 @@ func CreateVM(
 		Boot:       proto.Bool(true),
 		Type:       proto.String(computepb.AttachedDisk_PERSISTENT.String()),
 		InitializeParams: &computepb.AttachedDiskInitializeParams{
-			SourceImage: proto.String(SourceImage),
+			SourceImage: proto.String(gc.sourceImage),
 			DiskSizeGb:  proto.Int64(10), // 确保客户端在使用后被关闭
 		},
 	}
@@ -70,14 +101,14 @@ func CreateVM(
 	instance := &computepb.Instance{
 		// 配置网络接口，使用默认网络并启用公网IP
 		Name:        proto.String(vmName),
-		MachineType: proto.String(fmt.Sprintf("zones/%s/machineTypes/%s", zone, InstanceType)), // 使用默认网络
+		MachineType: proto.String(fmt.Sprintf("zones/%s/machineTypes/%s", gc.zone, gc.instanceType)), // 使用默认网络
 		Disks:       []*computepb.AttachedDisk{bootDisk},
 		NetworkInterfaces: []*computepb.NetworkInterface{
 			networkInterface,
 		},
 		//"default-allow-internal" 防火墙标签 需要自己配置
 		Tags: &computepb.Tags{
-			Items: []string{"http-server", "https-server", "lb-health-check", FireWallTag},
+			Items: []string{"http-server", "https-server", "lb-health-check", gc.fireWallTag},
 		},
 		Metadata: &computepb.Metadata{
 			Items: []*computepb.Items{
@@ -91,8 +122,8 @@ func CreateVM(
 
 	// 创建请求
 	req := &computepb.InsertInstanceRequest{
-		Project:          projectID,
-		Zone:             zone,
+		Project:          gc.projectID,
+		Zone:             gc.zone,
 		InstanceResource: instance,
 	}
 
@@ -100,7 +131,7 @@ func CreateVM(
 	op, err := instancesClient.Insert(ctx, req)
 	if err != nil {
 		logger.Error("创建 VM 失败", slog.String("pre", pre), slog.String("vmName", vmName),
-			slog.String("zone", zone), slog.Any("err", err))
+			slog.String("zone", gc.zone), slog.Any("err", err))
 		return err
 	}
 
@@ -109,20 +140,20 @@ func CreateVM(
 	logger.Info("检查操作状态",
 		slog.String("pre", pre),
 		slog.String("operation", op.Proto().GetName()),
-		slog.String("zone", zone),
-		slog.String("project", projectID),
+		slog.String("zone", gc.zone),
+		slog.String("project", gc.projectID),
 		slog.String("cmd", fmt.Sprintf("gcloud compute operations describe %s --zone %s --project %s",
-			op.Proto().GetName(), zone, projectID)),
+			op.Proto().GetName(), gc.zone, gc.projectID)),
 	)
 
 	return nil
 }
 
 // GetVMExternalIP 获取指定 VM 的公网 IP
-func GetVMExternalIP(ctx context.Context, logger *slog.Logger,
-	projectID, zone, vmName, credFile, pre string) (string, error) {
+func (gc *ScalingOperate) GetVMExternalIP(ctx context.Context, vmName string,
+	pre string, logger *slog.Logger) (string, error) {
 	// 创建客户端（使用凭证文件）
-	client, err := compute.NewInstancesRESTClient(ctx, option.WithCredentialsFile(credFile))
+	client, err := compute.NewInstancesRESTClient(ctx, option.WithCredentialsFile(gc.credFile))
 	if err != nil {
 		return "", fmt.Errorf("创建 Instances 客户端失败: %w", err)
 	}
@@ -130,8 +161,8 @@ func GetVMExternalIP(ctx context.Context, logger *slog.Logger,
 
 	// 构建请求
 	req := &computepb.GetInstanceRequest{
-		Project:  projectID,
-		Zone:     zone,
+		Project:  gc.projectID,
+		Zone:     gc.zone,
 		Instance: vmName,
 	}
 
@@ -151,11 +182,10 @@ func GetVMExternalIP(ctx context.Context, logger *slog.Logger,
 }
 
 // DeleteVM 删除指定的 VM
-func DeleteVM(ctx context.Context, logger *slog.Logger,
-	projectID, zone, vmName, credFile, pre string) error {
+func (gc *ScalingOperate) DeleteVM(ctx context.Context, vmName string, pre string, logger *slog.Logger) error {
 
 	// 创建客户端（使用凭证文件）
-	instancesClient, err := compute.NewInstancesRESTClient(ctx, option.WithCredentialsFile(credFile))
+	instancesClient, err := compute.NewInstancesRESTClient(ctx, option.WithCredentialsFile(gc.credFile))
 	if err != nil {
 		logger.Error("创建 Instances 客户端失败", slog.String("pre", pre), "error", err)
 		return err
@@ -164,28 +194,29 @@ func DeleteVM(ctx context.Context, logger *slog.Logger,
 
 	// 构建删除请求
 	req := &computepb.DeleteInstanceRequest{
-		Project:  projectID,
-		Zone:     zone,
+		Project:  gc.projectID,
+		Zone:     gc.zone,
 		Instance: vmName,
 	}
 
 	// 发送删除请求
 	op, err := instancesClient.Delete(ctx, req)
 	if err != nil {
-		logger.Error("删除 VM 失败", slog.String("pre", pre), "vmName", vmName, "zone", zone, "error", err)
+		logger.Error("删除 VM 失败", slog.String("pre", pre), slog.String("vmName", vmName),
+			slog.String("zone", gc.zone), slog.Any("err", err))
 		return err
 	}
 
-	logger.Info("VM 删除操作已启动", slog.String("pre", pre), "vmName", vmName, "operation", op.Proto().GetName())
+	logger.Info("VM 删除操作已启动", slog.String("pre", pre),
+		slog.String("vmName", vmName), slog.String("operation", op.Proto().GetName()))
 	logger.Info("可通过命令检查状态",
 		slog.String("pre", pre),
 		slog.String("operation", op.Proto().GetName()),
-		slog.String("zone", zone),
-		slog.String("project", projectID),
+		slog.String("zone", gc.zone),
+		slog.String("project", gc.projectID),
 		slog.String("cmd", fmt.Sprintf(
 			"gcloud compute operations describe %s --zone %s --project %s",
-			op.Proto().GetName(), zone, projectID,
-		)),
+			op.Proto().GetName(), gc.zone, gc.projectID)),
 	)
 
 	return nil

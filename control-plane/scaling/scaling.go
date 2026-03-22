@@ -1,6 +1,8 @@
 package scaling
 
 import (
+	"context"
+	"control-plane/scaling/gcp"
 	"control-plane/util"
 	"encoding/json"
 	"log/slog"
@@ -197,4 +199,34 @@ func (s *Scaler) getState() NodeStatus {
 		return *s.Override.State
 	}
 	return s.Node.State
+}
+
+const (
+	Vultr = "vultr"
+	GCP   = "gcp"
+)
+
+type OperateInterface interface {
+	CreateVM(ctx context.Context, vmName string, pre string, logger *slog.Logger) error
+	GetVMPublicIP(ctx context.Context, vmName string, pre string, logger *slog.Logger) (string, error)
+	DeleteVM(ctx context.Context, vmName string, pre string, logger *slog.Logger) error
+}
+
+type VMScalingInterfaces struct {
+	Operate OperateInterface
+}
+
+func InitInterface(provider, config string, pre string, logger *slog.Logger) VMScalingInterfaces {
+	var vs VMScalingInterfaces
+	vs.Operate = nil
+
+	if provider == GCP {
+		gcp_, err := gcp.ExtractGCPFromInterface(config)
+		if err != nil {
+			logger.Error("ExtractGCPFromInterface failed", slog.String("pre", pre), slog.Any("err", err))
+			return vs
+		}
+
+	}
+	return vs
 }
