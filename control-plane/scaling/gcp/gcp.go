@@ -21,11 +21,28 @@ const (
 type GCPConfig struct {
 	ProjectID string `json:"projectID"` // GCP 项目 ID
 	Zone      string `json:"zone"`      // 机房
-	VMPrefix  string `json:"vmPrefix"`  // VM 名称前缀（不是具体名字）
-	CredFile  string `json:"credFile"`  // GCP 凭证文件路径
+	//VMPrefix  string `json:"vmPrefix"`  // VM 名称前缀（不是具体名字）
+	CredFile string `json:"credFile"` // GCP 凭证文件路径
 }
 
-//todo new
+func NewScalingOperate(gcpCfg *GCPConfig, sshKey string,
+	pre string, logger *slog.Logger) *ScalingOperate {
+
+	// 初始化ScalingOperate：GCPConfig字段 + 常量 + sshKey
+	so := &ScalingOperate{
+		projectID: gcpCfg.ProjectID,
+		zone:      gcpCfg.Zone,
+		//vmPrefix:     gcpCfg.VMPrefix,
+		credFile:     gcpCfg.CredFile,
+		fireWallTag:  FireWallTag,  // 填充常量
+		instanceType: InstanceType, // 填充常量
+		sourceImage:  SourceImage,  // 填充常量
+		sshKey:       sshKey,       // 填充额外入参
+	}
+
+	logger.Info("NewGetSize", slog.String("pre", pre), slog.Any("ScalingOperate", *so))
+	return so
+}
 
 // ExtractGCPFromInterface 解析JSON字符串为*GCPConfig，自动填充常量默认值
 func ExtractGCPFromInterface(data string) (*GCPConfig, error) {
@@ -150,7 +167,7 @@ func (gc *ScalingOperate) CreateVM(
 }
 
 // GetVMExternalIP 获取指定 VM 的公网 IP
-func (gc *ScalingOperate) GetVMExternalIP(ctx context.Context, vmName string,
+func (gc *ScalingOperate) GetVMPublicIP(ctx context.Context, vmName string,
 	pre string, logger *slog.Logger) (string, error) {
 	// 创建客户端（使用凭证文件）
 	client, err := compute.NewInstancesRESTClient(ctx, option.WithCredentialsFile(gc.credFile))

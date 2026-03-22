@@ -4,7 +4,6 @@ import (
 	"context"
 	"control-plane/scaling/gcp"
 	"control-plane/util"
-	"encoding/json"
 	"log/slog"
 	"sync"
 	"sync/atomic"
@@ -89,6 +88,7 @@ type ScalerOverride struct {
 
 // Scaler 弹性伸缩控制器
 type Scaler struct {
+	Interface    VMScalingInterfaces
 	Config       *ScaleConfig    `json:"config"` // 配置
 	Node         *NodeState      `json:"node"`   // 单节点状态
 	stopChan     chan struct{}   // 定时任务停止通道
@@ -155,14 +155,20 @@ func NewNodeState(id string, queue *util.FixedQueue) *NodeState {
 func NewScaler(nodeID string, config *ScaleConfig, queue *util.FixedQueue,
 	pre string, logger *slog.Logger) *Scaler {
 
-	configJSON, _ := json.Marshal(config)
-	logger.Info("NewScaler", slog.String("pre", pre), slog.String("nodeID", nodeID), slog.Any("config", configJSON))
+	logger.Info("NewScaler", slog.String("pre", pre),
+		slog.String("nodeID", nodeID), slog.Any("config", config))
 
 	if config == nil {
 		config = NewDefaultScaleConfig()
 	}
 
+	si := InitInterface(
+		util.Config_.Node.Provider,
+		util.Config_.Scaling.ScalingConfig,
+		pre, logger)
+
 	return &Scaler{
+		Interface:    si,
 		Config:       config,
 		Node:         NewNodeState(nodeID, queue),
 		stopChan:     make(chan struct{}),
@@ -226,7 +232,8 @@ func InitInterface(provider, config string, pre string, logger *slog.Logger) VMS
 			logger.Error("ExtractGCPFromInterface failed", slog.String("pre", pre), slog.Any("err", err))
 			return vs
 		}
-
+		vs.Operate = gcp.NewScalingOperate(gcp_, util.Config_.Scaling.SshKey, pre, logger)
 	}
+
 	return vs
 }

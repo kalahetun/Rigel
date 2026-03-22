@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	em "control-plane/pkg/envoy_manager"
-	gcp2 "control-plane/scaling/gcp"
 	"control-plane/storage"
 	"control-plane/util"
 	"encoding/json"
@@ -22,6 +21,7 @@ import (
 // StartTicker 启动定时任务
 func (s *Scaler) StartAutoScalingTicker(pre string) {
 	s.logger.Info("StartAutoScalingTicker", slog.String("pre", pre))
+
 	ticker := time.NewTicker(s.Config.TickerInterval)
 	go func() {
 		for {
@@ -304,8 +304,7 @@ func (s *Scaler) triggerRelease(vm_ VM, pre string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel() // 确保上下文最终被释放
 
-	gcp := util.Config_.GCP
-	err := gcp2.DeleteVM(ctx, logger, gcp.ProjectID, gcp.Zone, vm.VMName, gcp.CredFile, pre)
+	err := s.Interface.Operate.DeleteVM(ctx, vm.VMName, pre, logger)
 	if err != nil {
 		s.logger.Error("删除 VM 失败", slog.String("pre", pre), slog.Any("err", err))
 	}
@@ -438,18 +437,12 @@ func (s *Scaler) createVM(
 	logger *slog.Logger,
 ) (VM, error) {
 
-	gcp := util.Config_.GCP
-	vmName := gcp.VMPrefix + util.GenerateRandomLetters_(5)
+	vmName := util.Config_.Node.Provider + "-" + util.GenerateRandomLetters_(5)
+	logger.Info("Creating VM", slog.String("pre", pre), slog.String("vmName", vmName))
 
-	logger.Info("Creating VM", slog.String("pre", pre),
-		slog.String("vmName", vmName), slog.String("zone", gcp.Zone))
-
-	if err := gcp2.CreateVM(
+	if err := s.Interface.Operate.CreateVM(
 		ctx,
-		gcp.ProjectID,
-		gcp.Zone,
 		vmName,
-		gcp.CredFile,
 		pre,
 		logger,
 	); err != nil {
@@ -459,14 +452,11 @@ func (s *Scaler) createVM(
 	logger.Info("Waiting for VM startup", slog.String("pre", pre), slog.String("vmName", vmName))
 
 	time.Sleep(2 * time.Minute)
-	ip, err := gcp2.GetVMExternalIP(
+	ip, err := s.Interface.Operate.GetVMPublicIP(
 		ctx,
-		logger,
-		gcp.ProjectID,
-		gcp.Zone,
 		vmName,
-		gcp.CredFile,
 		pre,
+		logger,
 	)
 	if err != nil {
 		return VM{}, err
