@@ -4,27 +4,28 @@ import (
 	"fmt"
 	"golang.org/x/time/rate"
 	"log/slog"
-	"rigel-client/upload/base"
 	"rigel-client/upload/split"
+	"rigel-client/upload/upload"
 	"time"
 )
 
-func DirectImp(
-	fo base.FileOperateInterfaces,
+func RedirectImp(
+	fo upload.FileOperateInterfaces,
 	task ChunkTask, hops string, rateLimiter *rate.Limiter, inMemory bool, pre string, logger *slog.Logger) error {
-	logger.Info("UploadDirectImp", slog.String("pre", pre), slog.String("index", task.Index)) // 优化：只打印index，避免task序列化过大
+
+	logger.Info("UploadRedirectImp", slog.String("pre", pre), slog.Any("task", task))
 
 	// --------------- 第一步：初始状态设置（Acked=1）---------------
 	// 先获取当前分片的基础信息（避免空指针）
 	chunkVal, ok := task.Chunks.Get(task.Index)
 	if !ok {
-		err := fmt.Errorf("chunk index %s not found in Chunks map", task.Index) // 修正：Index是string，不是int
+		err := fmt.Errorf("chunk index %d not found in Chunks map", task.Index)
 		logger.Error("get chunk failed", slog.String("pre", pre), slog.Any("err", err))
 		return err
 	}
 	chunk, ok := chunkVal.(*split.ChunkState)
 	if !ok {
-		err := fmt.Errorf("chunk index %s type is not *split.ChunkState", task.Index)
+		err := fmt.Errorf("chunk index %d type is not *split.ChunkState", task.Index)
 		logger.Error("chunk type assert failed", slog.String("pre", pre), slog.Any("err", err))
 		return err
 	}
@@ -56,7 +57,7 @@ func DirectImp(
 				Offset:      chunk.Offset,
 				Size:        chunk.Size,
 				LastSend:    initialChunkState.LastSend,
-				Acked:       int(ChunkStatusTransferFailed), // 2=传输失败
+				Acked:       int(ChunkStatusTransferFailed), // 0=传输失败
 			}
 			task.Chunks.Set(task.Index, errorChunkState)
 			logger.Error("chunk transfer failed, set acked=0", slog.String("pre", pre), slog.String("index", task.Index), slog.Any("err", finalErr))
@@ -69,7 +70,7 @@ func DirectImp(
 	select {
 	case <-ctx.Done():
 		finalErr = fmt.Errorf("ctx canceled before get reader: %w", ctx.Err())
-		logger.Error("UploadDirectImp canceled", slog.String("pre", pre), slog.String("index", task.Index), slog.Any("err", finalErr))
+		logger.Error("UploadRedirectImp canceled", slog.String("pre", pre), slog.String("index", task.Index), slog.Any("err", finalErr))
 		return finalErr
 	default:
 	}
@@ -79,8 +80,7 @@ func DirectImp(
 	length := chunk.Size
 	reader, err := GetTransferReader(ctx, fo, upload, start, length, task.ObjectName, inMemory, pre, logger)
 	if err != nil {
-		finalErr = err
-		return finalErr
+		return err
 	}
 	defer func() {
 		if reader != nil {
@@ -95,7 +95,7 @@ func DirectImp(
 	select {
 	case <-ctx.Done():
 		finalErr = fmt.Errorf("ctx canceled before upload: %w", ctx.Err())
-		logger.Error("UploadDirectImp canceled", slog.String("pre", pre), slog.String("index", task.Index), slog.Any("err", finalErr))
+		logger.Error("UploadRedirectImp canceled", slog.String("pre", pre), slog.String("index", task.Index), slog.Any("err", finalErr))
 		return finalErr
 	default:
 	}
@@ -120,7 +120,6 @@ func DirectImp(
 		return finalErr
 	default:
 	}
-
 	successChunkState := &split.ChunkState{
 		Index:       chunk.Index,
 		FileName:    chunk.FileName,
@@ -129,11 +128,11 @@ func DirectImp(
 		Offset:      chunk.Offset,
 		Size:        chunk.Size,
 		LastSend:    initialChunkState.LastSend, // 保留开始传输时间
-		Acked:       int(ChunkStatusCompleted),  // 3=传输成功
+		Acked:       int(ChunkStatusCompleted),  // 2=传输成功
 	}
 	task.Chunks.Set(task.Index, successChunkState)
 	logger.Info("chunk transfer success, set acked=2", slog.String("pre", pre), slog.String("index", task.Index))
 
-	logger.Info("UploadDirectImp success", slog.String("pre", pre), slog.String("index", task.Index))
+	logger.Info("UploadRedirectImp success", slog.String("pre", pre))
 	return nil
 }

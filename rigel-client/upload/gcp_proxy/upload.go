@@ -1,8 +1,9 @@
-package remote_disk
+package gcp_proxy
 
 import (
 	"context"
 	"fmt"
+	"golang.org/x/oauth2/google"
 	"golang.org/x/time/rate"
 	"io"
 	"log/slog"
@@ -15,27 +16,31 @@ import (
 	"time"
 )
 
+const (
+	gcpScopes = "https://www.googleapis.com/auth/devstorage.full_control"
+)
+
 type Upload struct {
 	localBaseDir string
-	uploadURL    string
+	bucketName   string
+	credFile     string
 }
 
 func NewUpload(
-	localBaseDir, uploadURL string,
-	pre string, // 日志前缀（和之前保持一致）
-	logger *slog.Logger, // 日志实例（和之前保持一致）
+	localBaseDir, bucketName, credFile string,
+	pre string, // 日志前缀
+	logger *slog.Logger,
 ) *Upload {
 	u := &Upload{
 		localBaseDir: localBaseDir,
-		uploadURL:    uploadURL,
+		bucketName:   bucketName,
+		credFile:     credFile,
 	}
-	// 和其他初始化函数完全一致的日志打印逻辑
+	// 和NewDownload一致的日志打印逻辑
 	logger.Info("NewUpload", slog.String("pre", pre), slog.Any("Upload", *u))
 	return u
 }
 
-// UploadToGCSbyProxy 通过代理向GCS上传文件/分片（修复后）
-// 核心功能：支持内存流式上传（inMemory=true）和本地文件上传（inMemory=false），带限流和GCP鉴权
 func (u *Upload) UploadFile(
 	ctx context.Context,
 	objectName string,
@@ -47,19 +52,18 @@ func (u *Upload) UploadFile(
 	logger *slog.Logger,
 ) error {
 
-	logger.Info("UploadFile start", slog.String("pre", pre), slog.Bool("inMemory", inMemory))
+	logger.Info("UploadToGCSbyProxy start", slog.String("pre", pre))
 
-	// ---------------------- 1. 基础参数校验（防空指针） ----------------------
 	if len(hops) == 0 {
 		err := fmt.Errorf("hops is empty")
-		logger.Error("Invalid hops", slog.String("pre", pre), slog.Any("err", err))
+		logger.Error("invalid hops", slog.String("pre", pre), slog.Any("err", err))
 		return err
 	}
 
 	select {
 	case <-ctx.Done():
 		err := fmt.Errorf("upload canceled before start: %w", ctx.Err())
-		logger.Error("UploadFileChunkbyProxy canceled", slog.String("pre", pre), slog.Any("err", err))
+		logger.Error("UploadToGCSbyProxy canceled", slog.String("pre", pre), slog.Any("err", err))
 		return err
 	default:
 	}
@@ -119,34 +123,66 @@ func (u *Upload) UploadFile(
 	}
 	firstHop := hopList[0]
 
-	url, _ := util.ReplaceUploadURLHost(u.uploadURL, firstHop)
+	url := fmt.Sprintf(
+		"http://%s/%s/%s",
+		firstHop,
+		u.bucketName,
+		objectName,
+	)
 	logger.Info("construct upload URL",
 		slog.String("pre", pre),
 		slog.String("url", url),
 		slog.String("firstHop", firstHop))
 
+	// ---------------------- 5. 生成GCP Access Token ----------------------
+	logger.Info("start to generate GCP access token", slog.String("pre", pre))
+	jsonBytes, err := os.ReadFile(u.credFile)
+	if err != nil {
+		logger.Error("read cred file failed",
+			slog.String("pre", pre),
+			slog.String("credFile", u.credFile),
+			slog.Any("err", err))
+		return fmt.Errorf("read cred file: %w", err)
+	}
+
+	reds, err := google.CredentialsFromJSON(ctx, jsonBytes, gcpScopes)
+	if err != nil {
+		logger.Error("Parse GCP credentials failed",
+			slog.String("pre", pre),
+			slog.Any("err", err))
+		return fmt.Errorf("parse credentials: %w", err)
+	}
+
+	token, err := reds.TokenSource.Token()
+	if err != nil {
+		logger.Error("Get GCP token failed",
+			slog.String("pre", pre),
+			slog.Any("err", err))
+		return fmt.Errorf("get token: %w", err)
+	}
+	logger.Info("GCP access token generated successfully", slog.String("pre", pre))
+
 	// ---------------------- 6. 构造并发送HTTP请求 ----------------------
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, rateLimitedBody)
 	if err != nil {
-		logger.Error("create HTTP request failed",
+		logger.Error("Create HTTP request failed",
 			slog.String("pre", pre),
 			slog.Any("err", err))
 		return fmt.Errorf("new request: %w", err)
 	}
 
 	// 设置请求头
+	req.Header.Set("Authorization", "Bearer "+token.AccessToken)
 	req.Header.Set("Content-Type", "application/octet-stream")
 	req.Header.Set(util.HeaderXHops, hops)
 	req.Header.Set(util.HeaderXChunkIndex, "1")
 	req.Header.Set(util.HeaderXRateLimitEnable, "true")
-	req.Header.Set(util.HeaderDestType, util.RemoteDisk)
-	req.Header.Set(util.HeaderFileName, objectName)
-	req.Header.Set(util.HeaderChunkName, objectName)
+	req.Header.Set(util.HeaderDestType, util.GCPCLoud)
 	logger.Info("HTTP request headers set", slog.String("pre", pre))
 
 	// 发送请求
 	client := &http.Client{Timeout: 1 * time.Minute}
-	logger.Info("send HTTP request to proxy",
+	logger.Info("Send HTTP request to proxy",
 		slog.String("pre", pre),
 		slog.String("url", url),
 		slog.String("timeout", "5m"))
@@ -166,20 +202,21 @@ func (u *Upload) UploadFile(
 		respBody, readErr := io.ReadAll(resp.Body)
 		if readErr != nil {
 			respBody = []byte("failed to read response body")
-			logger.Error("read error response failed",
+			logger.Error("Read error response failed",
 				slog.String("pre", pre),
 				slog.Any("err", readErr))
 		}
 		err := fmt.Errorf("upload failed: %d %s", resp.StatusCode, string(respBody))
-		logger.Error("upload to chunk by proxy failed",
+		logger.Error("Upload to GCS by proxy failed",
 			slog.String("pre", pre),
 			slog.Int("statusCode", resp.StatusCode),
 			slog.String("response", string(respBody)))
 		return err
 	}
 
-	logger.Info("UploadFileChunkbyProxy success",
+	logger.Info("UploadToGCSbyProxy success",
 		slog.String("pre", pre),
+		slog.String("objectName", objectName),
 		slog.String("url", url))
 
 	return nil

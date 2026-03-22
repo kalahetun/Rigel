@@ -1,4 +1,4 @@
-package base
+package upload
 
 import "log/slog"
 

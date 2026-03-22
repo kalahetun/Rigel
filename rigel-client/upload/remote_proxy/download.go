@@ -1,4 +1,4 @@
-package remote_disk
+package remote_proxy
 
 import (
 	"context"

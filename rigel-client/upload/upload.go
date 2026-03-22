@@ -8,8 +8,8 @@ import (
 	"io"
 	"log/slog"
 	"math/rand"
-	"rigel-client/upload/base"
 	"rigel-client/upload/split"
+	"rigel-client/upload/upload"
 	"rigel-client/util"
 	"time"
 )
@@ -60,7 +60,7 @@ type ChunkTask struct {
 	Index      string
 	Chunks     *util.SafeMap
 	ObjectName string
-	Upload     base.UploadStruct
+	Upload     upload.UploadStruct
 	Pre        string // 保留原有pre入参，完全兼容
 }
 
@@ -302,10 +302,10 @@ func CollectExpiredChunks(
 
 // NewWorkerPool 保留pre入参，上下文透传 + 新增取消逻辑
 func NewWorkerPool(
-	fo base.FileOperateInterfaces,
+	fo upload.FileOperateInterfaces,
 	queueSize int,
 	routingInfo RoutingInfo,
-	handler func(base.FileOperateInterfaces, ChunkTask, string, *rate.Limiter, bool, string, *slog.Logger) error,
+	handler func(upload.FileOperateInterfaces, ChunkTask, string, *rate.Limiter, bool, string, *slog.Logger) error,
 	inMemory bool,
 	pre string, // 保留pre入参
 	logger *slog.Logger,
@@ -385,7 +385,7 @@ func (p *WorkerPool) Stop() {
 }
 
 // ChunkEventLoop 保留pre入参，状态枚举替换Acked + 监听取消信号
-func ChunkEventLoop(ctx context.Context, fo base.FileOperateInterfaces, upload base.UploadStruct,
+func ChunkEventLoop(ctx context.Context, fo upload.FileOperateInterfaces, upload upload.UploadStruct,
 	chunks *util.SafeMap, workerPool *WorkerPool, events <-chan ChunkEvent, done chan struct{}, inMemory bool,
 	pre string, logger *slog.Logger) {
 
@@ -471,7 +471,7 @@ func StartChunkSubmitLoop(
 	ctx context.Context,
 	chunks *util.SafeMap,
 	workerPool *WorkerPool,
-	uploadInfo base.UploadStruct,
+	uploadInfo upload.UploadStruct,
 	resubmit bool,
 	resubmitIndexes map[string]*split.ChunkState,
 	pre string, // 保留pre入参
@@ -527,8 +527,8 @@ func StartChunkSubmitLoop(
 // Upload 核心入口：保留pre入参，上下文透传 + 统一取消所有goroutine
 func UploadFunc(
 	cleintB bool,
-	us base.UploadStruct,
-	handler func(base.FileOperateInterfaces, ChunkTask, string, *rate.Limiter, bool, string, *slog.Logger) error,
+	us upload.UploadStruct,
+	handler func(upload.FileOperateInterfaces, ChunkTask, string, *rate.Limiter, bool, string, *slog.Logger) error,
 	routing RoutingInfo,
 	noSplitB bool,
 	pre string, // 保留原有pre入参
@@ -544,7 +544,7 @@ func UploadFunc(
 	}()
 
 	// 1. 初始化接口
-	fo := base.InitInterface(cleintB, us, pre, logger)
+	fo := upload.InitInterface(cleintB, us, pre, logger)
 
 	// 3. 获取文件真实长度
 	var fileSize int64
@@ -614,8 +614,8 @@ func UploadFunc(
 // GetTransferReader 保留pre入参，上下文透传
 func GetTransferReader(
 	ctx context.Context,
-	fo base.FileOperateInterfaces,
-	upload base.UploadStruct,
+	fo upload.FileOperateInterfaces,
+	upload upload.UploadStruct,
 	start, length int64,
 	objectName string,
 	inMemory bool,

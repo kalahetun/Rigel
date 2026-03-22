@@ -1,15 +1,15 @@
-package base
+package upload
 
 import (
 	"context"
 	"golang.org/x/time/rate"
 	"io"
 	"log/slog"
-	"rigel-client/upload/gcp"
 	"rigel-client/upload/gcp_client"
+	"rigel-client/upload/gcp_proxy"
 	"rigel-client/upload/local_disk"
-	"rigel-client/upload/remote_disk"
-	"rigel-client/upload/remote_disk_client"
+	"rigel-client/upload/remote_client"
+	"rigel-client/upload/remote_proxy"
 	"rigel-client/util"
 )
 
@@ -91,8 +91,8 @@ func InitInterface(clientB bool, us UploadStruct, pre string, logger *slog.Logge
 		if gcp_ == nil {
 			return fo
 		}
-		fo.GetFileSize = gcp.NewGetSize(gcp_.BucketName, gcp_.CredFile, pre, logger)
-		fo.DownloadFile = gcp.NewDownload(us.Proxy.LocalDir, gcp_.BucketName, gcp_.CredFile, pre, logger)
+		fo.GetFileSize = gcp_proxy.NewGetSize(gcp_.BucketName, gcp_.CredFile, pre, logger)
+		fo.DownloadFile = gcp_proxy.NewDownload(us.Proxy.LocalDir, gcp_.BucketName, gcp_.CredFile, pre, logger)
 
 	case util.LocalDisk:
 		fo.GetFileSize = local_disk.NewGetSize(us.Proxy.LocalDir, pre, logger)
@@ -103,8 +103,8 @@ func InitInterface(clientB bool, us UploadStruct, pre string, logger *slog.Logge
 		if sd == nil {
 			return fo
 		}
-		fo.GetFileSize = remote_disk.NewGetSize(sd.User, sd.Host, sd.Password, sd.RemoteDir, pre, logger)
-		fo.DownloadFile = remote_disk.NewDownload(sd.User, sd.Host, sd.Password, sd.RemoteDir, us.Proxy.LocalDir, pre, logger)
+		fo.GetFileSize = remote_proxy.NewGetSize(sd.User, sd.Host, sd.Password, sd.RemoteDir, pre, logger)
+		fo.DownloadFile = remote_proxy.NewDownload(sd.User, sd.Host, sd.Password, sd.RemoteDir, us.Proxy.LocalDir, pre, logger)
 
 	// 可选：添加default分支，增强容错性
 	default:
@@ -123,8 +123,8 @@ func InitInterface(clientB bool, us UploadStruct, pre string, logger *slog.Logge
 			fo.UploadFile = gcp_client.NewUpload(us.Proxy.LocalDir, gcp_.BucketName, gcp_.CredFile, pre, logger)
 			fo.ComposeFile = nil
 		} else {
-			fo.UploadFile = gcp.NewUpload(us.Proxy.LocalDir, gcp_.BucketName, gcp_.CredFile, pre, logger)
-			fo.ComposeFile = gcp.NewCompose(gcp_.BucketName, gcp_.CredFile, pre, logger)
+			fo.UploadFile = gcp_proxy.NewUpload(us.Proxy.LocalDir, gcp_.BucketName, gcp_.CredFile, pre, logger)
+			fo.ComposeFile = gcp_proxy.NewCompose(gcp_.BucketName, gcp_.CredFile, pre, logger)
 		}
 
 	case util.RemoteDisk:
@@ -133,11 +133,11 @@ func InitInterface(clientB bool, us UploadStruct, pre string, logger *slog.Logge
 			return fo
 		}
 		if clientB {
-			fo.UploadFile = remote_disk_client.NewUpload(ck_.Upload, us.Proxy.LocalDir, pre, logger)
+			fo.UploadFile = remote_client.NewUpload(ck_.Upload, us.Proxy.LocalDir, pre, logger)
 			fo.ComposeFile = nil
 		} else {
-			fo.UploadFile = remote_disk.NewUpload(us.Proxy.LocalDir, ck_.Upload, pre, logger)
-			fo.ComposeFile = remote_disk.NewCompose(ck_.Merge, true, pre, logger)
+			fo.UploadFile = remote_proxy.NewUpload(us.Proxy.LocalDir, ck_.Upload, pre, logger)
+			fo.ComposeFile = remote_proxy.NewCompose(ck_.Merge, true, pre, logger)
 		}
 
 	// 可选：添加default分支，增强容错性

@@ -1,4 +1,4 @@
-package remote_disk_client
+package remote_client
 
 import (
 	"bytes"
