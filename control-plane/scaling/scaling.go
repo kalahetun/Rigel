@@ -2,6 +2,7 @@ package scaling
 
 import (
 	"context"
+	"control-plane/scaling/aws"
 	"control-plane/scaling/gcp"
 	"control-plane/scaling/vultr"
 	"control-plane/util"
@@ -211,6 +212,7 @@ func (s *Scaler) getState() NodeStatus {
 const (
 	Vultr = "vultr"
 	GCP   = "gcp"
+	AWS   = "aws"
 )
 
 type OperateInterface interface {
@@ -244,6 +246,14 @@ func InitInterface(provider, config string, pre string, logger *slog.Logger) VMS
 		}
 		// Vultr的SSHKey从配置中读取，这里传入空字符串兼容参数
 		vs.Operate = vultr.NewScalingOperate(vultrCfg, util.Config_.Scaling.SshKey, pre, logger)
+
+	case AWS: // 新增：AWS分支
+		awsCfg, err := aws.ExtractAWSFromInterface(config)
+		if err != nil {
+			logger.Error("ExtractAWSFromInterface failed", slog.String("pre", pre), slog.Any("err", err))
+			return vs
+		}
+		vs.Operate = aws.NewScalingOperate(awsCfg, util.Config_.Scaling.SshKey, pre, logger)
 
 	default:
 		logger.Error("unsupported provider", slog.String("pre", pre), slog.String("provider", provider))
