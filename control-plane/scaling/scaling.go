@@ -3,6 +3,7 @@ package scaling
 import (
 	"context"
 	"control-plane/scaling/gcp"
+	"control-plane/scaling/vultr"
 	"control-plane/util"
 	"log/slog"
 	"sync"
@@ -226,13 +227,26 @@ func InitInterface(provider, config string, pre string, logger *slog.Logger) VMS
 	var vs VMScalingInterfaces
 	vs.Operate = nil
 
-	if provider == GCP {
-		gcp_, err := gcp.ExtractGCPFromInterface(config)
+	switch provider {
+	case GCP:
+		gcpCfg, err := gcp.ExtractGCPFromInterface(config)
 		if err != nil {
 			logger.Error("ExtractGCPFromInterface failed", slog.String("pre", pre), slog.Any("err", err))
 			return vs
 		}
-		vs.Operate = gcp.NewScalingOperate(gcp_, util.Config_.Scaling.SshKey, pre, logger)
+		vs.Operate = gcp.NewScalingOperate(gcpCfg, util.Config_.Scaling.SshKey, pre, logger)
+
+	case Vultr:
+		vultrCfg, err := vultr.ExtractVultrFromInterface(config)
+		if err != nil {
+			logger.Error("ExtractVultrFromInterface failed", slog.String("pre", pre), slog.Any("err", err))
+			return vs
+		}
+		// Vultr的SSHKey从配置中读取，这里传入空字符串兼容参数
+		vs.Operate = vultr.NewScalingOperate(vultrCfg, util.Config_.Scaling.SshKey, pre, logger)
+
+	default:
+		logger.Error("unsupported provider", slog.String("pre", pre), slog.String("provider", provider))
 	}
 
 	return vs
