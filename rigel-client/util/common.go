@@ -2,6 +2,7 @@ package util
 
 const (
 	GCPCLoud   = "gcp-cloud"
+	AWSCloud   = "aws-cloud"
 	RemoteDisk = "remote-disk"
 	LocalDisk  = "local-disk"
 )
