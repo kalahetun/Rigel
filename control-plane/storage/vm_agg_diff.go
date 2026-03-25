@@ -182,7 +182,7 @@ func CalcClusterWeightedAvg(fs *FileStorage, interval time.Duration,
 		// 5. 发送（写入）数据到Etcd（*clientv3.Client核心操作）
 		ip, _ := util.GetPublicIP()
 		key := fmt.Sprintf("/routing/%s", ip)
-		etcd_client.PutKey(etcdClient, key, string(jsonData), logPre, logger)
+		//etcd_client.PutKey(etcdClient, key, string(jsonData), logPre, logger)
 		_ = etcd_client.PutKeyWithLease(etcdClient, key, string(jsonData), int64(60*expireTime), logPre, logger)
 
 		//放入queue 为自动化扩缩容做准备

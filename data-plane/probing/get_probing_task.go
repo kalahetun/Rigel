@@ -12,12 +12,12 @@ const (
 )
 
 type ProbeTask struct {
-	TargetType string // "node" | "cloud_storage"
-	Provider   string // node 可为空，cloud storage 用 google/aws/azure
-	IP         string
-	Port       int
-	Region     string // cloud storage 用，node 可为空
-	City       string // cloud storage 用，node 可为空
+	TargetType string `json:"TargetType"`
+	Provider   string `json:"Provider"`
+	IP         string `json:"IP"`
+	Port       int    `json:"Port"`
+	Region     string `json:"Region"`
+	ID         string `json:"ID"`
 }
 
 func GetProbeTasks(pre, controlHost string) ([]ProbeTask, error) {

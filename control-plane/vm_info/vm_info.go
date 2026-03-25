@@ -113,12 +113,12 @@ type ProxyStatus struct {
 }
 
 type ProbeTask struct {
-	TargetType string
-	Provider   string
-	IP         string
-	Port       int
-	Region     string
-	ID         string
+	TargetType string `json:"TargetType"`
+	Provider   string `json:"Provider"`
+	IP         string `json:"IP"`
+	Port       int    `json:"Port"`
+	Region     string `json:"Region"`
+	ID         string `json:"ID"`
 }
 
 type LinkCongestionInfo struct {
