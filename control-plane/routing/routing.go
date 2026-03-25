@@ -41,6 +41,7 @@ func (g *GraphManager) Routing(endPoints EndPoints, pre string, logger *slog.Log
 	// 根据大洲过滤 start 和 end 节点 && 展现寻找最优路径
 	var startNodes []*storage.NetworkTelemetry
 
+	// todo 是否要偏向同运营商？
 	for _, node := range allNodes {
 		//proxy部署client逻辑, 优先走自己
 		if node.PublicIP == endPoints.Source.IP {
