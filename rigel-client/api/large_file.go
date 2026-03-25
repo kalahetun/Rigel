@@ -72,7 +72,7 @@ func processUploadLogic(c *gin.Context, clientB bool, pre string, logger *slog.L
 	}()
 
 	up := largeFile.Upload
-	if fo.GetFileSize.GetFileSize == nil {
+	if fo.GetFileSize == nil {
 		err := fmt.Errorf("GetFileSize is nil")
 		logger.Error("GetFileSize is nil", slog.String("pre", pre), slog.String("error", err.Error()))
 		handleError(c, logger, pre, http.StatusInternalServerError, "GetFileSize is nil", err)
@@ -96,7 +96,7 @@ func processUploadLogic(c *gin.Context, clientB bool, pre string, logger *slog.L
 
 	if len(list) > 1 {
 		list = util.SortPartStrings(list)
-		if fo.ComposeFile.ComposeFile == nil {
+		if fo.ComposeFile == nil {
 			err := fmt.Errorf("ComposeFile is nil")
 			logger.Error("ComposeFile is nil", slog.String("pre", pre), slog.String("error", err.Error()))
 			handleError(c, logger, pre, http.StatusInternalServerError, "ComposeFile is nil", err)

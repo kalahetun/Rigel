@@ -105,7 +105,7 @@ func RedirectImp(
 	default:
 	}
 
-	if fo.UploadFile.UploadFile == nil {
+	if fo.UploadFile == nil {
 		logger.Error("UploadFile is nil", slog.String("pre", pre))
 		return fmt.Errorf("%w: UploadFile is nil", ErrInterfaceNotImplemented)
 	}

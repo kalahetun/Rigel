@@ -431,7 +431,7 @@ func ChunkEventLoop(ctx context.Context, fo base.FileOperateInterfaces, upload b
 				parts = util.SortPartStrings(parts)
 
 				var err error
-				if fo.ComposeFile.ComposeFile == nil {
+				if fo.ComposeFile == nil {
 					logger.Error("ComposeFile is nil", slog.String("pre", pre))
 					return
 				}
@@ -561,7 +561,7 @@ func UploadFunc(
 	// 3. 获取文件真实长度
 	var fileSize int64
 	var err error
-	if fo.GetFileSize.GetFileSize == nil {
+	if fo.GetFileSize == nil {
 		logger.Info("GetFileSize is nil, use default implementation")
 		return fmt.Errorf("%w: GetFileSize is nil", ErrInterfaceNotImplemented)
 	}
@@ -648,7 +648,7 @@ func GetTransferReader(
 
 	var reader io.ReadCloser
 	var err error
-	if fo.DownloadFile.DownloadFile == nil {
+	if fo.DownloadFile == nil {
 		logger.Error("DownloadFile is nil", slog.String("pre", pre))
 		return nil, fmt.Errorf("%w: DownloadFile is nil", ErrInterfaceNotImplemented)
 	}
