@@ -278,7 +278,8 @@ func main() {
 	err = operator.StartFirstEnvoy(logPre, logger, logger1)
 	if err != nil {
 		logger.Error("启动第一个Envoy失败", slog.String("pre", logPre), slog.Any("err", err))
-		return
+		//todo 临时封禁 测试 routing不需要 envoy
+		//return
 	}
 
 	//elastic scaling
