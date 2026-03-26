@@ -92,9 +92,9 @@ pub async fn proxy_handler(mut req: Request<Body>) -> impl IntoResponse {
     let target = format!("{}:{}", target_ip, target_port);
     let client = get_client(&target, scheme);
 
-    // ====================== 修复 1：take_body 不存在 → 改用 into_body ======================
+    // ====================== 修复 1：原版逻辑完全保留 ======================
     let mut forward_req = Request::new(req.into_body());
-    *forward_req.uri_mut() = Uri::from_maybe_shared(&target_url).unwrap();
+    *forward_req.uri_mut() = Uri::from_str(&target_url).unwrap();
     *forward_req.method_mut() = forward_method;
 
     // 复制 headers + 设置新 index
@@ -134,7 +134,7 @@ pub async fn proxy_handler(mut req: Request<Body>) -> impl IntoResponse {
     let mut body = resp.into_body();
     let mut response_body = Vec::new();
 
-    // ====================== 修复 2：data() → next()，修复 body 读取 ======================
+    // ====================== 修复 2：原版逻辑完全保留 ======================
     while let Some(chunk) = body.next().await {
         match chunk {
             Ok(bytes) => response_body.extend_from_slice(&bytes),
@@ -157,5 +157,5 @@ pub async fn proxy_handler(mut req: Request<Body>) -> impl IntoResponse {
         "Request completed"
     );
 
-    response.into_response()
+    response
 }

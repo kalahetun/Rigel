@@ -3,7 +3,7 @@ use crate::config::{
 };
 use crate::utils::get_pid;
 use serde::Serialize;
-use sysinfo::{ProcessExt, System, SystemExt, Pid};
+use sysinfo::{System, SystemExt, ProcessExt, Pid};
 use tracing::{error, info, warn};
 
 /// 代理状态结构体（对应 Go 的 ProxyStatus）
