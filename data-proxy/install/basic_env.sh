@@ -9,7 +9,7 @@ echo "==> Update system"
 sudo apt update && sudo apt upgrade -y
 
 echo "==> Install basic tools"
-sudo apt install -y git vim wget build-essential ca-certificates
+sudo apt install -y git vim wget build-essential ca-certificates libssl-dev pkg-config
 
 # ---------- tier-1 essential tools ----------
 echo "==> Install tier-1 essential tools (curl / htop / tmux)"

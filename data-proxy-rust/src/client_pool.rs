@@ -1,13 +1,15 @@
 use hyper::Client;
 use hyper_tls::HttpsConnector;
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, RwLock, LazyLock};
 use std::time::Duration;
 
 type HttpClient = Client<HttpsConnector<hyper::client::HttpConnector>>;
 
-// 客户端池（全局）
-static CLIENT_POOL: RwLock<HashMap<String, Arc<HttpClient>>> = RwLock::new(HashMap::new());
+// 客户端池（全局）—— 修复静态初始化错误
+static CLIENT_POOL: LazyLock<RwLock<HashMap<String, Arc<HttpClient>>>> = LazyLock::new(|| {
+    RwLock::new(HashMap::new())
+});
 
 /// 获取 HTTP/HTTPS 客户端（复用连接池，对应 Go 的 getClient）
 pub fn get_client(target: &str, scheme: &str) -> Arc<HttpClient> {
@@ -22,7 +24,7 @@ pub fn get_client(target: &str, scheme: &str) -> Arc<HttpClient> {
     let https = HttpsConnector::new();
     let client = Client::builder()
         .pool_max_idle_per_host(50)
-        .idle_timeout(Duration::from_secs(10))
+        .pool_idle_timeout(Duration::from_secs(10)) // 修复：idle_timeout -> pool_idle_timeout
         .http1_read_buf_size(crate::config::BUFFER_SIZE)
         .http1_write_buf_size(crate::config::BUFFER_SIZE)
         .build::<_, hyper::Body>(https);

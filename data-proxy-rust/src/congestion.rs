@@ -3,7 +3,7 @@ use crate::config::{
 };
 use crate::utils::get_pid;
 use serde::Serialize;
-use sysinfo::{ProcessExt, System, SystemExt};
+use sysinfo::{ProcessExt, System, SystemExt, Pid};
 use tracing::{error, info, warn};
 
 /// 代理状态结构体（对应 Go 的 ProxyStatus）
@@ -32,8 +32,8 @@ pub fn check_congestion(all_buffer_size: usize) -> ProxyStatus {
     status.total_mem = sys.total_memory();
 
     // 获取当前进程内存（替代 ps 命令）
-    let pid = get_pid() as i32;
-    if let Some(process) = sys.process(pid) {
+    let pid = get_pid();
+    if let Some(process) = sys.process(Pid::from(pid)) {
         status.process_mem = process.memory() * 1024; // rss 转为 bytes
     } else {
         error!("Failed to get process memory info");

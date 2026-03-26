@@ -47,7 +47,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!(%pre, "Listening on {}", addr);
 
     if let Err(e) = axum::Server::bind(&addr.parse()?)
-        .serve(app.into_make_svc())
+        // 修复：into_make_svc() → into_make_service()
+        .serve(app.into_make_service())
         .await
     {
         error!(%pre, "Failed to start server: {}", e);

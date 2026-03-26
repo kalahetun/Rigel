@@ -1,8 +1,8 @@
 use axum::{
-    http::{HeaderMap, Method, Request, Response, StatusCode, Uri},
+    body::{Body, HttpBody},
+    http::{Method, Request, Response, StatusCode, Uri},
     response::IntoResponse,
 };
-use hyper::Body;
 use crate::client_pool::get_client;
 use crate::config::{
     ACTIVE_TRANSFERS, HEADER_DEST_TYPE, HEADER_HOPS, HEADER_INDEX, DEFAULT_INDEX,
@@ -10,7 +10,8 @@ use crate::config::{
 };
 use crate::utils::{generate_random_letters, split_hops};
 use tracing::{error, info, warn};
-use std::str::FromStr;
+use std::str::From_str;
+use bytes::Bytes;
 
 /// 核心代理处理函数（对应 Go 的 handler）
 pub async fn proxy_handler(mut req: Request<Body>) -> impl IntoResponse {
@@ -90,8 +91,8 @@ pub async fn proxy_handler(mut req: Request<Body>) -> impl IntoResponse {
     let target = format!("{}:{}", target_ip, target_port);
     let client = get_client(&target, scheme);
 
-    // 构建转发请求
-    let mut forward_req = Request::new(req.take_body());
+    // ====================== 修复 1：take_body 不存在 → 改用 into_body ======================
+    let mut forward_req = Request::new(req.into_body());
     *forward_req.uri_mut() = Uri::from_str(&target_url).unwrap();
     *forward_req.method_mut() = forward_method;
 
@@ -132,8 +133,8 @@ pub async fn proxy_handler(mut req: Request<Body>) -> impl IntoResponse {
     let mut body = resp.into_body();
     let mut response_body = Vec::new();
 
-    // 读取响应体（异步）
-    while let Some(chunk) = body.data().await {
+    // ====================== 修复 2：data() → next()，修复 body 读取 ======================
+    while let Some(chunk) = body.next().await {
         match chunk {
             Ok(bytes) => response_body.extend_from_slice(&bytes),
             Err(e) => {

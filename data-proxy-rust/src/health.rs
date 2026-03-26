@@ -1,4 +1,4 @@
-use axum::{extract::Query, http::StatusCode, Json};
+use axum::{extract::Query, http::StatusCode};
 use serde::Deserialize;
 use crate::config::STATUS;
 use crate::utils::generate_random_letters;

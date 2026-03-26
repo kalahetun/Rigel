@@ -34,7 +34,7 @@ pub fn init_logger() -> Result<(), std::io::Error> {
                 .with_writer(log_file)
                 .with_file(true)
                 .with_line_number(true)
-                .with_function_name(true)
+                // 删掉这行：with_function_name(true) → 新版不支持
                 .with_span_events(FmtSpan::CLOSE),
         )
         .init();
