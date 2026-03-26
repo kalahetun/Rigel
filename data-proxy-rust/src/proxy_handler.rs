@@ -10,8 +10,9 @@ use crate::config::{
 };
 use crate::utils::{generate_random_letters, split_hops};
 use tracing::{error, info, warn};
-use std::str::From_str;
+use std::str::FromStr;
 use bytes::Bytes;
+use futures_util::stream::StreamExt;
 
 /// 核心代理处理函数（对应 Go 的 handler）
 pub async fn proxy_handler(mut req: Request<Body>) -> impl IntoResponse {
@@ -93,7 +94,7 @@ pub async fn proxy_handler(mut req: Request<Body>) -> impl IntoResponse {
 
     // ====================== 修复 1：take_body 不存在 → 改用 into_body ======================
     let mut forward_req = Request::new(req.into_body());
-    *forward_req.uri_mut() = Uri::from_str(&target_url).unwrap();
+    *forward_req.uri_mut() = Uri::from_maybe_shared(&target_url).unwrap();
     *forward_req.method_mut() = forward_method;
 
     // 复制 headers + 设置新 index
@@ -156,5 +157,5 @@ pub async fn proxy_handler(mut req: Request<Body>) -> impl IntoResponse {
         "Request completed"
     );
 
-    response
+    response.into_response()
 }

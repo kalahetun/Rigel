@@ -25,7 +25,7 @@ pub fn get_client(target: &str, scheme: &str) -> Arc<HttpClient> {
     let client = Client::builder()
         .pool_max_idle_per_host(50)
         .pool_idle_timeout(Duration::from_secs(10)) // 修复：idle_timeout -> pool_idle_timeout
-        .http1_read_buf_size(crate::config::BUFFER_SIZE)
+        .http1_read_buf_exact_size(crate::config::BUFFER_SIZE)
         .http1_write_buf_size(crate::config::BUFFER_SIZE)
         .build::<_, hyper::Body>(https);
 

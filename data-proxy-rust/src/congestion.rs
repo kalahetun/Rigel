@@ -33,7 +33,7 @@ pub fn check_congestion(all_buffer_size: usize) -> ProxyStatus {
 
     // 获取当前进程内存（替代 ps 命令）
     let pid = get_pid();
-    if let Some(process) = sys.process(Pid::from(pid)) {
+    if let Some(process) = sys.process(Pid::from(pid as usize)) {
         status.process_mem = process.memory() * 1024; // rss 转为 bytes
     } else {
         error!("Failed to get process memory info");
