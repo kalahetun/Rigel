@@ -4,8 +4,8 @@ import (
 	"context"
 	"crypto/tls"
 	"data-proxy/config"
+	"data-proxy/congestion"
 	"data-proxy/util"
-	"data-proxy/virtual_queue"
 	"github.com/gin-gonic/gin"
 	"io"
 	"net/http"
@@ -69,12 +69,6 @@ func (h *SourceHandler) WithGroup(name string) slog.Handler {
 	return &SourceHandler{handler: h.handler.WithGroup(name)}
 }
 
-/*
- * =========================
- * 方案 B：数据路径级统计
- * =========================
- */
-
 // 统计 reader：包在 io.Copy 的数据路径上
 type countingReader struct {
 	r io.Reader
@@ -96,7 +90,7 @@ func splitHops(hopsStr string) []string {
 	return parts
 }
 
-// ==================== client 池（保持你原来的实现） ====================
+// ==================== client池 ====================
 var (
 	clientMap = make(map[string]*http.Client)
 	clientMu  = &sync.RWMutex{}
@@ -223,21 +217,70 @@ func handler(logger *slog.Logger) http.HandlerFunc {
 		}
 		w.WriteHeader(resp.StatusCode)
 
-		// =========================
-		// 方案 B 核心：只在真正转发数据时计数
-		// =========================
-		atomic.AddInt64(&virtual_queue.ActiveTransfers, 1)
+		//只在真正转发数据时计数
+		atomic.AddInt64(&congestion.ActiveTransfers, 1)
 		_, err = io.Copy(w, &countingReader{r: resp.Body})
-		atomic.AddInt64(&virtual_queue.ActiveTransfers, -1)
+		atomic.AddInt64(&congestion.ActiveTransfers, -1)
 
 		if err != nil {
 			logger.Error("Error copying response body", slog.String("pre", pre), slog.Any("err", err))
 		}
 
-		logger.Info("Request completed", slog.String("pre", pre),
-			"target_hop", targetHop, "status", resp.StatusCode, "protocol", scheme,
+		logger.Info("Request completed", slog.String("pre", pre), slog.String("target_hop", targetHop),
+			slog.Int("status", resp.StatusCode), slog.String("protocol", scheme),
 			//"active_transfers", atomic.LoadInt64(&virtual_queue.ActiveTransfers),
 		)
+	}
+}
+
+// HealthStateChange 修改健康状态开关 /healthStateChange?set=on/off
+func HealthStateChange(logger *slog.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		pre := util.GenerateRandomLetters(5)
+		logger.Info("healthStateChange", slog.String("pre", pre))
+
+		// 获取参数
+		set := c.DefaultQuery("set", "on")
+		logger.Info("get switch val", slog.String("pre", pre), slog.String("set", set))
+
+		// 加锁修改状态
+		statusLock.Lock()
+		defer statusLock.Unlock()
+
+		if set == "off" {
+			status = "off"
+		} else {
+			status = "on"
+		}
+
+		c.JSON(http.StatusOK, "success")
+	}
+}
+
+// Health 健康检查 /health
+func Health(logger *slog.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		pre := util.GenerateRandomLetters(5)
+
+		// 读锁也可以，我保持你原来的写法不动
+		statusLock.Lock()
+		defer statusLock.Unlock()
+
+		logger.Info("health", slog.String("pre", pre), slog.String("status", status))
+
+		if status == "off" {
+			c.JSON(http.StatusInternalServerError, "error")
+			return
+		}
+		c.JSON(http.StatusOK, "success")
+	}
+}
+
+// GetCongestionInfo 获取拥堵状态 /getCongestionInfo
+func GetCongestionInfo(logger *slog.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		info := congestion.CheckCongestion(2*BufferSize, logger)
+		c.JSON(http.StatusOK, info)
 	}
 }
 
@@ -280,60 +323,10 @@ func main() {
 	}
 
 	router := gin.Default()
-
-	router.GET("/healthStateChange", func(c *gin.Context) {
-
-		pre := util.GenerateRandomLetters(5)
-
-		logger.Info("healthStateChange", slog.String("pre", pre))
-
-		// 获取查询参数 "set"
-		set := c.DefaultQuery("set", "on") // 默认值为 "on"，即默认返回 200
-
-		logger.Info("get switch val", slog.String("pre", pre))
-
-		// 锁住状态修改操作，保证并发安全
-		statusLock.Lock()
-		defer statusLock.Unlock()
-
-		// 根据 set 参数来决定状态值和返回的状态码
-		if set == "off" {
-			// set 为 "off"，修改状态为 "off"，并返回 500
-			status = "off"
-		} else {
-			// 默认情况或 set 为 "on" 时，修改状态为 "on"，并返回 200
-			status = "on"
-		}
-		c.JSON(http.StatusOK, "success")
-	})
-
-	router.GET("/health", func(c *gin.Context) {
-
-		pre := util.GenerateRandomLetters(5)
-
-		// 锁住状态修改操作，保证并发安全
-		statusLock.Lock()
-		defer statusLock.Unlock()
-
-		logger.Info("health", slog.String("pre", pre), slog.String("status", status))
-
-		if status == "off" {
-			c.JSON(http.StatusInternalServerError, "error")
-			return
-		}
-		c.JSON(http.StatusOK, "success")
-	})
-
-	router.GET("/getCongestionInfo", func(c *gin.Context) {
-		c.JSON(http.StatusOK, virtual_queue.CheckCongestion(2*BufferSize, logger))
-	})
-
-	//router.Any("/*proxyPath", func(c *gin.Context) {
-	//	handler(logger)(c.Writer, c.Request)
-	//})
-	router.NoRoute(func(c *gin.Context) {
-		handler(logger)(c.Writer, c.Request)
-	})
+	router.GET("/healthStateChange", HealthStateChange(logger))
+	router.GET("/health", Health(logger))
+	router.GET("/getCongestionInfo", GetCongestionInfo(logger))
+	router.NoRoute(func(c *gin.Context) { handler(logger)(c.Writer, c.Request) })
 
 	port := "8095"
 	port = config.Config_.Port
