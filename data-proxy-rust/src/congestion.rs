@@ -1,6 +1,4 @@
-use crate::config::{
-    ACTIVE_TRANSFERS, BUFFER_SIZE, WARNING_LEVEL_FOR_BUFFER,
-};
+use crate::config::{ACTIVE_TRANSFERS, WARNING_LEVEL_FOR_BUFFER};
 use crate::utils::get_pid;
 use serde::Serialize;
 use sysinfo::{System, SystemExt, ProcessExt, Pid};

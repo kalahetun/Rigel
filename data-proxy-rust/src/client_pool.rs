@@ -12,7 +12,7 @@ static CLIENT_POOL: LazyLock<RwLock<HashMap<String, Arc<HttpClient>>>> = LazyLoc
 });
 
 /// 获取 HTTP/HTTPS 客户端（复用连接池，对应 Go 的 getClient）
-pub fn get_client(target: &str, scheme: &str) -> Arc<HttpClient> {
+pub fn get_client(target: &str, _scheme: &str) -> Arc<HttpClient> {
     // 读锁检查是否存在
     if let Ok(read_lock) = CLIENT_POOL.read() {
         if let Some(client) = read_lock.get(target) {

@@ -1,5 +1,5 @@
 use axum::{
-    body::{Body, HttpBody},
+    body::Body,
     http::{Method, Request, Response, StatusCode, Uri},
     response::IntoResponse,
 };
@@ -11,11 +11,11 @@ use crate::config::{
 use crate::utils::{generate_random_letters, split_hops};
 use tracing::{error, info, warn};
 use std::str::FromStr;
-use bytes::Bytes;
+// use bytes::Bytes;
 use futures_util::stream::StreamExt;
 
 /// 核心代理处理函数（对应 Go 的 handler）
-pub async fn proxy_handler(mut req: Request<Body>) -> impl IntoResponse {
+pub async fn proxy_handler(req: Request<Body>) -> impl IntoResponse {
     let pre = generate_random_letters(5);
     let headers = req.headers().clone();
     let uri = req.uri().clone();

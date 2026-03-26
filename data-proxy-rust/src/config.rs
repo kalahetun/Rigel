@@ -15,7 +15,7 @@ pub const BUFFER_SIZE: usize = 64 * 1024;
 
 // 拥塞检测阈值
 pub const WARNING_LEVEL_FOR_BUFFER: f64 = 0.6;
-pub const CRITICAL_LEVEL_FOR_BUFFER: f64 = 0.8;
+// pub const CRITICAL_LEVEL_FOR_BUFFER: f64 = 0.8;
 
 // 健康状态（全局）—— 修复静态初始化错误
 pub static STATUS: LazyLock<RwLock<String>> = LazyLock::new(|| {
