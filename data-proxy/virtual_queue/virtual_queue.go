@@ -1,10 +1,11 @@
 package virtual_queue
 
 import (
+	"bufio"
 	"fmt"
 	"log/slog"
 	"os"
-	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -18,21 +19,48 @@ const (
 // 当前正在“真实转发数据”的请求数
 var ActiveTransfers int64
 
+//func getTotalMem(logger *slog.Logger) (int64, error) {
+//	// Linux: 从 /proc/meminfo 获取总内存
+//	out, err := exec.Command("grep", "MemTotal", "/proc/meminfo").Output()
+//	if err != nil {
+//		return 0, err
+//	}
+//	fields := strings.Fields(string(out))
+//	if len(fields) < 2 {
+//		return 0, fmt.Errorf("unexpected meminfo format")
+//	}
+//	kb, err := strconv.ParseInt(fields[1], 10, 64)
+//	if err != nil {
+//		return 0, err
+//	}
+//	return kb * 1024, nil // 转为 bytes
+//}
+
 func getTotalMem(logger *slog.Logger) (int64, error) {
-	// Linux: 从 /proc/meminfo 获取总内存
-	out, err := exec.Command("grep", "MemTotal", "/proc/meminfo").Output()
+	file, err := os.Open("/proc/meminfo")
 	if err != nil {
 		return 0, err
 	}
-	fields := strings.Fields(string(out))
-	if len(fields) < 2 {
-		return 0, fmt.Errorf("unexpected meminfo format")
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
+		// 找到 MemTotal 那一行
+		if strings.HasPrefix(line, "MemTotal:") {
+			parts := strings.Fields(line)
+			if len(parts) < 3 {
+				return 0, strconv.ErrSyntax
+			}
+			kb, err := strconv.ParseInt(parts[1], 10, 64)
+			if err != nil {
+				return 0, err
+			}
+			return kb * 1024, nil // 转成字节
+		}
 	}
-	kb, err := strconv.ParseInt(fields[1], 10, 64)
-	if err != nil {
-		return 0, err
-	}
-	return kb * 1024, nil // 转为 bytes
+
+	return 0, os.ErrNotExist
 }
 
 type ProxyStatus struct {
@@ -61,17 +89,22 @@ func CheckCongestion(allBufferSize int, logger *slog.Logger) ProxyStatus {
 	s.TotalMem = totalMem
 
 	// 获取 proxy 进程内存，Linux 下用 ps
-	out, err := exec.Command("ps", "-o", "rss=", "-p", strconv.Itoa(os.Getpid())).Output()
-	if err != nil {
-		logger.Error("Failed to get proxy memory:", err)
-		return s
-	}
-	rssKb, err := strconv.ParseInt(strings.TrimSpace(string(out)), 10, 64)
-	if err != nil {
-		logger.Error("Failed to parse proxy memory:", err)
-		return s
-	}
-	proxyMem := rssKb * 1024
+	//out, err := exec.Command("ps", "-o", "rss=", "-p", strconv.Itoa(os.Getpid())).Output()
+	//if err != nil {
+	//	logger.Error("Failed to get proxy memory:", err)
+	//	return s
+	//}
+	//rssKb, err := strconv.ParseInt(strings.TrimSpace(string(out)), 10, 64)
+	//if err != nil {
+	//	logger.Error("Failed to parse proxy memory:", err)
+	//	return s
+	//}
+	//proxyMem := rssKb * 1024
+	//s.ProcessMem = proxyMem
+
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	proxyMem := int64(m.Sys) // RSS 等价内存
 	s.ProcessMem = proxyMem
 
 	usageRatio := float64(proxyMem) / float64(totalMem)
