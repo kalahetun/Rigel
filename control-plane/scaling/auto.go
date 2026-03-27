@@ -16,8 +16,6 @@ import (
 	"time"
 )
 
-//维护vm信息;扩容&缩容&安装环境以及二进制;开启&关闭健康检查; 这些都是elastic scaling的approach
-
 // StartTicker 启动定时任务
 func (s *Scaler) StartAutoScalingTicker(pre string) {
 	s.logger.Info("StartAutoScalingTicker", slog.String("pre", pre))

@@ -8,11 +8,6 @@ import (
 	"go.etcd.io/etcd/server/v3/embed"
 )
 
-// StartEmbeddedEtcd
-// serverList: 集群所有节点 IP 列表，包括自己
-// serverIP: 当前节点 IP
-// dataDir: 数据目录
-// name: 当前节点名称
 func StartEmbeddedEtcd(serverList []string, serverIP, dataDir, name, pre string, logger *slog.Logger) (*embed.Etcd, error) {
 	cfg := embed.NewConfig()
 	cfg.Dir = dataDir
@@ -43,11 +38,7 @@ func StartEmbeddedEtcd(serverList []string, serverIP, dataDir, name, pre string,
 	}
 
 	<-e.Server.ReadyNotify()
-	logger.Info(
-		"Embedded etcd started",
-		slog.String("pre", pre),
-		slog.String("name", name),
-		slog.String("endpoint", serverIP+":2379"),
-	)
+	logger.Info("Embedded etcd started", slog.String("pre", pre),
+		slog.String("name", name), slog.String("endpoint", serverIP+":2379"))
 	return e, nil
 }

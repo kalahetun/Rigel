@@ -37,11 +37,6 @@ type FileStorage struct {
 	l              *slog.Logger
 }
 
-// NewFileStorage 初始化文件存储实例（带定时清理）
-// 参数：
-//
-//	storageDir: 存储根目录
-//	expireMinutes: 文件过期分钟数（传0则使用默认5分钟）
 func NewFileStorage(storageDir string, expireMinutes int, pre string, l *slog.Logger) (*FileStorage, error) {
 	// 创建存储目录
 	if err := os.MkdirAll(storageDir, 0755); err != nil {

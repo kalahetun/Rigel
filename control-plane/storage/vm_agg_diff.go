@@ -53,8 +53,6 @@ type NetworkTelemetry struct {
 	LinksCongestion map[string]LinkCongestionInfo `json:"links_congestion"` // 节点到其他节点的链路拥塞信息
 }
 
-//1、定时器 读storage文件 汇聚group信息 到etcd 并且 加入一个全局的 queue供 elastic scaling使用
-
 func CalcClusterWeightedAvg(fs *FileStorage, interval time.Duration,
 	etcdClient *clientv3.Client, queue *util.FixedQueue, logPre string, logger *slog.Logger) {
 	// 1. 内嵌定时器，直接创建

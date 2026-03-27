@@ -20,7 +20,7 @@ type GetSize struct {
 
 func NewGetSize(
 	user, hostPort, password, remoteDir string,
-	pre string,          // 日志前缀（和之前保持一致）
+	pre string, // 日志前缀（和之前保持一致）
 	logger *slog.Logger, // 日志实例（和之前保持一致）
 ) *GetSize {
 	gs := &GetSize{

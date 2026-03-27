@@ -90,18 +90,6 @@ func GetKey(cli *clientv3.Client, key string, logger *slog.Logger) {
 	}
 }
 
-// WatchPrefix 监听前缀 key 变化
-//func WatchPrefix1(cli *clientv3.Client, prefix string, callback func(eventType, key, value string, logger *slog.Logger), logger *slog.Logger) {
-//	go func() {
-//		rch := cli.Watch(context.Background(), prefix, clientv3.WithPrefix(), clientv3.WithPrevKV())
-//		for wresp := range rch {
-//			for _, ev := range wresp.Events {
-//				callback(ev.Type.String(), string(ev.Kv.Key), string(ev.Kv.Value), logger)
-//			}
-//		}
-//	}()
-//}
-
 func WatchPrefix(cli *clientv3.Client, prefix string, callback func(eventType, key, value string, logger *slog.Logger), logger *slog.Logger) {
 	logger.Info("Start watch prefix", slog.String("prefix", prefix))
 	go func() {
@@ -125,17 +113,6 @@ func WatchPrefix(cli *clientv3.Client, prefix string, callback func(eventType, k
 	}()
 }
 
-// GetPrefixAll 获取指定前缀下的所有 Key-Value 数据
-// 参数：
-//
-//	cli:     Etcd 客户端实例
-//	prefix:  要查询的前缀（如 "/routing/"）
-//	logger:  日志句柄
-//
-// 返回：
-//
-//	map[string]string: 前缀下所有 Key-Value 键值对（Key 为完整 Etcd Key，Value 为对应值）
-//	error:  查询过程中的错误（如连接超时、Etcd 服务异常等）
 func GetPrefixAll(cli *clientv3.Client, prefix, pre string, logger *slog.Logger) (map[string]string, error) {
 	// 1. 构建超时上下文，避免阻塞
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
