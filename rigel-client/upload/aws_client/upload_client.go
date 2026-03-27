@@ -17,9 +17,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
-// =====================
-// 核心结构体（对齐 GCP Upload）
-// =====================
 type Upload struct {
 	localBaseDir string // 本地基础目录（文件模式用）
 	bucketName   string // S3 存储桶名称
@@ -51,11 +48,6 @@ func NewUpload(
 	return u
 }
 
-// UploadFile AWS S3 客户端上传（对齐 GCP UploadFile 接口）
-// 功能：
-// 1. inMemory=true → 内存流式上传（从 Reader 读取）
-// 2. inMemory=false → 本地文件上传
-// 3. 支持上下文取消、超时控制、日志追溯
 func (u *Upload) UploadFile(
 	ctx context.Context,
 	objectName string,
@@ -93,9 +85,6 @@ func (u *Upload) UploadFile(
 			slog.String("objectName", objectName))
 	}
 
-	// 初始化 S3 客户端（带超时控制，对齐 GCP 的 1 分钟超时）
-	//ctxClient, cancel := context.WithTimeout(ctx, 1*time.Minute)
-	//defer cancel()
 	s3Client, err := u.initS3Client(ctx)
 	if err != nil {
 		logger.Error("Failed to create S3 client",
@@ -185,10 +174,6 @@ func (u *Upload) UploadFile(
 	return nil
 }
 
-// =====================
-// 内部工具函数
-// =====================
-
 // initS3Client 初始化 S3 客户端（带超时配置）
 func (u *Upload) initS3Client(ctx context.Context) (*s3.Client, error) {
 	httpClient := &http.Client{
@@ -240,31 +225,3 @@ func (u *Upload) initS3Client(ctx context.Context) (*s3.Client, error) {
 		o.UsePathStyle = u.usePathStyle
 	}), nil
 }
-
-// =====================
-// 可选：限流 Reader（和 GCP limit_rate 逻辑对齐）
-// 如需启用限流，取消注释并确保引入 golang.org/x/time/rate
-// =====================
-// type RateLimitedReader struct {
-// 	ctx       context.Context
-// 	reader    io.Reader
-// 	limiter   *rate.Limiter
-// 	bytesRead int
-// }
-
-// func NewRateLimitedReader(ctx context.Context, reader io.Reader, limiter *rate.Limiter) *RateLimitedReader {
-// 	return &RateLimitedReader{
-// 		ctx:     ctx,
-// 		reader:  reader,
-// 		limiter: limiter,
-// 	}
-// }
-
-// func (r *RateLimitedReader) Read(p []byte) (int, error) {
-// 	if err := r.limiter.WaitN(r.ctx, len(p)); err != nil {
-// 		return 0, err
-// 	}
-// 	n, err := r.reader.Read(p)
-// 	r.bytesRead += n
-// 	return n, err
-// }
