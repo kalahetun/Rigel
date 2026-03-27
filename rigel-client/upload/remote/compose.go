@@ -1,4 +1,4 @@
-package remote_proxy
+package remote
 
 import (
 	"bytes"

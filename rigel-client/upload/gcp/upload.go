@@ -1,4 +1,4 @@
-package gcp_proxy
+package gcp
 
 import (
 	"context"

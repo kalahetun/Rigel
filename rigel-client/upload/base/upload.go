@@ -7,11 +7,11 @@ import (
 	"log/slog"
 	"rigel-client/upload/aws"
 	"rigel-client/upload/aws_client"
+	"rigel-client/upload/gcp"
 	"rigel-client/upload/gcp_client"
-	"rigel-client/upload/gcp_proxy"
 	"rigel-client/upload/local_disk"
+	"rigel-client/upload/remote"
 	"rigel-client/upload/remote_client"
-	"rigel-client/upload/remote_proxy"
 	"rigel-client/util"
 )
 
@@ -93,8 +93,8 @@ func InitInterface(clientB bool, us UploadStruct, pre string, logger *slog.Logge
 		if gcp_ == nil {
 			return fo
 		}
-		fo.GetFileSize = gcp_proxy.NewGetSize(gcp_.BucketName, gcp_.CredFile, pre, logger)
-		fo.DownloadFile = gcp_proxy.NewDownload(us.Proxy.LocalDir, gcp_.BucketName, gcp_.CredFile, pre, logger)
+		fo.GetFileSize = gcp.NewGetSize(gcp_.BucketName, gcp_.CredFile, pre, logger)
+		fo.DownloadFile = gcp.NewDownload(us.Proxy.LocalDir, gcp_.BucketName, gcp_.CredFile, pre, logger)
 
 	case util.AWSCloud:
 		aws_ := ExtractAWSFromInterface(us.Source.Interface, pre, logger)
@@ -114,8 +114,8 @@ func InitInterface(clientB bool, us UploadStruct, pre string, logger *slog.Logge
 		if sd == nil {
 			return fo
 		}
-		fo.GetFileSize = remote_proxy.NewGetSize(sd.User, sd.Host, sd.Password, sd.RemoteDir, pre, logger)
-		fo.DownloadFile = remote_proxy.NewDownload(sd.User, sd.Host, sd.Password, sd.RemoteDir, us.Proxy.LocalDir, pre, logger)
+		fo.GetFileSize = remote.NewGetSize(sd.User, sd.Host, sd.Password, sd.RemoteDir, pre, logger)
+		fo.DownloadFile = remote.NewDownload(sd.User, sd.Host, sd.Password, sd.RemoteDir, us.Proxy.LocalDir, pre, logger)
 
 	// 可选：添加default分支，增强容错性
 	default:
@@ -132,10 +132,10 @@ func InitInterface(clientB bool, us UploadStruct, pre string, logger *slog.Logge
 		}
 		if clientB {
 			fo.UploadFile = gcp_client.NewUpload(us.Proxy.LocalDir, gcp_.BucketName, gcp_.CredFile, pre, logger)
-			fo.ComposeFile = gcp_proxy.NewCompose(gcp_.BucketName, gcp_.CredFile, pre, logger)
+			fo.ComposeFile = gcp.NewCompose(gcp_.BucketName, gcp_.CredFile, pre, logger)
 		} else {
-			fo.UploadFile = gcp_proxy.NewUpload(us.Proxy.LocalDir, gcp_.BucketName, gcp_.CredFile, pre, logger)
-			fo.ComposeFile = gcp_proxy.NewCompose(gcp_.BucketName, gcp_.CredFile, pre, logger)
+			fo.UploadFile = gcp.NewUpload(us.Proxy.LocalDir, gcp_.BucketName, gcp_.CredFile, pre, logger)
+			fo.ComposeFile = gcp.NewCompose(gcp_.BucketName, gcp_.CredFile, pre, logger)
 		}
 
 	case util.AWSCloud:
@@ -161,10 +161,10 @@ func InitInterface(clientB bool, us UploadStruct, pre string, logger *slog.Logge
 		}
 		if clientB {
 			fo.UploadFile = remote_client.NewUpload(ck_.Upload, us.Proxy.LocalDir, pre, logger)
-			fo.ComposeFile = remote_proxy.NewCompose(ck_.Merge, true, pre, logger)
+			fo.ComposeFile = remote.NewCompose(ck_.Merge, true, pre, logger)
 		} else {
-			fo.UploadFile = remote_proxy.NewUpload(us.Proxy.LocalDir, ck_.Upload, pre, logger)
-			fo.ComposeFile = remote_proxy.NewCompose(ck_.Merge, true, pre, logger)
+			fo.UploadFile = remote.NewUpload(us.Proxy.LocalDir, ck_.Upload, pre, logger)
+			fo.ComposeFile = remote.NewCompose(ck_.Merge, true, pre, logger)
 		}
 
 	// 可选：添加default分支，增强容错性
