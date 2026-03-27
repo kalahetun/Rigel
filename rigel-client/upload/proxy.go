@@ -2,16 +2,16 @@ package upload
 
 import (
 	"fmt"
-	"golang.org/x/time/rate"
 	"log/slog"
 	"rigel-client/upload/base"
 	"rigel-client/upload/split"
 	"time"
+
+	"golang.org/x/time/rate"
 )
 
-func RedirectImp(
-	fo base.FileOperateInterfaces,
-	task ChunkTask, hops string, rateLimiter *rate.Limiter, inMemory bool, pre string, logger *slog.Logger) error {
+func RedirectImp(fo base.FileOperateInterfaces, task ChunkTask, hops string,
+	rateLimiter *rate.Limiter, inMemory bool, pre string, logger *slog.Logger) error {
 
 	//todo 内部触发重新 routing
 

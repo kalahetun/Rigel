@@ -64,8 +64,7 @@ func (g *GraphManager) Routing(endPoints EndPoints, pre string, logger *slog.Log
 		return RoutingInfo{}
 	}
 
-	serverFull := fmt.Sprintf("%s_%s_%s",
-		endPoints.Dest.Provider, endPoints.Dest.Region, endPoints.Dest.ID)
+	serverFull := fmt.Sprintf("%s_%s_%s", endPoints.Dest.Provider, endPoints.Dest.Region, endPoints.Dest.ID)
 
 	// 遍历 start × end 节点组合，寻找最短路径
 	var bestPath []string
