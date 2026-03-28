@@ -1,4 +1,4 @@
-package gcp_client
+package gcs_client
 
 import (
 	"cloud.google.com/go/storage"

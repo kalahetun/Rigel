@@ -1,4 +1,4 @@
-package aws_client
+package s3_client
 
 import (
 	"context"
@@ -31,7 +31,7 @@ type Upload struct {
 func NewUpload(
 	localBaseDir, bucketName, region, accessKey, secretKey, endpoint string,
 	usePathStyle bool,
-	pre string,          // 日志前缀（和 GCP 保持一致）
+	pre string, // 日志前缀（和 GCP 保持一致）
 	logger *slog.Logger, // 日志实例
 ) *Upload {
 	u := &Upload{
@@ -52,11 +52,11 @@ func (u *Upload) UploadFile(
 	ctx context.Context,
 	objectName string,
 	contentLength int64,
-	hops string,               // 兼容 GCP 入参（预留，AWS 客户端模式无需使用）
+	hops string, // 兼容 GCP 入参（预留，AWS 客户端模式无需使用）
 	rateLimiter *rate.Limiter, // 兼容 GCP 入参（如需限流可启用）
 	reader io.ReadCloser,
 	inMemory bool, // true=内存模式，false=文件模式
-	pre string,    // 日志前缀（关键追溯字段）
+	pre string, // 日志前缀（关键追溯字段）
 	logger *slog.Logger,
 ) error {
 

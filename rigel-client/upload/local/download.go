@@ -1,4 +1,4 @@
-package local_disk
+package local
 
 import (
 	"context"
