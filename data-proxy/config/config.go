@@ -15,6 +15,7 @@ var (
 // Config 一级结构体，对应yaml平级配置
 type Config struct {
 	Port string `yaml:"port"`
+	Mem  int64  `yaml:"mem"`
 }
 
 // ReadYamlConfig 读取同层级的config.yaml配置

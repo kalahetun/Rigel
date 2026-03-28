@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -321,6 +322,9 @@ func main() {
 		logger.Info("print config info", slog.String("pre", pre),
 			slog.Any("config", config.Config_))
 	}
+
+	mem := config.Config_.Mem
+	debug.SetMemoryLimit(mem << 30)
 
 	router := gin.Default()
 	router.GET("/healthStateChange", HealthStateChange(logger))

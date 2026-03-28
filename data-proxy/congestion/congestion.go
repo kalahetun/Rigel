@@ -1,13 +1,10 @@
 package congestion
 
 import (
-	"bufio"
 	"fmt"
 	"log/slog"
-	"os"
 	"runtime"
-	"strconv"
-	"strings"
+	"runtime/debug"
 	"sync/atomic"
 )
 
@@ -80,28 +77,32 @@ func CheckCongestion(allBufferSize int, logger *slog.Logger) ProxyStatus {
 }
 
 func getTotalMem(logger *slog.Logger) (int64, error) {
-	file, err := os.Open("/proc/meminfo")
-	if err != nil {
-		return 0, err
-	}
-	defer file.Close()
 
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := scanner.Text()
-		// 找到 MemTotal 那一行
-		if strings.HasPrefix(line, "MemTotal:") {
-			parts := strings.Fields(line)
-			if len(parts) < 3 {
-				return 0, strconv.ErrSyntax
-			}
-			kb, err := strconv.ParseInt(parts[1], 10, 64)
-			if err != nil {
-				return 0, err
-			}
-			return kb * 1024, nil // 转成字节
-		}
-	}
+	currentLimit := debug.SetMemoryLimit(-1)
+	return currentLimit, nil
 
-	return 0, os.ErrNotExist
+	//file, err := os.Open("/proc/meminfo")
+	//if err != nil {
+	//	return 0, err
+	//}
+	//defer file.Close()
+	//
+	//scanner := bufio.NewScanner(file)
+	//for scanner.Scan() {
+	//	line := scanner.Text()
+	//	// 找到 MemTotal 那一行
+	//	if strings.HasPrefix(line, "MemTotal:") {
+	//		parts := strings.Fields(line)
+	//		if len(parts) < 3 {
+	//			return 0, strconv.ErrSyntax
+	//		}
+	//		kb, err := strconv.ParseInt(parts[1], 10, 64)
+	//		if err != nil {
+	//			return 0, err
+	//		}
+	//		return kb * 1024, nil // 转成字节
+	//	}
+	//}
+	//
+	//return 0, os.ErrNotExist
 }

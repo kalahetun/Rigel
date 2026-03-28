@@ -1,8 +1,9 @@
 use crate::config::{ACTIVE_TRANSFERS, WARNING_LEVEL_FOR_BUFFER};
-use crate::utils::get_pid;
 use serde::Serialize;
-use sysinfo::{System, SystemExt, ProcessExt, Pid};
+use sysinfo::{Pid, ProcessExt, System, SystemExt};
 use tracing::{error, info, warn};
+
+use libc;
 
 /// 代理状态结构体（对应 Go 的 ProxyStatus）
 #[derive(Debug, Serialize)]
@@ -24,22 +25,18 @@ pub fn check_congestion(all_buffer_size: usize) -> ProxyStatus {
         cache_usage_ratio: 0.0,
     };
 
-    // 获取系统总内存（替代 exec 调用 /proc/meminfo）
-    let mut sys = System::new_all();
-    sys.refresh_all();
-    status.total_mem = sys.total_memory();
+    // 你设置的进程最大内存
+    status.total_mem = get_process_max_memory();
 
-    // 获取当前进程内存（替代 ps 命令）
-    let pid = get_pid();
-    if let Some(process) = sys.process(Pid::from(pid as usize)) {
-        status.process_mem = process.memory() * 1024; // rss 转为 bytes
-    } else {
-        error!("Failed to get process memory info");
-        return status;
-    }
+    // 当前进程已用内存
+    status.process_mem = get_process_used_memory();
 
     // 计算内存使用率
-    let usage_ratio = status.process_mem as f64 / status.total_mem as f64;
+    let usage_ratio = if status.total_mem > 0 {
+        status.process_mem as f64 / status.total_mem as f64
+    } else {
+        0.0
+    };
     info!(
         "Proxy memory: {} MiB, Total memory: {} MiB, Ratio: {:.2}%",
         status.process_mem / 1024 / 1024,
@@ -68,10 +65,52 @@ pub fn check_congestion(all_buffer_size: usize) -> ProxyStatus {
     );
 
     // 拥塞警告
-    if status.cache_usage_ratio > WARNING_LEVEL_FOR_BUFFER {
-        warn!("Potential congestion: average per-connection buffer near {} KB", per_conn_cache / 1024);
+    if status.cache_usage_ratio > WARNING_LEVEL_FOR_BUFFER as f64 {
+        warn!(
+            "Potential congestion: average per-connection buffer near {} KB",
+            per_conn_cache / 1024
+        );
     }
 
     info!("Proxy status: {:?}", status);
     status
+}
+
+// 读取【你设置的进程最大内存】（字节）
+fn get_process_max_memory() -> u64 {
+    let mut rlim = libc::rlimit {
+        rlim_cur: 0,
+        rlim_max: 0,
+    };
+
+    unsafe {
+        libc::getrlimit(libc::RLIMIT_AS, &mut rlim);
+    }
+
+    // 如果是无限制，返回 0（避免除0错误）
+    if rlim.rlim_cur == libc::RLIM_INFINITY {
+        0
+    } else {
+        rlim.rlim_cur as u64
+    }
+}
+
+// 获取【当前进程已用内存】（字节）
+pub fn get_process_used_memory() -> u64 {
+    // 全局单例 System，避免重复创建
+    use once_cell::sync::Lazy;
+    static SYS: Lazy<tokio::sync::Mutex<sysinfo::System>> =
+        Lazy::new(|| tokio::sync::Mutex::new(sysinfo::System::new_all()));
+
+    tokio::runtime::Handle::current().block_on(async {
+        let mut sys = SYS.lock().await;
+        sys.refresh_processes();
+
+        let pid = Pid::this();
+        if let Some(process) = sys.process(pid) {
+            process.memory() * 1024 // KB → Bytes
+        } else {
+            0
+        }
+    })
 }
