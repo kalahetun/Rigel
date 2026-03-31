@@ -259,7 +259,7 @@ func main() {
 
 	//启动virtual queue逻辑
 	exe, _ := os.Executable()
-	storageDir := filepath.Join(filepath.Dir(exe), "vm_local_info_storage")
+	storageDir := filepath.Join(filepath.Dir(exe), "vm_storage")
 	logger.Info(
 		"using storage directory",
 		slog.String("pre", logPre),

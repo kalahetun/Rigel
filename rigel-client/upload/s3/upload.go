@@ -65,7 +65,7 @@ func (u *Upload) UploadFile(
 	logger *slog.Logger,
 ) error {
 
-	logger.Info("UploadToS3byProxy start", slog.String("pre", pre))
+	logger.Info("UploadToS3byProxy start", slog.String("pre", pre), slog.String("hops", hops))
 
 	if len(hops) == 0 {
 		err := fmt.Errorf("hops is empty")
@@ -114,7 +114,11 @@ func (u *Upload) UploadFile(
 
 	canonicalURI := fmt.Sprintf("/%s/%s", u.bucketName, objectName)
 	canonicalQueryString := ""
-	canonicalHeaders := fmt.Sprintf("host:%s\nx-amz-date:%s\n", firstHop, amzDate)
+
+	lastHop := hopList[len(hopList)-1]
+	realHost := strings.Split(lastHop, ":")[0]
+
+	canonicalHeaders := fmt.Sprintf("host:%s\nx-amz-date:%s\n", realHost, amzDate)
 	signedHeaders := "host;x-amz-date"
 	payloadHash := "UNSIGNED-PAYLOAD"
 
