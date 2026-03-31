@@ -309,9 +309,9 @@ func EdgeRisk(cacheUtil, cost, lossRate float64, pre string, l *slog.Logger) flo
 		totalRisk = 1.0
 	}
 
-	l.Info("EdgeRisk 最终结果", slog.String("pre", pre), slog.Float64("cacheRisk", cacheRisk),
+	l.Info("EdgeRisk result", slog.String("pre", pre), slog.Float64("cacheRisk", cacheRisk),
 		slog.Float64("lossRisk", lossRisk), slog.Float64("coreRisk", coreRisk),
-		slog.Float64("wCost(实际成本权重)", wCost), slog.Float64("totalRisk", totalRisk))
+		slog.Float64("wCost", wCost), slog.Float64("totalRisk", totalRisk))
 
 	return totalRisk
 }
