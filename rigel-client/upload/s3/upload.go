@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
-	"encoding/base64"
 	"fmt"
 	"io"
 	"log/slog"
@@ -68,175 +67,119 @@ func (u *Upload) UploadFile(
 
 	logger.Info("UploadToS3byProxy start", slog.String("pre", pre))
 
-	// 校验 hops 非空
 	if len(hops) == 0 {
 		err := fmt.Errorf("hops is empty")
 		logger.Error("invalid hops", slog.String("pre", pre), slog.Any("err", err))
 		return err
 	}
 
-	// 监听 ctx 取消信号
 	select {
 	case <-ctx.Done():
-		err := fmt.Errorf("upload canceled before start: %w", ctx.Err())
-		logger.Error("UploadToS3byProxy canceled", slog.String("pre", pre), slog.Any("err", err))
-		return err
+		return fmt.Errorf("upload canceled")
 	default:
 	}
 
 	var proxyReader io.ReadCloser = reader
-
-	// 统一释放资源（对齐 GCP 逻辑）
 	defer func() {
 		if proxyReader != nil && proxyReader != reader {
-			_ = proxyReader.Close() // 关闭本地文件Reader
+			_ = proxyReader.Close()
 		}
-		// 外部传入的 reader 由调用方关闭
 	}()
 
-	//选择上传源：内存流 / 本地文件
 	if !inMemory {
-		// 模式1：inMemory=false → 从本地文件读取
 		localFilePath := filepath.Join(u.localBaseDir, objectName)
-		localFilePath = filepath.Clean(localFilePath) // 标准化路径
-
-		logger.Info("prepare to read local file",
-			slog.String("pre", pre),
-			slog.String("localFilePath", localFilePath))
-
+		localFilePath = filepath.Clean(localFilePath)
 		f, err := os.Open(localFilePath)
 		if err != nil {
-			logger.Error("failed to open local file",
-				slog.String("pre", pre),
-				slog.String("localFilePath", localFilePath),
-				slog.Any("err", err))
-			return fmt.Errorf("failed to open local file: %w", err)
-		}
-		proxyReader = f
-		logger.Info("local file opened successfully",
-			slog.String("pre", pre),
-			slog.String("localFilePath", localFilePath))
-	} else {
-		// 模式2：inMemory=true → 使用外部传入的内存Reader
-		if proxyReader == nil {
-			err := fmt.Errorf("inMemory=true but reader is nil")
-			logger.Error("invalid reader", slog.String("pre", pre), slog.Any("err", err))
+			logger.Error("open file err", slog.Any("err", err))
 			return err
 		}
-		logger.Info("use in-memory reader for upload", slog.String("pre", pre))
+		proxyReader = f
 	}
 
-	//限流包装Reader
 	rateLimitedBody := limit_rate.NewRateLimitedReader(ctx, proxyReader, rateLimiter)
-	logger.Info("rate limiter applied to reader", slog.String("pre", pre))
 
-	// 解析hops并构造URL
 	hopList := strings.Split(hops, ",")
-	if len(hopList) == 0 {
-		err := fmt.Errorf("invalid X-Hops: %s (split empty)", hops)
-		logger.Error("parse hops failed", slog.String("pre", pre), slog.Any("err", err))
-		return err
-	}
 	firstHop := hopList[0]
 
-	// 构造 S3 Proxy 上传 URL（对齐 GCP 格式）
-	url := fmt.Sprintf(
-		"http://%s/%s/%s",
-		firstHop,
-		u.bucketName,
-		objectName,
-	)
-	logger.Info("construct upload URL",
-		slog.String("pre", pre),
-		slog.String("url", url),
-		slog.String("firstHop", firstHop))
+	url := fmt.Sprintf("http://%s/%s/%s", firstHop, u.bucketName, objectName)
+	logger.Info("upload url", slog.String("url", url))
 
-	// 生成 AWS 签名（替代 GCP Token）
-	logger.Info("start to generate s3 signature", slog.String("pre", pre))
-	// 获取当前时间（AWS 签名需要）
 	now := time.Now().UTC()
 	dateStamp := now.Format("20060102")
 	amzDate := now.Format("20060102T150405Z")
 
-	// 生成签名密钥
+	// 签名密钥
 	signingKey := getSignatureKey(u.secretKey, dateStamp, u.region, awsService)
 
-	// 构造待签名字符串（简化版，适配 Proxy 场景）
-	canonicalRequest := fmt.Sprintf("POST\n/%s/%s\n\nhost:%s\nx-amz-date:%s\n\nhost;x-amz-date\nUNSIGNED-PAYLOAD",
-		u.bucketName, objectName, firstHop, amzDate)
-	stringToSign := fmt.Sprintf("%s\n%s\n%s/%s/%s/aws4_request\n%s",
-		"AWS4-HMAC-SHA256", amzDate, dateStamp, u.region, awsService,
-		sha256Hex(canonicalRequest))
+	canonicalURI := fmt.Sprintf("/%s/%s", u.bucketName, objectName)
+	canonicalQueryString := ""
+	canonicalHeaders := fmt.Sprintf("host:%s\nx-amz-date:%s\n", firstHop, amzDate)
+	signedHeaders := "host;x-amz-date"
+	payloadHash := "UNSIGNED-PAYLOAD"
+
+	canonicalRequest := fmt.Sprintf(
+		"PUT\n%s\n%s\n%s\n%s\n%s",
+		canonicalURI,
+		canonicalQueryString,
+		canonicalHeaders,
+		signedHeaders,
+		payloadHash,
+	)
+
+	credentialScope := fmt.Sprintf("%s/%s/%s/aws4_request", dateStamp, u.region, awsService)
+	stringToSign := fmt.Sprintf(
+		"AWS4-HMAC-SHA256\n%s\n%s\n%s",
+		amzDate,
+		credentialScope,
+		sha256Hex(canonicalRequest),
+	)
 
 	// 计算签名
 	mac := hmac.New(sha256.New, signingKey)
 	mac.Write([]byte(stringToSign))
-	signature := base64.StdEncoding.EncodeToString(mac.Sum(nil))
+	signature := fmt.Sprintf("%x", mac.Sum(nil))
 
-	// 构造 Authorization 头
-	authHeader := fmt.Sprintf("%s Credential=%s/%s/%s/%s/aws4_request, SignedHeaders=host;x-amz-date, Signature=%s",
-		"AWS4-HMAC-SHA256", u.accessKey, dateStamp, u.region, awsService, signature)
-	logger.Info("AWS signature generated successfully", slog.String("pre", pre))
+	// Authorization
+	authHeader := fmt.Sprintf(
+		"AWS4-HMAC-SHA256 Credential=%s/%s, SignedHeaders=%s, Signature=%s",
+		u.accessKey, credentialScope,
+		signedHeaders,
+		signature,
+	)
+	logger.Info("authHeader", slog.String("pre", pre), slog.String("authHeader", authHeader))
 
-	// 构造并发送HTTP请求
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, rateLimitedBody)
+	// PUT 方法
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, url, rateLimitedBody)
 	if err != nil {
-		logger.Error("Create HTTP request failed",
-			slog.String("pre", pre),
-			slog.Any("err", err))
-		return fmt.Errorf("new request: %w", err)
+		return err
 	}
 
-	// 设置请求头
 	req.Header.Set("Authorization", authHeader)
-	req.Header.Set("Content-Type", "application/octet-stream")
 	req.Header.Set("X-Amz-Date", amzDate)
-	// 保留和 GCP 一致的业务头
+	req.Header.Set("Content-Type", "application/octet-stream")
+	req.ContentLength = contentLength
+
+	// 你的代理头
 	req.Header.Set(util.HeaderXHops, hops)
 	req.Header.Set(util.HeaderXChunkIndex, "1")
 	req.Header.Set(util.HeaderXRateLimitEnable, "true")
 	req.Header.Set(util.HeaderDestType, util.S3Cloud)
-	logger.Info("HTTP request headers set", slog.String("pre", pre))
 
-	// 发送请求
-	client := &http.Client{Timeout: 5 * time.Minute}
-	logger.Info("Send HTTP request to proxy",
-		slog.String("pre", pre),
-		slog.String("url", url),
-		slog.String("timeout", "5m"))
-
+	// 发送
+	client := &http.Client{Timeout: 10 * time.Minute}
 	resp, err := client.Do(req)
 	if err != nil {
-		logger.Error("HTTP request failed",
-			slog.String("pre", pre),
-			slog.String("url", url),
-			slog.Any("err", err))
-		return fmt.Errorf("http do: %w", err)
-	}
-	defer resp.Body.Close() // 确保响应体关闭
-
-	// 校验响应状态
-	if resp.StatusCode >= 300 {
-		respBody, readErr := io.ReadAll(resp.Body)
-		if readErr != nil {
-			respBody = []byte("failed to read response body")
-			logger.Error("Read error response failed",
-				slog.String("pre", pre),
-				slog.Any("err", readErr))
-		}
-		err := fmt.Errorf("upload failed: %d %s", resp.StatusCode, string(respBody))
-		logger.Error("Upload to S3 by proxy failed",
-			slog.String("pre", pre),
-			slog.Int("statusCode", resp.StatusCode),
-			slog.String("response", string(respBody)))
 		return err
 	}
+	defer resp.Body.Close()
 
-	logger.Info("UploadToS3byProxy success",
-		slog.String("pre", pre),
-		slog.String("objectName", objectName),
-		slog.String("url", url))
+	if resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("upload fail %d: %s", resp.StatusCode, string(body))
+	}
 
+	logger.Info("upload success", slog.String("object", objectName))
 	return nil
 }
 
