@@ -8,7 +8,7 @@ mod utils;
 
 use axum::{routing::get, Router};
 use crate::config::{BUFFER_SIZE, PORT};
-use crate::congestion::check_congestion;
+use crate::congestion::{check_congestion, get_process_max_memory};
 use crate::health::{health, health_state_change};
 use crate::logger::init_logger;
 use crate::proxy_handler::proxy_handler;
@@ -70,8 +70,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 端口
     PORT.set(config.port.clone()).unwrap();
 
-    //从配置文件设置内存上限（正确写法）
+    //从配置文件设置内存上限
     set_process_max_memory(config.mem);
+    let max_mem = get_process_max_memory();
+    println!("当前进程最大内存：{} MB", max_mem / 1024 / 1024);
 
     // 路由
     let app = Router::new()

@@ -325,6 +325,8 @@ func main() {
 
 	mem := config.Config_.Mem
 	debug.SetMemoryLimit(mem << 30)
+	currentLimit := debug.SetMemoryLimit(-1)
+	logger.Info("set memory limit", slog.String("pre", pre), "mem", mem, "current_limit", currentLimit)
 
 	router := gin.Default()
 	router.GET("/healthStateChange", HealthStateChange(logger))
