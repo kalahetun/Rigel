@@ -184,7 +184,7 @@ func handler(logger *slog.Logger) http.HandlerFunc {
 			}
 		}
 
-		targetURL := scheme + "://" + targetIP + ":" + targetPort + r.URL.RequestURI()
+		targetURL := scheme + "://" + targetIP + r.URL.RequestURI()
 		logger.Info("Forwarding to target", slog.String("pre", pre), "target_url", targetURL)
 
 		target := targetIP + ":" + targetPort

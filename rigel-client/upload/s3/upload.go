@@ -103,7 +103,7 @@ func (u *Upload) UploadFile(
 	firstHop := hopList[0]
 
 	url := fmt.Sprintf("http://%s/%s/%s", firstHop, u.bucketName, objectName)
-	logger.Info("upload url", slog.String("url", url))
+	logger.Info("upload url", slog.String("pre", pre), slog.String("url", url))
 
 	now := time.Now().UTC()
 	dateStamp := now.Format("20060102")
@@ -139,12 +139,10 @@ func (u *Upload) UploadFile(
 		sha256Hex(canonicalRequest),
 	)
 
-	// 计算签名
 	mac := hmac.New(sha256.New, signingKey)
 	mac.Write([]byte(stringToSign))
 	signature := fmt.Sprintf("%x", mac.Sum(nil))
 
-	// Authorization
 	authHeader := fmt.Sprintf(
 		"AWS4-HMAC-SHA256 Credential=%s/%s, SignedHeaders=%s, Signature=%s",
 		u.accessKey, credentialScope,
