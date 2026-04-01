@@ -99,9 +99,9 @@ func (s *Scaler) calculateDelta(node *NodeState) float64 {
 // calculateCost 按论文公式计算成本
 func (s *Scaler) calculateCost(node *NodeState) float64 {
 	switch node.State {
-	case Inactive:
+	case StateInactive:
 		return s.Config.ScalingCostFixed + s.Config.ScalingCostVariable*node.P
-	case Dormant:
+	case StateDormant:
 		return s.Config.ScalingCostVariable * node.P
 	default:
 		return 0
@@ -122,7 +122,7 @@ func (s *Scaler) AutoScaling() {
 	}
 	defer s.tryMu.Unlock()
 
-	if s.ManualAction != ScalingActionInit {
+	if s.ManualAction != ActionInit {
 		s.logger.Info("In the manual mode", slog.String("pre", pre), slog.String("action", s.ManualAction))
 		return
 	}
@@ -131,26 +131,26 @@ func (s *Scaler) AutoScaling() {
 
 	node := s.Node
 	switch s.getState() {
-	case ScalingUp:
+	case StateScalingUp:
 		s.logger.Info("Node is scaling up", slog.String("pre", pre))
 		return
-	case Releasing:
+	case StateReleasing:
 		s.logger.Info("Node is releasing", slog.String("pre", pre))
 		return
-	case Triggered:
+	case StateTriggered:
 		if s.now().Before(s.getRetainTime()) {
 			s.logger.Info("Node is triggered, but retention time not reached", slog.String("pre", pre))
 			return
 		}
 		//往下走就是已经超时
-	case Dormant, Permanent:
+	case StateDormant, StatePermanent:
 		if s.now().Before(s.getRetainTime()) {
 			s.logger.Info("Node is dormant or permanent, but retention time not reached", slog.String("pre", pre))
 		} else { // 后面检验一下是不是需要扩容 如果扩容这个状态就会被change
 			s.logger.Info("Node is dormant or permanent, and retention time reached", slog.String("pre", pre))
-			node.State = Releasing //如果后面不触发 Triggered 走到最后就会被删除
+			node.State = StateReleasing //如果后面不触发 Triggered 走到最后就会被删除
 		}
-	case Inactive:
+	case StateInactive:
 		s.logger.Info("Node is inactive", slog.String("pre", pre))
 	default:
 		s.logger.Warn("Unhandled default case", slog.String("pre", pre))
@@ -167,33 +167,33 @@ func (s *Scaler) AutoScaling() {
 	// 判断是否需要触发扩容
 	if delta < 0 {
 		switch s.getState() {
-		case Inactive:
-			node.State = ScalingUp
+		case StateInactive:
+			node.State = StateScalingUp
 			ok, vm := s.triggerScalingFromInit(1, VM{}, pre, s.logger)
 			if vm.PublicIP != "" {
 				node.ScaledVMs = append(node.ScaledVMs, vm)
 			}
 			if ok {
-				node.State = Triggered
+				node.State = StateTriggered
 				node.ScaleHistory = append(node.ScaleHistory, ScaleEvent{Time: s.now(), Amount: 1, ScaledVM: vm})
 				//node.ScaledVMs = append(node.ScaledVMs, vm)
 				retain, state := s.calculateRetention(pre)
 				node.RetainTime = retain
-				if state == Permanent {
-					node.State = Permanent
+				if state == StatePermanent {
+					node.State = StatePermanent
 				}
 			} else {
 				s.logger.Error("TriggerScalingFromInit failed", slog.String("pre", pre))
 			}
-		case Dormant:
-			node.State = Triggered
+		case StateDormant:
+			node.State = StateTriggered
 			if s.triggerScalingFromDormant(VM{}, pre) {
-				node.State = Triggered
+				node.State = StateTriggered
 				node.ScaleHistory = append(node.ScaleHistory, ScaleEvent{Time: s.now(), Amount: 1})
 				retain, state := s.calculateRetention(pre)
 				node.RetainTime = retain
-				if state == Permanent {
-					node.State = Permanent
+				if state == StatePermanent {
+					node.State = StatePermanent
 				}
 			} else {
 				s.logger.Error("TriggerScalingFromDormant failed", slog.String("pre", pre))
@@ -204,21 +204,21 @@ func (s *Scaler) AutoScaling() {
 	}
 
 	s.scalerDump(pre+"-after-scaling", s.logger)
-	if node.State == ScalingUp || node.State == Triggered || node.State == Permanent {
+	if node.State == StateScalingUp || node.State == StateTriggered || node.State == StatePermanent {
 		return
 	}
 
 	// 如果没有触发扩容，根据当前状态处理
 	switch s.getState() {
-	case Dormant, Permanent:
+	case StateDormant, StatePermanent:
 		s.logger.Info("Node is dormant or permanent, and retention time reached", slog.String("pre", pre))
-		node.State = Releasing
+		node.State = StateReleasing
 		s.triggerRelease(VM{}, pre)
-		node.State = Inactive
-	case ScalingUp:
+		node.State = StateInactive
+	case StateScalingUp:
 		retain, _ := s.calculateRetention(pre)
 		node.RetainTime = retain
-		node.State = Dormant
+		node.State = StateDormant
 		s.triggerDormant(VM{}, pre)
 		s.logger.Info("The state of node is changed to dormant from scaling up", slog.String("pre", pre))
 	default:
@@ -308,7 +308,7 @@ func (s *Scaler) triggerRelease(vm_ VM, pre string) bool {
 	}
 
 	//update envoy 配置
-	if _, err := sendAddTargetIpsRequest([]em.EnvoyTargetAddr{{vm.PublicIP, 8095}}, DelAction, pre, logger); err != nil {
+	if _, err := sendAddTargetIpsRequest([]em.EnvoyTargetAddr{{vm.PublicIP, 8095}}, ActionDelVM, pre, logger); err != nil {
 
 		s.logger.Error("SendAddTargetIpsRequest failed", slog.String("pre", pre),
 			slog.Any("vm", vm_), slog.Any("err", err))
@@ -341,11 +341,11 @@ func (s *Scaler) calculateRetention(pre string) (time.Time, NodeStatus) {
 
 	// 如果超过永久阈值，直接返回永久时间
 	if retentionDuration >= s.Config.PermanentThreshold {
-		return now.Add(s.Config.PermanentDuration), Permanent
+		return now.Add(s.Config.PermanentDuration), StatePermanent
 	}
 
 	// 返回节点保持活跃的绝对时间点
-	return now.Add(retentionDuration), End
+	return now.Add(retentionDuration), StateEnd
 }
 
 // 指数衰减函数
@@ -513,7 +513,7 @@ func (s *Scaler) deployAndAttachVM(
 			slog.String("binaryPlane", binaryPlane), slog.Any("vm", vm))
 	}
 
-	if _, err := sendAddTargetIpsRequest([]em.EnvoyTargetAddr{{vm.PublicIP, 8095}}, AddAction, pre, logger); err != nil {
+	if _, err := sendAddTargetIpsRequest([]em.EnvoyTargetAddr{{vm.PublicIP, 8095}}, ActionAddVM, pre, logger); err != nil {
 		s.logger.Error("SendAddTargetIpsRequest failed", slog.String("pre", pre),
 			slog.Any("vm", vm), slog.Any("err", err))
 		return err

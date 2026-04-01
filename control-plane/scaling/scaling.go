@@ -15,26 +15,23 @@ import (
 type NodeStatus int
 
 const (
-	Inactive NodeStatus = iota
-	Dormant
-	Triggered
-	ScalingUp
-	Releasing
-	Permanent
-	End
+	StateInactive NodeStatus = iota
+	StateDormant
+	StateTriggered
+	StateScalingUp
+	StateReleasing
+	StatePermanent
+	StateEnd
 )
 
 const (
-	ScalingActionInit    = "init"
-	ScalingActionScaleUp = "scale_up"
-	ScalingActionSleep   = "sleep"
-	ScalingActionStart   = "start"
-	ScalingActionRelease = "release"
-)
-
-const (
-	AddAction = "add"
-	DelAction = "del"
+	ActionInit    = "init"
+	ActionScaleUp = "scale_up"
+	ActionSleep   = "sleep"
+	ActionStart   = "start"
+	ActionRelease = "release"
+	ActionAddVM   = "add"
+	ActionDelVM   = "del"
 )
 
 // ScaleConfig 定义弹性伸缩相关参数
@@ -58,13 +55,13 @@ type ScaleConfig struct {
 // NodeState 表示每个节点的弹性伸缩状态
 type NodeState struct {
 	ID              string           `json:"id"`
-	VolatilityQueue *util.FixedQueue `json:"volatility_queue,omitempty"` // 波动队列（只暴露 snapshot）
-	Z               float64          `json:"z"`
+	P               float64          `json:"p"` //perturbation
+	Z               float64          `json:"z"` //volatility accumulation
 	State           NodeStatus       `json:"state"`
-	ScaleHistory    []ScaleEvent     `json:"scale_history,omitempty"`
-	ScaledVMs       []VM             `json:"scaled_vms,omitempty"` //目前只能单个轮次转动这个状态机
 	RetainTime      time.Time        `json:"retain_time"`
-	P               float64          `json:"p"`
+	ScaledVMs       []VM             `json:"scaled_vms"` //目前只能单个轮次转动这个状态机
+	ScaleHistory    []ScaleEvent     `json:"scale_history"`
+	VolatilityQueue *util.FixedQueue `json:"volatility_queue"` // 波动队列（只暴露 snapshot）
 }
 
 type ScaleEvent struct {
@@ -80,24 +77,22 @@ type VM struct {
 	//Status    NodeStatus `json:"status"`
 }
 
-// mock interface
 type ScalerOverride struct {
-	Now        *time.Time  `json:"now,omitempty"`
-	Delta      *float64    `json:"delta,omitempty"`
-	State      *NodeStatus `json:"state,omitempty"`
-	RetainTime *time.Time  `json:"retain_time,omitempty"`
+	Now        *time.Time  `json:"now"`
+	Delta      *float64    `json:"delta"`
+	State      *NodeStatus `json:"state"`
+	RetainTime *time.Time  `json:"retain_time"`
 }
 
-// Scaler 弹性伸缩控制器
 type Scaler struct {
 	Interface    VMScalingInterfaces
-	Config       *ScaleConfig    `json:"config"` // 配置
-	Node         *NodeState      `json:"node"`   // 单节点状态
-	stopChan     chan struct{}   // 定时任务停止通道
-	logger       *slog.Logger    //日志
-	tryMu        TryMutex        // 读写锁，保护 node 状态并发访问
+	Config       *ScaleConfig    `json:"config"`             // 配置
+	Node         *NodeState      `json:"node"`               // 单节点状态
 	Override     *ScalerOverride `json:"override,omitempty"` // ====== 测试 / 模拟用 ======
 	ManualAction string
+	stopChan     chan struct{} // 定时任务停止通道
+	tryMu        TryMutex      // 读写锁，保护 node 状态并发访问
+	logger       *slog.Logger  //日志
 }
 
 type TryMutex struct {
@@ -143,48 +138,40 @@ func NewDefaultScaleConfig() *ScaleConfig {
 func NewNodeState(id string, queue *util.FixedQueue) *NodeState {
 	return &NodeState{
 		ID:              id,
-		VolatilityQueue: queue,
+		P:               0, // 当前扰动 perturbation
 		Z:               0, // volatility accumulation
-		State:           Inactive,
-		ScaleHistory:    []ScaleEvent{},
-		ScaledVMs:       []VM{},      //目前只能单个轮次转动这个状态机
+		State:           StateInactive,
 		RetainTime:      time.Time{}, // 保持时间
-		P:               0,           // 当前扰动 perturbation
+		ScaledVMs:       []VM{},      //目前只能单个轮次转动这个状态机
+		ScaleHistory:    []ScaleEvent{},
+		VolatilityQueue: queue,
 	}
 }
 
 // NewScaler 初始化 Scaler 控制器
-func NewScaler(nodeID string, config *ScaleConfig, queue *util.FixedQueue,
-	pre string, logger *slog.Logger) *Scaler {
+func NewScaler(nodeID string, config *ScaleConfig, queue *util.FixedQueue, pre string, logger *slog.Logger) *Scaler {
 
-	logger.Info("NewScaler", slog.String("pre", pre),
-		slog.String("nodeID", nodeID), slog.Any("config", config))
+	logger.Info("NewScaler", slog.String("pre", pre), slog.String("nodeID", nodeID), slog.Any("config", config))
 
 	if config == nil {
 		config = NewDefaultScaleConfig()
 	}
 
-	si := InitInterface(
-		util.Config_.Node.Provider,
-		util.Config_.Scaling.ScalingConfig,
-		pre, logger)
-
+	si := InitInterface(util.Config_.Node.Provider, util.Config_.Scaling.ScalingConfig, pre, logger)
 	return &Scaler{
 		Interface:    si,
 		Config:       config,
 		Node:         NewNodeState(nodeID, queue),
 		stopChan:     make(chan struct{}),
-		logger:       logger,
 		Override:     nil,
-		ManualAction: "init",
+		ManualAction: ActionInit,
+		logger:       logger,
 	}
 }
 
 func (s *Scaler) scalerDump(pre string, logger *slog.Logger) {
-	logger.Info("Scalar dump", slog.String("pre", pre),
-		slog.Any("config", s.Config),
-		slog.Any("node", s.Node),
-		slog.Any("override", s.Override))
+	logger.Info("Scalar dump", slog.String("pre", pre), slog.Any("config", s.Config),
+		slog.Any("node", s.Node), slog.Any("override", s.Override))
 }
 
 func (s *Scaler) now() time.Time {
@@ -226,6 +213,7 @@ type VMScalingInterfaces struct {
 }
 
 func InitInterface(provider, config string, pre string, logger *slog.Logger) VMScalingInterfaces {
+
 	var vs VMScalingInterfaces
 	vs.Operate = nil
 
@@ -244,10 +232,9 @@ func InitInterface(provider, config string, pre string, logger *slog.Logger) VMS
 			logger.Error("ExtractVultrFromInterface failed", slog.String("pre", pre), slog.Any("err", err))
 			return vs
 		}
-		// Vultr的SSHKey从配置中读取，这里传入空字符串兼容参数
 		vs.Operate = vultr.NewScalingOperate(vultrCfg, util.Config_.Scaling.SshKey, pre, logger)
 
-	case AWS: // 新增：AWS分支
+	case AWS:
 		awsCfg, err := aws.ExtractAWSFromInterface(config)
 		if err != nil {
 			logger.Error("ExtractAWSFromInterface failed", slog.String("pre", pre), slog.Any("err", err))
@@ -256,7 +243,7 @@ func InitInterface(provider, config string, pre string, logger *slog.Logger) VMS
 		vs.Operate = aws.NewScalingOperate(awsCfg, util.Config_.Scaling.SshKey, pre, logger)
 
 	default:
-		logger.Error("unsupported provider", slog.String("pre", pre), slog.String("provider", provider))
+		logger.Error("Unsupported provider", slog.String("pre", pre), slog.String("provider", provider))
 	}
 
 	return vs

@@ -21,7 +21,7 @@ func (s *Scaler) ManualScaling(pre, action, ip, vmName string) {
 	}
 
 	switch action {
-	case ScalingActionScaleUp:
+	case ActionScaleUp:
 		ok, vm := s.triggerScalingFromInit(1, vm_, pre, s.logger)
 		if vm.PublicIP == "" {
 			s.logger.Error("Create vm failed", slog.String("pre", pre))
@@ -32,13 +32,13 @@ func (s *Scaler) ManualScaling(pre, action, ip, vmName string) {
 			s.logger.Info("TriggerScalingFromInit success", slog.String("pre", pre))
 		}
 
-	case ScalingActionSleep:
+	case ActionSleep:
 		s.triggerDormant(vm_, pre)
 
-	case ScalingActionStart:
+	case ActionStart:
 		s.triggerScalingFromDormant(vm_, pre)
 
-	case ScalingActionRelease:
+	case ActionRelease:
 		s.triggerRelease(vm_, pre)
 
 	default:
