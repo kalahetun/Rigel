@@ -101,7 +101,10 @@ func V1ClientUploadHandler(logger *slog.Logger) gin.HandlerFunc {
 func V1ProxyUploadHandler(logger *slog.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// 生成请求唯一标识，用于日志追踪
-		pre := util.GenerateRandomLetters(5)
+		pre := c.GetHeader("X-Pre")
+		if len(pre) <= 0 {
+			pre = util.GenerateRandomLetters(5)
+		}
 		logger.Info("V1ProxyUploadHandler start", slog.String("pre", pre))
 
 		// 1. 解析请求头和请求体，构建上传基础信息

@@ -218,8 +218,7 @@ func ProcessLargeFileUpload(cleintB bool, largeFile LargeFile, size int64, pre s
 	// 4. 并发发送请求并等待所有结果
 	var wg sync.WaitGroup
 	var mu sync.Mutex
-	success := true
-	var finalErr error
+	var errs []error
 
 	logger.Info("开始并发发送上传请求",
 		slog.String("pre", pre),
@@ -243,8 +242,8 @@ func ProcessLargeFileUpload(cleintB bool, largeFile LargeFile, size int64, pre s
 			jsonData, err := json.Marshal(task)
 			if err != nil {
 				mu.Lock()
-				success = false
-				finalErr = fmt.Errorf("序列化任务失败（%s）：%v", ip, err)
+				finalErr := fmt.Errorf("序列化任务失败（%s）：%v", ip, err)
+				errs = append(errs, finalErr)
 				mu.Unlock()
 				logger.Error("任务序列化失败",
 					slog.String("pre", pre),
@@ -255,14 +254,38 @@ func ProcessLargeFileUpload(cleintB bool, largeFile LargeFile, size int64, pre s
 				return
 			}
 
-			logger.Info("上传请求准备发送", slog.String("pre", pre), slog.Time("time", time.Now()))
-
-			// 发送POST请求
-			resp, err := http.Post(url, "application/json", bytes.NewBuffer(jsonData))
+			req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
 			if err != nil {
 				mu.Lock()
-				success = false
-				finalErr = fmt.Errorf("请求发送失败（%s）：%v", ip, err)
+				finalErr := fmt.Errorf("创建请求失败（%s）：%v", ip, err)
+				errs = append(errs, finalErr)
+				mu.Unlock()
+				logger.Error("创建请求失败",
+					slog.String("pre", pre),
+					slog.String("func", "ProcessLargeFileUpload"),
+					slog.String("vm_ip", ip),
+					slog.String("error", finalErr.Error()),
+				)
+			}
+
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("X-Pre", pre)
+			//token, err := util.GetGCPShortToken(context.Background(), config.Config_.GCPServiceAccount, pre, logger)
+			//if err != nil {
+			//	mu.Lock()
+			//	finalErr := fmt.Errorf("获取GCP短令牌失败（%s）：%v", ip, err)
+			//	errs = append(errs, finalErr)
+			//	return
+			//}
+			//req.Header.Set("Authorization", "Bearer "+token)
+
+			logger.Info("上传请求准备发送", slog.String("pre", pre), slog.Time("time", time.Now()))
+
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				mu.Lock()
+				finalErr := fmt.Errorf("请求发送失败（%s）：%v", ip, err)
+				errs = append(errs, finalErr)
 				mu.Unlock()
 				logger.Error("HTTP请求发送失败",
 					slog.String("pre", pre),
@@ -277,8 +300,8 @@ func ProcessLargeFileUpload(cleintB bool, largeFile LargeFile, size int64, pre s
 			// 核心校验：HTTP状态码是否为200（http.StatusOK）
 			if resp.StatusCode != http.StatusOK {
 				mu.Lock()
-				success = false
-				finalErr = fmt.Errorf("节点响应状态码异常（%s）：%d", ip, resp.StatusCode)
+				finalErr := fmt.Errorf("节点响应状态码异常（%s）：%d", ip, resp.StatusCode)
+				errs = append(errs, finalErr)
 				mu.Unlock()
 				logger.Error("VM响应状态码异常",
 					slog.String("pre", pre),
@@ -294,8 +317,8 @@ func ProcessLargeFileUpload(cleintB bool, largeFile LargeFile, size int64, pre s
 			_, err = ioutil.ReadAll(resp.Body)
 			if err != nil {
 				mu.Lock()
-				success = false
-				finalErr = fmt.Errorf("读取响应失败（%s）：%v", ip, err)
+				finalErr := fmt.Errorf("读取响应失败（%s）：%v", ip, err)
+				errs = append(errs, finalErr)
 				mu.Unlock()
 				logger.Error("响应体读取失败",
 					slog.String("pre", pre),
@@ -326,7 +349,8 @@ func ProcessLargeFileUpload(cleintB bool, largeFile LargeFile, size int64, pre s
 		// 所有协程正常完成
 	case <-time.After(LargeFileUploadTimeout):
 		// 超时触发
-		finalErr = fmt.Errorf("上传任务超时（超时时间：%v），部分VM可能未完成处理", LargeFileUploadTimeout)
+		finalErr := fmt.Errorf("上传任务超时（超时时间：%v），部分VM可能未完成处理", LargeFileUploadTimeout)
+		errs = append(errs, finalErr)
 		logger.Error("上传任务超时",
 			slog.String("pre", pre),
 			slog.String("func", "ProcessLargeFileUpload"),
@@ -336,7 +360,7 @@ func ProcessLargeFileUpload(cleintB bool, largeFile LargeFile, size int64, pre s
 		return nil, finalErr
 	}
 
-	if success {
+	if len(errs) <= 0 {
 		logger.Info("所有VM上传请求处理完成，全部成功",
 			slog.String("pre", pre),
 			slog.String("func", "ProcessLargeFileUpload"),
@@ -348,8 +372,8 @@ func ProcessLargeFileUpload(cleintB bool, largeFile LargeFile, size int64, pre s
 	logger.Error("部分VM上传请求处理失败",
 		slog.String("pre", pre),
 		slog.String("func", "ProcessLargeFileUpload"),
-		slog.String("error", finalErr.Error()),
+		slog.Any("error", errs),
 		slog.Any("split_file_names", splitFileNames),
 	)
-	return nil, finalErr
+	return nil, nil
 }

@@ -3,7 +3,6 @@ package gcs
 import (
 	"context"
 	"fmt"
-	"golang.org/x/oauth2/google"
 	"golang.org/x/time/rate"
 	"io"
 	"log/slog"
@@ -24,17 +23,20 @@ const (
 type Upload struct {
 	localBaseDir string
 	bucketName   string
+	token        string
 	credFile     string
 }
 
 func NewUpload(
-	localBaseDir, bucketName, credFile string,
+	localBaseDir, bucketName, token string,
+	credFile string,
 	pre string, // 日志前缀
 	logger *slog.Logger,
 ) *Upload {
 	u := &Upload{
 		localBaseDir: localBaseDir,
 		bucketName:   bucketName,
+		token:        token,
 		credFile:     credFile,
 	}
 	// 和NewDownload一致的日志打印逻辑
@@ -142,32 +144,46 @@ func (u *Upload) UploadFile(
 		slog.String("firstHop", firstHop))
 
 	// ---------------------- 5. 生成GCP Access Token ----------------------
-	logger.Info("start to generate GCP access token", slog.String("pre", pre))
-	jsonBytes, err := os.ReadFile(u.credFile)
-	if err != nil {
-		logger.Error("read cred file failed",
-			slog.String("pre", pre),
-			slog.String("credFile", u.credFile),
-			slog.Any("err", err))
-		return fmt.Errorf("read cred file: %w", err)
-	}
+	//logger.Info("start to generate GCP access token", slog.String("pre", pre))
+	//jsonBytes, err := os.ReadFile(u.credFile)
+	//if err != nil {
+	//	logger.Error("read cred file failed",
+	//		slog.String("pre", pre),
+	//		slog.String("credFile", u.credFile),
+	//		slog.Any("err", err))
+	//	return fmt.Errorf("read cred file: %w", err)
+	//}
+	//
+	//reds, err := google.CredentialsFromJSON(ctx, jsonBytes, gcpScopes)
+	//if err != nil {
+	//	logger.Error("Parse GCP credentials failed",
+	//		slog.String("pre", pre),
+	//		slog.Any("err", err))
+	//	return fmt.Errorf("parse credentials: %w", err)
+	//}
+	//
+	//token, err := reds.TokenSource.Token()
+	//if err != nil {
+	//	logger.Error("Get GCP token failed",
+	//		slog.String("pre", pre),
+	//		slog.Any("err", err))
+	//	return fmt.Errorf("get token: %w", err)
+	//}
+	//logger.Info("GCP access token generated successfully", slog.String("pre", pre))
 
-	reds, err := google.CredentialsFromJSON(ctx, jsonBytes, gcpScopes)
-	if err != nil {
-		logger.Error("Parse GCP credentials failed",
-			slog.String("pre", pre),
-			slog.Any("err", err))
-		return fmt.Errorf("parse credentials: %w", err)
+	var token string
+	if len(u.token) >= 0 {
+		token = u.token
+	} else {
+		var err error
+		token, err = util.GetGCPShortToken(ctx, u.credFile, pre, logger)
+		if err != nil {
+			logger.Error("Get GCP token failed",
+				slog.String("pre", pre),
+				slog.Any("err", err))
+			return fmt.Errorf("get token: %w", err)
+		}
 	}
-
-	token, err := reds.TokenSource.Token()
-	if err != nil {
-		logger.Error("Get GCP token failed",
-			slog.String("pre", pre),
-			slog.Any("err", err))
-		return fmt.Errorf("get token: %w", err)
-	}
-	logger.Info("GCP access token generated successfully", slog.String("pre", pre))
 
 	// ---------------------- 6. 构造并发送HTTP请求 ----------------------
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, rateLimitedBody)
@@ -179,7 +195,7 @@ func (u *Upload) UploadFile(
 	}
 
 	// 设置请求头
-	req.Header.Set("Authorization", "Bearer "+token.AccessToken)
+	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/octet-stream")
 	req.Header.Set(util.HeaderXHops, hops)
 	req.Header.Set(util.HeaderXChunkIndex, "1")

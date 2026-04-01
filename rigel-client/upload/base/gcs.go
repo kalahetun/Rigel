@@ -6,8 +6,9 @@ import (
 )
 
 type GCP struct {
-	CredFile   string `json:"cred_file" form:"cred_file"`     // GCP凭证文件
 	BucketName string `json:"bucket_name" form:"bucket_name"` // GCP存储桶
+	Token      string `json:"token" form:"token"`             // GCP访问令牌
+	//CredFile   string `json:"cred_file" form:"cred_file"`     // GCP凭证文件
 }
 
 func ExtractGCPFromInterface(obj interface{}, pre string, logger *slog.Logger) *GCP {

@@ -16,9 +16,10 @@ var (
 
 // Config 一级结构体，对应yaml平级配置
 type Config struct {
-	Port         string `yaml:"port"`           // 服务端口
-	ControlHost  string `yaml:"control_host"`   // 控制接口地址
-	LocalBaseDir string `yaml:"local_base_dir"` // 本地上传目录
+	Port              string `yaml:"port"`           // 服务端口
+	ControlHost       string `yaml:"control_host"`   // 控制接口地址
+	LocalBaseDir      string `yaml:"local_base_dir"` // 本地上传目录
+	GCPServiceAccount string `yaml:"gcp_service_account"`
 }
 
 // ReadYamlConfig 读取同层级的config.yaml配置

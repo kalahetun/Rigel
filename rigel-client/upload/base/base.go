@@ -5,6 +5,7 @@ import (
 	"golang.org/x/time/rate"
 	"io"
 	"log/slog"
+	"rigel-client/config"
 	"rigel-client/upload/gcs"
 	"rigel-client/upload/gcs_client"
 	"rigel-client/upload/local"
@@ -93,8 +94,8 @@ func InitInterface(clientB bool, us UploadStruct, pre string, logger *slog.Logge
 		if gcp_ == nil {
 			return fo
 		}
-		fo.GetFileSize = gcs.NewGetSize(gcp_.BucketName, gcp_.CredFile, pre, logger)
-		fo.DownloadFile = gcs.NewDownload(us.Proxy.LocalDir, gcp_.BucketName, gcp_.CredFile, pre, logger)
+		fo.GetFileSize = gcs.NewGetSize(gcp_.BucketName, config.Config_.GCPServiceAccount, pre, logger)
+		fo.DownloadFile = gcs.NewDownload(us.Proxy.LocalDir, gcp_.BucketName, config.Config_.GCPServiceAccount, pre, logger)
 
 	case util.S3Cloud:
 		aws_ := ExtractAWSFromInterface(us.Source.Interface, pre, logger)
@@ -133,11 +134,11 @@ func InitInterface(clientB bool, us UploadStruct, pre string, logger *slog.Logge
 			return fo
 		}
 		if clientB {
-			fo.UploadFile = gcs_client.NewUpload(us.Proxy.LocalDir, gcp_.BucketName, gcp_.CredFile, pre, logger)
-			fo.ComposeFile = gcs.NewCompose(gcp_.BucketName, gcp_.CredFile, pre, logger)
+			fo.UploadFile = gcs_client.NewUpload(us.Proxy.LocalDir, gcp_.BucketName, config.Config_.GCPServiceAccount, pre, logger)
+			fo.ComposeFile = gcs.NewCompose(gcp_.BucketName, config.Config_.GCPServiceAccount, pre, logger)
 		} else {
-			fo.UploadFile = gcs.NewUpload(us.Proxy.LocalDir, gcp_.BucketName, gcp_.CredFile, pre, logger)
-			fo.ComposeFile = gcs.NewCompose(gcp_.BucketName, gcp_.CredFile, pre, logger)
+			fo.UploadFile = gcs.NewUpload(us.Proxy.LocalDir, gcp_.BucketName, gcp_.Token, config.Config_.GCPServiceAccount, pre, logger)
+			fo.ComposeFile = gcs.NewCompose(gcp_.BucketName, config.Config_.GCPServiceAccount, pre, logger)
 		}
 
 	case util.S3Cloud:

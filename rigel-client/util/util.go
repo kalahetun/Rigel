@@ -1,8 +1,10 @@
 package util
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"golang.org/x/oauth2/google"
 	"log/slog"
 	"math/bits"
 	"math/rand"
@@ -297,4 +299,64 @@ func GetPublicIP() (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(string(buf[:n])), nil
+}
+
+func GetGCPShortToken_(ctx context.Context, credFile, pre string, logger *slog.Logger) (string, error) {
+
+	jsonBytes, err := os.ReadFile(credFile)
+	if err != nil {
+		logger.Error("read cred file failed",
+			slog.String("pre", pre),
+			slog.String("credFile", credFile),
+			slog.Any("err", err))
+		return "", fmt.Errorf("read cred file: %w", err)
+	}
+
+	reds, err := google.CredentialsFromJSON(ctx, jsonBytes,
+		"https://www.googleapis.com/auth/devstorage.full_control")
+	if err != nil {
+		logger.Error("Parse GCP credentials failed",
+			slog.String("pre", pre),
+			slog.Any("err", err))
+		return "", fmt.Errorf("parse credentials: %w", err)
+	}
+
+	token, err := reds.TokenSource.Token()
+	if err != nil {
+		logger.Error("Get GCP token failed",
+			slog.String("pre", pre),
+			slog.Any("err", err))
+		return "", fmt.Errorf("get token: %w", err)
+	}
+
+	return token.AccessToken, nil
+}
+
+func GetGCPShortToken(ctx context.Context, credFile, pre string, logger *slog.Logger) (string, error) {
+	jsonBytes, err := os.ReadFile(credFile)
+	if err != nil {
+		logger.Error("read cred file failed",
+			slog.String("pre", pre),
+			slog.String("credFile", credFile),
+			slog.Any("err", err))
+		return "", fmt.Errorf("read cred file: %w", err)
+	}
+
+	// 1. 先解析 JWT 配置
+	cfg, err := google.JWTConfigFromJSON(jsonBytes, "https://www.googleapis.com/auth/devstorage.full_control")
+	if err != nil {
+		logger.Error("parse JWT config failed", slog.String("pre", pre), slog.Any("err", err))
+		return "", fmt.Errorf("jwt config: %w", err)
+	}
+
+	cfg.Expires = 1 * time.Minute
+
+	// 2. 获取 token
+	token, err := cfg.TokenSource(ctx).Token()
+	if err != nil {
+		logger.Error("get GCP token failed", slog.String("pre", pre), slog.Any("err", err))
+		return "", fmt.Errorf("get token: %w", err)
+	}
+
+	return token.AccessToken, nil
 }
