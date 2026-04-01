@@ -70,9 +70,6 @@ func RedirectImp(fo base.FileOperateInterfaces, task ChunkTask, hops string,
 		}
 	}()
 
-	logger.Info("download object success", slog.String("pre", pre),
-		slog.String("objectName", task.ObjectName))
-
 	// 上传到目标端
 	select {
 	case <-ctx.Done():
@@ -87,13 +84,16 @@ func RedirectImp(fo base.FileOperateInterfaces, task ChunkTask, hops string,
 		logger.Error("UploadFile is nil", slog.String("pre", pre))
 		return fmt.Errorf("%w: UploadFile is nil", ErrInterfaceNotImplemented)
 	}
+
+	logger.Info("Download success, _Time", slog.String("pre", pre), slog.String("objectName", task.ObjectName))
+
 	err = fo.UploadFile.UploadFile(ctx, task.ObjectName, length, hops, rateLimiter, reader, inMemory, pre, logger)
 	if err != nil {
-		logger.Error("UploadFile failed", slog.String("pre", pre),
+		logger.Error("UploadFile failed, _Time", slog.String("pre", pre),
 			slog.String("index", task.Index), slog.Any("err", err))
 		return err
 	} else {
-		logger.Info("UploadFile success", slog.String("pre", pre),
+		logger.Info("UploadFile success, _Time", slog.String("pre", pre),
 			slog.String("index", task.Index), slog.Time("time", time.Now()))
 	}
 
@@ -109,9 +109,7 @@ func RedirectImp(fo base.FileOperateInterfaces, task ChunkTask, hops string,
 	chunk.LastSend = startTime
 	chunk.Acked = int(ChunkStatusCompleted)
 	task.Chunks.Set(task.Index, chunk)
-	logger.Info("chunk transfer success, set acked=2", slog.String("pre", pre),
-		slog.String("index", task.Index), slog.Time("time", time.Now()))
-
-	logger.Info("UploadRedirectImp success", slog.String("pre", pre))
+	logger.Info("Chunk transfer success, _Time", slog.String("pre", pre), slog.String("index", task.Index))
+	logger.Info("UploadRedirectImp success", slog.String("pre", pre), slog.String("index", task.Index))
 	return nil
 }

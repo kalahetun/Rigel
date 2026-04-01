@@ -91,7 +91,7 @@ func (u *Upload) UploadFile(
 		localFilePath = filepath.Clean(localFilePath)
 		f, err := os.Open(localFilePath)
 		if err != nil {
-			logger.Error("open file err", slog.Any("err", err))
+			logger.Error("open file err", slog.String("pre", pre), slog.Any("err", err))
 			return err
 		}
 		proxyReader = f
@@ -181,7 +181,7 @@ func (u *Upload) UploadFile(
 		return fmt.Errorf("upload fail %d: %s", resp.StatusCode, string(body))
 	}
 
-	logger.Info("upload success", slog.String("object", objectName))
+	logger.Info("upload success", slog.String("pre", pre), slog.String("object", objectName))
 	return nil
 }
 
