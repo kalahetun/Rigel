@@ -26,7 +26,11 @@ func NewUserRoutingAPIHandler(gm *routing.GraphManager, logger *slog.Logger) *Us
 // GetUserRoute 处理 POST /api/v1/routing
 func (h *UserRoutingAPIHandler) GetUserRoute(c *gin.Context) {
 
-	pre := util.GenerateRandomLetters(5)
+	pre := c.GetHeader("X-Pre")
+	if len(pre) <= 0 {
+		pre = util.GenerateRandomLetters(5)
+	}
+
 	h.Logger.Info("GetUserRoute", slog.String("pre", pre))
 
 	resp := model.ApiResponse{

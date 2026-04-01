@@ -16,7 +16,12 @@ use futures_util::stream::StreamExt;
 
 /// 核心代理处理函数（对应 Go 的 handler）
 pub async fn proxy_handler(req: Request<Body>) -> impl IntoResponse {
-    let pre = generate_random_letters(5);
+    let pre = req.headers()
+        .get("X-Pre")
+        .and_then(|v| v.to_str().ok())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| generate_random_letters(5));
     let headers = req.headers().clone();
     let uri = req.uri().clone();
     let method = req.method().clone();
@@ -80,10 +85,10 @@ pub async fn proxy_handler(req: Request<Body>) -> impl IntoResponse {
 
     // 构建目标 URL
     let target_url = format!(
-        "{}://{}:{}{}",
+        "{}://{}{}",
         scheme,
         target_ip,
-        target_port,
+//         target_port,
         uri.path_and_query().map(|pq| pq.as_str()).unwrap_or("")
     );
     info!(%pre, target_url, "Forwarding to target");

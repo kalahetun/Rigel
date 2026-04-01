@@ -129,7 +129,10 @@ func getClient(target string, scheme string) *http.Client {
 func handler(logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		pre := util.GenerateRandomLetters(5)
+		pre := r.Header.Get("X-Pre")
+		if len(pre) <= 0 {
+			pre = util.GenerateRandomLetters(5)
+		}
 
 		hopsStr := r.Header.Get(HeaderHops)
 		indexStr := r.Header.Get(HeaderIndex)

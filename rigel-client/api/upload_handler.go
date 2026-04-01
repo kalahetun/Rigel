@@ -155,6 +155,7 @@ func getRoutingInfoFromServiceControlPlane(uploadInfo base.UploadStruct, pre str
 	// 设置请求头
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set(util.HeaderFileName, uploadInfo.File.NewFileName)
+	req.Header.Set("X-Pre", pre)
 
 	// 发送请求到B服务
 	client := &http.Client{Timeout: 10 * time.Second}

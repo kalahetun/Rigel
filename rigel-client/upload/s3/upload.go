@@ -163,6 +163,7 @@ func (u *Upload) UploadFile(
 	req.ContentLength = contentLength
 
 	// 你的代理头
+	req.Header.Set("X-Pre", pre)
 	req.Header.Set(util.HeaderXHops, hops)
 	req.Header.Set(util.HeaderXChunkIndex, "1")
 	req.Header.Set(util.HeaderXRateLimitEnable, "true")

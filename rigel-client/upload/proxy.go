@@ -86,16 +86,13 @@ func RedirectImp(fo base.FileOperateInterfaces, task ChunkTask, hops string,
 	}
 
 	logger.Info("Download success, _Time", slog.String("pre", pre), slog.String("objectName", task.ObjectName))
-
 	err = fo.UploadFile.UploadFile(ctx, task.ObjectName, length, hops, rateLimiter, reader, inMemory, pre, logger)
 	if err != nil {
 		logger.Error("UploadFile failed, _Time", slog.String("pre", pre),
-			slog.String("index", task.Index), slog.Any("err", err))
+			slog.String("objectName", task.ObjectName), slog.Any("err", err))
 		return err
-	} else {
-		logger.Info("UploadFile success, _Time", slog.String("pre", pre),
-			slog.String("index", task.Index), slog.Time("time", time.Now()))
 	}
+	logger.Info("UploadFile success, _Time", slog.String("pre", pre), slog.String("objectName", task.ObjectName))
 
 	// 新状态前最后检查
 	select {
@@ -109,7 +106,7 @@ func RedirectImp(fo base.FileOperateInterfaces, task ChunkTask, hops string,
 	chunk.LastSend = startTime
 	chunk.Acked = int(ChunkStatusCompleted)
 	task.Chunks.Set(task.Index, chunk)
-	logger.Info("Chunk transfer success, _Time", slog.String("pre", pre), slog.String("index", task.Index))
+	logger.Info("Chunk transfer success", slog.String("pre", pre), slog.String("index", task.Index))
 	logger.Info("UploadRedirectImp success", slog.String("pre", pre), slog.String("index", task.Index))
 	return nil
 }
