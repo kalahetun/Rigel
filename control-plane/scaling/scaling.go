@@ -152,7 +152,6 @@ func NewNodeState(id string, queue *util.FixedQueue) *NodeState {
 func NewScaler(nodeID string, config *ScaleConfig, queue *util.FixedQueue, pre string, logger *slog.Logger) *Scaler {
 
 	logger.Info("NewScaler", slog.String("pre", pre), slog.String("nodeID", nodeID), slog.Any("config", config))
-
 	if config == nil {
 		config = NewDefaultScaleConfig()
 	}
@@ -225,7 +224,6 @@ func InitInterface(provider, config string, pre string, logger *slog.Logger) VMS
 			return vs
 		}
 		vs.Operate = gcp.NewScalingOperate(gcpCfg, util.Config_.Scaling.SshKey, pre, logger)
-
 	case Vultr:
 		vultrCfg, err := vultr.ExtractVultrFromInterface(config)
 		if err != nil {
@@ -233,7 +231,6 @@ func InitInterface(provider, config string, pre string, logger *slog.Logger) VMS
 			return vs
 		}
 		vs.Operate = vultr.NewScalingOperate(vultrCfg, util.Config_.Scaling.SshKey, pre, logger)
-
 	case AWS:
 		awsCfg, err := aws.ExtractAWSFromInterface(config)
 		if err != nil {
@@ -241,7 +238,6 @@ func InitInterface(provider, config string, pre string, logger *slog.Logger) VMS
 			return vs
 		}
 		vs.Operate = aws.NewScalingOperate(awsCfg, util.Config_.Scaling.SshKey, pre, logger)
-
 	default:
 		logger.Error("Unsupported provider", slog.String("pre", pre), slog.String("provider", provider))
 	}

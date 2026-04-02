@@ -31,20 +31,19 @@ func NewScalingOperate(gcpCfg *Config, sshKey string,
 		projectID:    gcpCfg.ProjectID,
 		zone:         gcpCfg.Zone,
 		credFile:     gcpCfg.CredFile,
-		fireWallTag:  FireWallTag,  // 填充常量
-		instanceType: InstanceType, // 填充常量
-		sourceImage:  SourceImage,  // 填充常量
-		sshKey:       sshKey,       // 填充额外入参
+		fireWallTag:  FireWallTag,
+		instanceType: InstanceType,
+		sourceImage:  SourceImage,
+		sshKey:       sshKey,
 	}
 
 	logger.Info("NewGetSize", slog.String("pre", pre), slog.Any("ScalingOperate", *so))
 	return so
 }
 
-// ExtractGCPFromInterface 解析JSON字符串为*GCPConfig，自动填充常量默认值
 func ExtractGCPFromInterface(data string) (*Config, error) {
 	if data == "" {
-		return nil, errors.New("输入的JSON字符串为空")
+		return nil, errors.New("data is nil")
 	}
 
 	config := &Config{}
@@ -66,12 +65,7 @@ type ScalingOperate struct {
 	sshKey       string
 }
 
-func (gc *ScalingOperate) CreateVM(
-	ctx context.Context,
-	vmName string,
-	pre string,
-	logger *slog.Logger,
-) error {
+func (gc *ScalingOperate) CreateVM(ctx context.Context, vmName string, pre string, logger *slog.Logger) error {
 
 	instancesClient, err := compute.NewInstancesRESTClient(ctx, option.WithCredentialsFile(gc.credFile))
 	if err != nil {

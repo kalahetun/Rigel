@@ -153,7 +153,6 @@ func UploadDirSFTP(sshClient *ssh.Client, localDir, remoteDir string) error {
 		}
 
 		remotePath := filepath.Join(remoteDir, relPath)
-
 		if info.IsDir() {
 			// 创建远端目录
 			return sftpClient.MkdirAll(remotePath)
@@ -174,7 +173,6 @@ func UploadDirSFTP(sshClient *ssh.Client, localDir, remoteDir string) error {
 		if _, err := io.Copy(dstFile, srcFile); err != nil {
 			return err
 		}
-
 		if err := sftpClient.Chmod(remotePath, info.Mode()); err != nil {
 			return err
 		}

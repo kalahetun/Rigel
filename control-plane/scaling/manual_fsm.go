@@ -31,16 +31,12 @@ func (s *Scaler) ManualScaling(pre, action, ip, vmName string) {
 		} else if vm.PublicIP != "" && ok {
 			s.logger.Info("TriggerScalingFromInit success", slog.String("pre", pre))
 		}
-
 	case ActionSleep:
 		s.triggerDormant(vm_, pre)
-
 	case ActionStart:
 		s.triggerScalingFromDormant(vm_, pre)
-
 	case ActionRelease:
 		s.triggerRelease(vm_, pre)
-
 	default:
 		s.logger.Warn("The action is nonexist", slog.String("pre", pre), slog.String("odd action", action))
 	}

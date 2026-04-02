@@ -54,23 +54,17 @@ func (s *Scaler) calculatePerturbation(pre string) float64 {
 	avgCache_ := queue[1].(storage.NetworkTelemetry).NodeCongestion.AvgWeightedCache
 	threshold := s.Config.VolatilityThreshold
 
-	if (avgCache <= threshold && avgCache_ <= threshold) ||
-		(avgCache >= threshold && avgCache_ >= threshold) {
-
+	if (avgCache <= threshold && avgCache_ <= threshold) || (avgCache >= threshold && avgCache_ >= threshold) {
 		s.logger.Info("Latest volatility is insignificant",
 			slog.String("pre", pre), slog.Float64("avg_cache_curr", avgCache),
 			slog.Float64("avg_cache_prev", avgCache_), slog.Float64("threshold", threshold))
 		return 0
 	}
-
 	return math.Abs(avgCache - avgCache_)
-
 }
 
 func (s *Scaler) calculateVolatilityAccumulation() float64 {
-
 	z := s.Node.P*s.Config.VolatilityWeight + s.Node.Z*s.Config.DecayFactor
-
 	if z < 0 {
 		return 0
 	}
@@ -78,16 +72,12 @@ func (s *Scaler) calculateVolatilityAccumulation() float64 {
 }
 
 func (s *Scaler) calculateDelta(node *NodeState) float64 {
-
 	if s.Override != nil && s.Override.Delta != nil {
 		return *s.Override.Delta
 	}
-
 	P := node.P
 	Z := node.Z
-
 	cost := s.calculateCost(node)
-
 	delta := -s.Config.DecayFactor*s.Config.VolatilityWeight*s.Config.QueueWeight*Z*P + s.Config.CostWeight*cost
 	return delta
 }
@@ -114,11 +104,6 @@ func (s *Scaler) AutoScaling() {
 		return
 	}
 	defer s.tryMu.Unlock()
-
-	//if s.ManualAction != ActionInit {
-	//	s.logger.Info("In the manual mode", slog.String("pre", pre), slog.String("action", s.ManualAction))
-	//	return
-	//}
 
 	//1. 检查当前状态
 	s.scalerDump(pre+"-before-check-state", s.logger)
@@ -156,7 +141,6 @@ func (s *Scaler) AutoScaling() {
 	node.P = s.calculatePerturbation(pre)
 	node.Z = s.calculateVolatilityAccumulation()
 	delta := s.calculateDelta(s.Node)
-
 	s.scalerDump(pre+"-after-calculate-delta", s.logger)
 	s.logger.Info("Calculate delta", slog.String("pre", pre), slog.Float64("delta", delta))
 
@@ -226,7 +210,6 @@ func (s *Scaler) AutoScaling() {
 func (s *Scaler) triggerScalingFromDormant(vm_ VM, pre string) bool {
 
 	s.logger.Info("TriggerScalingFromDormant", slog.String("pre", pre), slog.Any("VM", vm_))
-
 	var ip string
 
 	if vm_.PublicIP != "" {
@@ -250,7 +233,6 @@ func (s *Scaler) triggerScalingFromDormant(vm_ VM, pre string) bool {
 func (s *Scaler) triggerDormant(vm_ VM, pre string) bool {
 
 	s.logger.Info("TriggerDormant", slog.String("pre", pre), slog.Any("VM", vm_))
-
 	var ip string
 
 	if vm_.PublicIP != "" {
@@ -274,8 +256,8 @@ func (s *Scaler) triggerDormant(vm_ VM, pre string) bool {
 func (s *Scaler) triggerRelease(vm_ VM, pre string) bool {
 
 	s.logger.Info("TriggerRelease", slog.String("pre", pre), slog.Any("VM", vm_))
-
 	var vm VM
+
 	if vm_.PublicIP != "" {
 		vm = vm_
 	} else {
@@ -298,15 +280,12 @@ func (s *Scaler) triggerRelease(vm_ VM, pre string) bool {
 	//update envoy 配置
 	if _, err := sendAddTargetIpsRequest([]em.EnvoyTargetAddr{{IP: vm.PublicIP, Port: 8095}},
 		ActionDelVM, pre, logger); err != nil {
-
 		s.logger.Error("SendAddTargetIpsRequest failed", slog.String("pre", pre),
 			slog.Any("VM", vm_), slog.Any("err", err))
 	} else {
-
 		s.logger.Info("SendAddTargetIpsRequest success", slog.String("pre", pre),
 			slog.Any("VM", vm_))
 	}
-
 	s.logger.Info("Releasing node", slog.String("pre", pre), slog.String("VM name", vm.VMName))
 	return true
 }
@@ -422,7 +401,6 @@ func (s *Scaler) createVM(ctx context.Context, pre string, logger *slog.Logger) 
 	if err := s.Interface.Operate.CreateVM(ctx, vmName, pre, logger); err != nil {
 		return VM{}, err
 	}
-
 	logger.Info("Waiting for VM startup & public IP", slog.String("pre", pre), slog.String("VM", vmName))
 
 	const (
@@ -471,12 +449,10 @@ func (s *Scaler) deployAndAttachVM(vm VM, pre string, logger *slog.Logger) error
 		pre,
 		logger,
 	); err != nil {
-
 		s.logger.Error("DeployAndAttachVM failed", slog.String("pre", pre),
 			slog.String("binaryPlane", binaryPlane), slog.Any("vm", vm), slog.Any("err", err))
 		return err
 	} else {
-
 		s.logger.Info("deployAndAttachVM success", slog.String("pre", pre),
 			slog.String("binaryPlane", binaryPlane), slog.Any("vm", vm))
 	}
@@ -493,22 +469,20 @@ func (s *Scaler) deployAndAttachVM(vm VM, pre string, logger *slog.Logger) error
 		pre,
 		logger,
 	); err != nil {
-
 		s.logger.Error("DeployAndAttachVM failed", slog.String("pre", pre),
 			slog.String("binaryPlane", binaryPlane), slog.Any("VM", vm), slog.Any("err", err))
 		return err
 	} else {
-
 		s.logger.Info("DeployAndAttachVM success", slog.String("pre", pre),
 			slog.String("binaryPlane", binaryPlane), slog.Any("VM", vm))
 	}
 
-	if _, err := sendAddTargetIpsRequest([]em.EnvoyTargetAddr{{IP: vm.PublicIP, Port: 8095}}, ActionAddVM, pre, logger); err != nil {
+	if _, err := sendAddTargetIpsRequest([]em.EnvoyTargetAddr{{IP: vm.PublicIP, Port: 8095}},
+		ActionAddVM, pre, logger); err != nil {
 		s.logger.Error("SendAddTargetIpsRequest failed", slog.String("pre", pre),
 			slog.Any("VM", vm), slog.Any("err", err))
 		return err
 	} else {
-
 		s.logger.Info("SendAddTargetIpsRequest success", slog.String("pre", pre),
 			slog.Any("VM", vm))
 	}
@@ -518,7 +492,6 @@ func (s *Scaler) deployAndAttachVM(vm VM, pre string, logger *slog.Logger) error
 func (s *Scaler) triggerScalingFromInit(n int, vm_ VM, pre string, logger *slog.Logger) (bool, VM) {
 
 	logger.Info("TriggerScalingFromInit", slog.String("pre", pre), slog.Any("n", n), slog.Any("vm", vm_))
-
 	vm := VM{}
 	var err error
 
@@ -527,7 +500,6 @@ func (s *Scaler) triggerScalingFromInit(n int, vm_ VM, pre string, logger *slog.
 		vm = vm_
 	} else {
 		if len(s.Node.ScaledVMs) == 0 {
-
 			s.logger.Info("Crete new VM", slog.String("pre", pre))
 			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 			defer cancel()
@@ -537,12 +509,10 @@ func (s *Scaler) triggerScalingFromInit(n int, vm_ VM, pre string, logger *slog.
 				return false, VM{}
 			}
 		} else {
-
 			vm = s.Node.ScaledVMs[0]
 			s.logger.Info("Already exist VM", slog.String("pre", pre))
 		}
 	}
-
 	logger.Info("Create VM success", slog.String("pre", pre), slog.Any("VM", vm))
 
 	err = s.deployAndAttachVM(vm, pre, logger)
