@@ -15,7 +15,7 @@ func (s *Scaler) ManualScaling(pre, action, ip, vmName string) {
 	vm_ := VM{}
 	if ip != "" && vmName != "" {
 		s.logger.Info("ManualScaling", slog.String("pre", pre),
-			slog.String("ip", ip), slog.String("vmName", vmName))
+			slog.String("ip", ip), slog.String("VM", vmName))
 		vm_.VMName = vmName
 		vm_.PublicIP = ip
 	}

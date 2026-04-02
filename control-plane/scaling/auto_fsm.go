@@ -206,7 +206,7 @@ func (s *Scaler) AutoScaling() {
 	// 如果没有触发扩容，根据当前状态处理
 	switch s.getState() {
 	case StateDormant, StatePermanent:
-		s.logger.Info("Node is dormant or permanent, and retention time reached", slog.String("pre", pre))
+		s.logger.Info("Node is dormant or permanent, retention is not available", slog.String("pre", pre))
 		node.State = StateReleasing
 		s.triggerRelease(VM{}, pre)
 		node.State = StateInactive
@@ -221,7 +221,6 @@ func (s *Scaler) AutoScaling() {
 	}
 
 	s.scalerDump(pre+"-before-end", s.logger)
-	return
 }
 
 func (s *Scaler) triggerScalingFromDormant(vm_ VM, pre string) bool {
@@ -301,7 +300,7 @@ func (s *Scaler) triggerRelease(vm_ VM, pre string) bool {
 		ActionDelVM, pre, logger); err != nil {
 
 		s.logger.Error("SendAddTargetIpsRequest failed", slog.String("pre", pre),
-			slog.Any("vm", vm_), slog.Any("err", err))
+			slog.Any("VM", vm_), slog.Any("err", err))
 	} else {
 
 		s.logger.Info("SendAddTargetIpsRequest success", slog.String("pre", pre),
@@ -381,7 +380,6 @@ func setHealthState(apiHost, setState, pre string, logger *slog.Logger) bool {
 func sendAddTargetIpsRequest(targetIps []em.EnvoyTargetAddr,
 	action, pre string, logger *slog.Logger) (*em.APICommonResp, error) {
 
-	// 构建请求体
 	url := "http://127.0.0.1:8081/envoy/cfg/setTargetIps"
 	body, err := json.Marshal(targetIps)
 	if err != nil {
@@ -391,25 +389,21 @@ func sendAddTargetIpsRequest(targetIps []em.EnvoyTargetAddr,
 	logger.Info("SendAddTargetIpsRequest", slog.String("pre", pre),
 		slog.String("action", action), slog.Any("addr", targetIps))
 
-	// 构建请求
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %v", err)
 	}
 
-	// 设置 Content-Type 和自定义 Header
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Action", action) // <- 这里加上 action
+	req.Header.Set("Action", action)
 
-	// 发送请求
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %v", err)
 	}
 	defer resp.Body.Close()
 
-	// 解析响应体
 	var response em.APICommonResp
 	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %v", err)
@@ -418,21 +412,17 @@ func sendAddTargetIpsRequest(targetIps []em.EnvoyTargetAddr,
 	return &response, nil
 }
 
-func (s *Scaler) createVM(
-	ctx context.Context,
-	pre string,
-	logger *slog.Logger,
-) (VM, error) {
+func (s *Scaler) createVM(ctx context.Context, pre string, logger *slog.Logger) (VM, error) {
 
 	vmName := util.Config_.Node.Provider + "-" + util.GenerateRandomLetters_(5)
-	logger.Info("Creating VM", slog.String("pre", pre), slog.String("vmName", vmName))
+	logger.Info("Creating VM", slog.String("pre", pre), slog.String("VM", vmName))
 
 	// 1 creating
 	if err := s.Interface.Operate.CreateVM(ctx, vmName, pre, logger); err != nil {
 		return VM{}, err
 	}
 
-	logger.Info("Waiting for VM startup & public IP", slog.String("pre", pre), slog.String("vmName", vmName))
+	logger.Info("Waiting for VM startup & public IP", slog.String("pre", pre), slog.String("VM", vmName))
 
 	const (
 		totalTimeout = 2 * time.Minute

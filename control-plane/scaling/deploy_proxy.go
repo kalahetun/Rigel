@@ -25,8 +25,7 @@ var (
 )
 
 func InitScalingConfig() {
-	uu := util.Config_ // 这里假设你已经加载了 Config
-
+	uu := util.Config_
 	username = uu.Scaling.Username
 	localPathProxy = uu.Scaling.LocalPathProxy
 	remotePathProxy = uu.Scaling.RemotePathProxy
@@ -37,26 +36,24 @@ func InitScalingConfig() {
 	privateKey = uu.Scaling.PrivateKey
 }
 
-// SSHConfig 包含 SSH 连接所需的配置信息
 type SSHConfig struct {
 	Username   string
 	Host       string
 	Port       string
-	PrivateKey string // 私钥文件路径
+	PrivateKey string
 }
 
-func sshToDeployBinary(config *SSHConfig, localPath_, remotePath_, binaryString_,
-	pre string, logger *slog.Logger) error {
+func sshToDeployBinary(config *SSHConfig, localPath_, remotePath_, binaryString_, pre string, logger *slog.Logger) error {
 
-	logger.Info("sshToDeployBinary", slog.String("pre", pre))
+	logger.Info("SshToDeployBinary", slog.String("pre", pre))
 
-	// === 1. 读取本地私钥文件 ===
+	//
 	key, err := os.ReadFile(config.PrivateKey)
 	if err != nil {
 		return fmt.Errorf("read private key failed: %v", err)
 	}
 
-	logger.Info("read private key success", slog.String("pre", pre),
+	logger.Info("Read private key success", slog.String("pre", pre),
 		slog.String("binaryString", binaryString_))
 
 	signer, err := ssh.ParsePrivateKey(key)
@@ -64,7 +61,7 @@ func sshToDeployBinary(config *SSHConfig, localPath_, remotePath_, binaryString_
 		return fmt.Errorf("parse private key failed: %v", err)
 	}
 
-	logger.Info("parse private key success", slog.String("pre", pre),
+	logger.Info("Parse private key success", slog.String("pre", pre),
 		slog.String("binaryString", binaryString_))
 
 	clientConfig := &ssh.ClientConfig{
@@ -72,36 +69,36 @@ func sshToDeployBinary(config *SSHConfig, localPath_, remotePath_, binaryString_
 		Auth: []ssh.AuthMethod{
 			ssh.PublicKeys(signer),
 		},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // 生产环境请改为验证 host key
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 	}
 
-	// === 2. TCP Dial 加 5s 超时 ===
+	//
 	dialer := &net.Dialer{Timeout: 3 * time.Second}
 	tcpConn, err := dialer.Dial("tcp", net.JoinHostPort(config.Host, config.Port))
 	if err != nil {
 		return fmt.Errorf("failed to dial TCP: %v", err)
 	}
 
-	logger.Info("tcp Dial success", slog.String("pre", pre),
+	logger.Info("Tcp Dial success", slog.String("pre", pre),
 		slog.String("binaryString", binaryString_))
 
-	// === 3. 建立 SSH 连接 ===
+	//
 	conn, chans, reqs, err := ssh.NewClientConn(tcpConn, net.JoinHostPort(config.Host, config.Port), clientConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create SSH client: %v", err)
 	}
 	defer conn.Close()
 
-	logger.Info("ssh Dial success", slog.String("pre", pre),
+	logger.Info("Ssh Dial success", slog.String("pre", pre),
 		slog.String("binaryString", binaryString_))
 
 	client := ssh.NewClient(conn, chans, reqs)
 	defer client.Close()
 
-	logger.Info("ssh new NewClient", slog.String("pre", pre),
+	logger.Info("Ssh new NewClient", slog.String("pre", pre),
 		slog.String("binaryString", binaryString_))
 
-	// === 4. 上传文件 ===
+	//
 	err = UploadDirSFTP(client, localPath_, remotePath_)
 	if err != nil {
 		return fmt.Errorf("failed to upload binary: %v", err)
@@ -109,7 +106,7 @@ func sshToDeployBinary(config *SSHConfig, localPath_, remotePath_, binaryString_
 	logger.Info("UploadDirSFTP success", slog.String("pre", pre),
 		slog.String("binaryString", binaryString_))
 
-	// === 5. 启动远程二进制文件 ===
+	//
 	session, err := client.NewSession()
 	if err != nil {
 		return fmt.Errorf("failed to create session: %v", err)
@@ -123,7 +120,7 @@ func sshToDeployBinary(config *SSHConfig, localPath_, remotePath_, binaryString_
 	if err != nil {
 		return fmt.Errorf("failed to start binary: %v", err)
 	}
-	logger.Info("startBinaryInBackground success", slog.String("pre", pre),
+	logger.Info("StartBinaryInBackground success", slog.String("pre", pre),
 		slog.String("binaryString", binaryString_))
 
 	return nil
@@ -131,13 +128,13 @@ func sshToDeployBinary(config *SSHConfig, localPath_, remotePath_, binaryString_
 
 // uploadBinaryToRemote 上传二进制文件到远程服务器
 func UploadDirSFTP(sshClient *ssh.Client, localDir, remoteDir string) error {
+
 	sftpClient, err := sftp.NewClient(sshClient)
 	if err != nil {
 		return fmt.Errorf("create sftp client failed: %w", err)
 	}
 	defer sftpClient.Close()
 
-	// 确保远端根目录存在
 	if err := sftpClient.MkdirAll(remoteDir); err != nil {
 		return fmt.Errorf("create remote dir failed: %w", err)
 	}
@@ -162,26 +159,22 @@ func UploadDirSFTP(sshClient *ssh.Client, localDir, remoteDir string) error {
 			return sftpClient.MkdirAll(remotePath)
 		}
 
-		// 打开本地文件
 		srcFile, err := os.Open(path)
 		if err != nil {
 			return err
 		}
 		defer srcFile.Close()
 
-		// 创建远端文件
 		dstFile, err := sftpClient.Create(remotePath)
 		if err != nil {
 			return err
 		}
 		defer dstFile.Close()
 
-		// 复制内容
 		if _, err := io.Copy(dstFile, srcFile); err != nil {
 			return err
 		}
 
-		// 保留权限（可选但推荐）
 		if err := sftpClient.Chmod(remotePath, info.Mode()); err != nil {
 			return err
 		}
@@ -191,15 +184,8 @@ func UploadDirSFTP(sshClient *ssh.Client, localDir, remoteDir string) error {
 }
 
 // startBinaryInBackground 在远程服务器上启动二进制文件，且不阻塞
-func startBinaryInBackground(
-	session *ssh.Session,
-	remotePath_ string,
-	binaryString_ string,
-	pre string,
-	logger *slog.Logger,
-) error {
+func startBinaryInBackground(session *ssh.Session, remotePath_ string, binaryString_ string, pre string, logger *slog.Logger) error {
 
-	// 基本防御
 	if remotePath_ == "" || binaryString_ == "" {
 		return fmt.Errorf("remotePath or binaryString is empty")
 	}
@@ -218,11 +204,9 @@ func startBinaryInBackground(
 		slog.String("cmd", cmd),
 	)
 
-	// 用 goroutine 包一层，防止 SSH 永久阻塞
 	errCh := make(chan error, 1)
 
 	go func() {
-		// Run 可能永远不返回
 		errCh <- session.Run(cmd)
 	}()
 
@@ -237,7 +221,6 @@ func startBinaryInBackground(
 		)
 
 	case <-time.After(3 * time.Second):
-		//超时放行 —— 这是预期行为
 		logger.Warn("SSH session did not return, assume binary started",
 			slog.String("pre", pre),
 			slog.String("binary", binaryString_),
@@ -247,15 +230,12 @@ func startBinaryInBackground(
 	return nil
 }
 
-// deployBinaryToServer 这个函数将配置与文件路径作为输入，执行 SSH 连接、文件上传和启动操作
 func deployBinaryToServer(username, host, port, localPath, remotePath, binaryString, pre string, logger *slog.Logger) error {
-	// 创建 SSH 配置
 	config := &SSHConfig{
 		Username:   username,
 		Host:       host,
 		Port:       port,
 		PrivateKey: privateKey,
 	}
-	// 调用 SSH 连接并部署二进制文件
 	return sshToDeployBinary(config, localPath, remotePath, binaryString, pre, logger)
 }
