@@ -202,7 +202,7 @@ const (
 )
 
 type OperateInterface interface {
-	CreateVM(ctx context.Context, vmName string, pre string, logger *slog.Logger) error
+	CreateVM(ctx context.Context, vmName string, pre string, logger *slog.Logger) (string, error)
 	GetVMPublicIP(ctx context.Context, vmName string, pre string, logger *slog.Logger) (string, error)
 	DeleteVM(ctx context.Context, vmName string, pre string, logger *slog.Logger) error
 }

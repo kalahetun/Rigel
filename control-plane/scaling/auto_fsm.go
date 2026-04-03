@@ -398,8 +398,10 @@ func (s *Scaler) createVM(ctx context.Context, pre string, logger *slog.Logger) 
 	logger.Info("Creating VM", slog.String("pre", pre), slog.String("VM", vmName))
 
 	// 1 creating
-	if err := s.Interface.Operate.CreateVM(ctx, vmName, pre, logger); err != nil {
+	if id, err := s.Interface.Operate.CreateVM(ctx, vmName, pre, logger); err != nil {
 		return VM{}, err
+	} else if id != "" {
+		vmName = id
 	}
 	logger.Info("Waiting for VM startup & public IP", slog.String("pre", pre), slog.String("VM", vmName))
 

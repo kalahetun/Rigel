@@ -12,28 +12,20 @@ import (
 	"time"
 )
 
-// =====================
-// 常量定义（对齐GCP的常量风格）
-// =====================
 const (
 	VultrAPIBase = "https://api.vultr.com/v2"
 	OsID         = 535 // Debian 12
-	Timeout      = 10 * time.Second
+	Plan         = "voc-g-8c-32gb-160s"
+	//Timeout      = 1 * time.Minute
 )
 
-// =====================
-// 配置结构体（对齐GCPConfig）
-// =====================
-type VultrConfig struct {
+type Config struct {
 	APIKey string `json:"apiKey"` // Vultr API密钥
 	Region string `json:"region"` // 机房区域（如 "ewr"）
-	Plan   string `json:"plan"`   // 实例规格（如 "vc2-1c-2gb"）
+	//Plan   string `json:"plan"`   // 实例规格（如 "vc2-1c-2gb"）
 	//SSHKeys string `json:"sshKeys"` // SSH密钥ID列表（逗号分隔）
 }
 
-// =====================
-// 核心操作结构体（对齐ScalingOperate）
-// =====================
 type ScalingOperate struct {
 	apiKey  string   // Vultr API密钥
 	region  string   // 区域
@@ -43,18 +35,9 @@ type ScalingOperate struct {
 	timeout time.Duration
 }
 
-// =====================
-// 接口实现（对齐OperateInterface）
-// =====================
-// CreateVM 创建Vultr云主机（实现OperateInterface接口）
-func (vc *ScalingOperate) CreateVM(
-	ctx context.Context,
-	vmName string,
-	pre string,
-	logger *slog.Logger,
-) error {
-	// 构建创建实例的请求体
-	reqBody := vultrCreateInstanceReq{
+func (vc *ScalingOperate) CreateVM(ctx context.Context, vmName string, pre string, logger *slog.Logger) (string, error) {
+
+	reqBody := createInstanceReq{
 		Region:   vc.region,
 		Plan:     vc.plan,
 		OsID:     vc.osID,
@@ -66,10 +49,9 @@ func (vc *ScalingOperate) CreateVM(
 	data, err := json.Marshal(reqBody)
 	if err != nil {
 		logger.Error("序列化创建VM请求体失败", slog.String("pre", pre), slog.String("vmName", vmName), "error", err)
-		return err
+		return "", err
 	}
 
-	// 创建HTTP请求
 	req, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodPost,
@@ -78,18 +60,17 @@ func (vc *ScalingOperate) CreateVM(
 	)
 	if err != nil {
 		logger.Error("创建Vultr VM请求失败", slog.String("pre", pre), slog.String("vmName", vmName), "error", err)
-		return err
+		return "", err
 	}
 
 	req.Header.Set("Authorization", "Bearer "+vc.apiKey)
 	req.Header.Set("Content-Type", "application/json")
 
-	// 发送请求
 	client := &http.Client{Timeout: vc.timeout}
 	resp, err := client.Do(req)
 	if err != nil {
 		logger.Error("发送Vultr VM创建请求失败", slog.String("pre", pre), slog.String("vmName", vmName), "error", err)
-		return err
+		return "", err
 	}
 	defer resp.Body.Close()
 
@@ -97,31 +78,28 @@ func (vc *ScalingOperate) CreateVM(
 	if resp.StatusCode >= 300 {
 		err := fmt.Errorf("创建Vultr VM失败: %s", body)
 		logger.Error("Vultr VM创建失败", slog.String("pre", pre), slog.String("vmName", vmName), "error", err)
-		return err
+		return "", err
 	}
 
-	var result vultrCreateInstanceResp
+	var result createInstanceResp
 	if err := json.Unmarshal(body, &result); err != nil {
 		logger.Error("解析Vultr创建VM响应失败", slog.String("pre", pre), slog.String("vmName", vmName), "error", err)
-		return err
+		return "", err
 	}
 
-	logger.Info("Vultr VM创建成功",
-		slog.String("pre", pre),
-		slog.String("vmName", vmName),
-		slog.String("instanceID", result.Instance.ID),
-	)
+	logger.Info("Vultr VM创建成功", slog.String("pre", pre),
+		slog.String("vmName", vmName), slog.String("instanceID", result.Instance.ID))
 
-	return nil
+	return result.Instance.ID, nil
 }
 
-// GetVMPublicIP 获取Vultr VM公网IP（实现OperateInterface接口）
 func (vc *ScalingOperate) GetVMPublicIP(
 	ctx context.Context,
-	vmName string, // 注意：Vultr通过instanceID查询，这里vmName实际传入instanceID
+	vmName string,
 	pre string,
 	logger *slog.Logger,
 ) (string, error) {
+
 	// Vultr API通过instanceID查询，因此vmName参数实际传入instanceID
 	instanceID := vmName
 
@@ -153,29 +131,25 @@ func (vc *ScalingOperate) GetVMPublicIP(
 		return "", err
 	}
 
-	var result vultrGetInstanceResp
+	var result getInstanceResp
 	if err := json.Unmarshal(body, &result); err != nil {
 		logger.Error("解析Vultr查询IP响应失败", slog.String("pre", pre), slog.String("instanceID", instanceID), "error", err)
 		return "", err
 	}
 
-	logger.Info("获取Vultr VM公网IP",
-		slog.String("pre", pre),
-		slog.String("instanceID", instanceID),
-		slog.String("ip", result.Instance.MainIP),
-		slog.String("status", result.Instance.Status),
-	)
+	logger.Info("获取Vultr VM公网IP", slog.String("pre", pre), slog.String("instanceID", instanceID),
+		slog.String("ip", result.Instance.MainIP), slog.String("status", result.Instance.Status))
 
 	return result.Instance.MainIP, nil
 }
 
-// DeleteVM 删除Vultr云主机（实现OperateInterface接口）
 func (vc *ScalingOperate) DeleteVM(
 	ctx context.Context,
-	vmName string, // 注意：Vultr通过instanceID删除，这里vmName实际传入instanceID
+	vmName string,
 	pre string,
 	logger *slog.Logger,
 ) error {
+
 	// Vultr API通过instanceID删除，因此vmName参数实际传入instanceID
 	instanceID := vmName
 
@@ -207,53 +181,41 @@ func (vc *ScalingOperate) DeleteVM(
 		return err
 	}
 
-	logger.Info("Vultr VM删除成功",
-		slog.String("pre", pre),
-		slog.String("instanceID", instanceID),
-	)
+	logger.Info("Vultr VM删除成功", slog.String("pre", pre), slog.String("instanceID", instanceID))
 
 	return nil
 }
 
-// =====================
-// 工具函数（对齐GCP的NewScalingOperate/ExtractGCPFromInterface）
-// =====================
-
-// NewScalingOperate 初始化Vultr操作结构体（对齐GCP的NewScalingOperate）
 func NewScalingOperate(
-	vultrCfg *VultrConfig,
-	sshKey string, // 兼容GCP的sshKey入参（Vultr用配置中的SSHKeys）
+	cfg *Config,
+	sshKey string,
 	pre string,
 	logger *slog.Logger,
 ) *ScalingOperate {
-	// 解析SSHKeys（逗号分隔转切片）
+
 	var sshKeys []string
 	sshKeys = append(sshKeys, sshKey)
-	//if vultrCfg.SSHKeys != "" {
-	//	sshKeys = strings.Split(vultrCfg.SSHKeys, ",")
-	//}
 
-	// 初始化操作结构体
 	so := &ScalingOperate{
-		apiKey:  vultrCfg.APIKey,
-		region:  vultrCfg.Region,
-		plan:    vultrCfg.Plan,
+		apiKey:  cfg.APIKey,
+		region:  cfg.Region,
+		plan:    Plan,
 		sshKeys: sshKeys,
 		osID:    OsID,
-		timeout: Timeout,
+		timeout: 1 * time.Minute,
 	}
+	logger.Info("NewScalingOperate", slog.String("pre", pre), slog.Any("ScalingOperate", *so))
 
-	logger.Info("NewVultrScalingOperate", slog.String("pre", pre), slog.Any("ScalingOperate", *so))
 	return so
 }
 
 // ExtractVultrFromInterface 解析JSON字符串为*VultrConfig（对齐GCP的ExtractGCPFromInterface）
-func ExtractVultrFromInterface(data string) (*VultrConfig, error) {
+func ExtractVultrFromInterface(data string) (*Config, error) {
 	if data == "" {
 		return nil, errors.New("输入的JSON字符串为空")
 	}
 
-	config := &VultrConfig{}
+	config := &Config{}
 	if err := json.Unmarshal([]byte(data), config); err != nil {
 		return nil, fmt.Errorf("解析Vultr配置失败: %w", err)
 	}
@@ -265,17 +227,11 @@ func ExtractVultrFromInterface(data string) (*VultrConfig, error) {
 	if config.Region == "" {
 		return nil, errors.New("Vultr Region不能为空")
 	}
-	if config.Plan == "" {
-		return nil, errors.New("Vultr Plan不能为空")
-	}
 
 	return config, nil
 }
 
-// =====================
-// 内部结构体（原有功能保留）
-// =====================
-type vultrCreateInstanceReq struct {
+type createInstanceReq struct {
 	Region   string   `json:"region"`
 	Plan     string   `json:"plan"`
 	OsID     int      `json:"os_id"`
@@ -284,13 +240,13 @@ type vultrCreateInstanceReq struct {
 	SSHKeys  []string `json:"sshkey_id,omitempty"`
 }
 
-type vultrCreateInstanceResp struct {
+type createInstanceResp struct {
 	Instance struct {
 		ID string `json:"id"`
 	} `json:"instance"`
 }
 
-type vultrGetInstanceResp struct {
+type getInstanceResp struct {
 	Instance struct {
 		ID     string `json:"id"`
 		MainIP string `json:"main_ip"`

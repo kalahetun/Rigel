@@ -65,12 +65,12 @@ type ScalingOperate struct {
 	sshKey       string
 }
 
-func (gc *ScalingOperate) CreateVM(ctx context.Context, vmName string, pre string, logger *slog.Logger) error {
+func (gc *ScalingOperate) CreateVM(ctx context.Context, vmName string, pre string, logger *slog.Logger) (string, error) {
 
 	instancesClient, err := compute.NewInstancesRESTClient(ctx, option.WithCredentialsFile(gc.credFile))
 	if err != nil {
 		logger.Error("NewInstancesRESTClient failed", slog.String("pre", pre), "error", err)
-		return err
+		return "", err
 	}
 	defer instancesClient.Close()
 
@@ -125,7 +125,7 @@ func (gc *ScalingOperate) CreateVM(ctx context.Context, vmName string, pre strin
 	if err != nil {
 		logger.Error("Create VM failed", slog.String("pre", pre), slog.String("vmName", vmName),
 			slog.String("zone", gc.zone), slog.Any("err", err))
-		return err
+		return "", err
 	}
 
 	logger.Info("VM create operation", slog.String("pre", pre),
@@ -137,7 +137,7 @@ func (gc *ScalingOperate) CreateVM(ctx context.Context, vmName string, pre strin
 			op.Proto().GetName(), gc.zone, gc.projectID)),
 	)
 
-	return nil
+	return "", nil
 }
 
 func (gc *ScalingOperate) GetVMPublicIP(ctx context.Context, vmName string,
