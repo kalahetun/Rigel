@@ -44,8 +44,8 @@ type ScaleConfig struct {
 	ScalingCostFixed    float64       `json:"scaling_cost_fixed"` // 成本相关
 	ScalingCostVariable float64       `json:"scaling_cost_variable"`
 	ScalingRatio        float64       `json:"scaling_ratio"`
-	BaseRetentionTime   time.Duration `json:"base_retention_time"` // 保留机制
 	RetentionAmplifier  float64       `json:"retention_amplifier"`
+	BaseRetentionTime   time.Duration `json:"base_retention_time"` // 保留机制
 	RetentionDecay      time.Duration `json:"retention_decay"`
 	PermanentThreshold  time.Duration `json:"permanent_threshold"`
 	PermanentDuration   time.Duration `json:"permanent_duration"`
@@ -120,16 +120,16 @@ func NewDefaultScaleConfig() *ScaleConfig {
 		VolatilityWeight:    1.0, // 队列与波动相关
 		QueueWeight:         1.0,
 		DecayFactor:         0.8,
-		VolatilityThreshold: 0.3,  // 小波动忽略
-		CostWeight:          1.0,  // 默认成本敏感度	// DPP 控制参数
-		ScalingCostFixed:    10.0, // 举例// 成本相关
+		VolatilityThreshold: 0.6, // 小波动忽略
+		CostWeight:          0.1, // 默认成本敏感度	// DPP 控制参数
+		ScalingCostFixed:    1.0, // 举例// 成本相关
 		ScalingCostVariable: 1.0,
-		ScalingRatio:        0.1,             // 默认扩容 1 台
-		BaseRetentionTime:   5 * time.Minute, // 保留机制
-		RetentionAmplifier:  1.0,
+		ScalingRatio:        0.1, // 默认扩容 1 台
+		RetentionAmplifier:  400.0,
+		BaseRetentionTime:   10 * time.Minute, // 保留机制
 		RetentionDecay:      10 * time.Minute,
-		PermanentThreshold:  1 * time.Hour,
-		PermanentDuration:   1 * time.Hour,
+		PermanentThreshold:  40 * time.Minute,
+		PermanentDuration:   120 * time.Minute,
 		TickerInterval:      30 * time.Second, // 定时任务
 	}
 }

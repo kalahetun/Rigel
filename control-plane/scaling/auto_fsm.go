@@ -64,11 +64,11 @@ func (s *Scaler) calculatePerturbation(pre string) float64 {
 }
 
 func (s *Scaler) calculateVolatilityAccumulation() float64 {
-	z := s.Node.Perturbation*s.Config.VolatilityWeight + s.Node.Accumulation*s.Config.DecayFactor
-	if z < 0 {
+	a := s.Node.Perturbation*s.Config.VolatilityWeight + s.Node.Accumulation*s.Config.DecayFactor
+	if a < 0 {
 		return 0
 	}
-	return z
+	return a
 }
 
 func (s *Scaler) calculateDelta(node *NodeState) float64 {
@@ -290,44 +290,49 @@ func (s *Scaler) triggerRelease(vm_ VM, pre string) bool {
 	return true
 }
 
-// calculateRetention 计算节点的 Retain Time，返回绝对时间点
 func (s *Scaler) calculateRetention(pre string) (time.Time, NodeStatus) {
 
 	now := s.now()
 	var activePotent float64
-	retDec := s.Config.RetentionDecay
-	validIdx := 0
+	retDecay := s.Config.RetentionDecay // 衰减窗口，如 10min
 
+	validHistory := make([]ScaleEvent, 0)
 	for _, evt := range s.Node.ScaleHistory {
 		delta := now.Sub(evt.Time)
-		if delta > retDec {
-			continue
+		if delta > retDecay {
+			continue // 超过衰减窗口，丢弃
 		}
-		s.Node.ScaleHistory[validIdx] = evt
-		validIdx++
-		activePotent += float64(evt.Amount) * expDecay(delta, retDec)
+		validHistory = append(validHistory, evt)
+		weight := expDecay(delta, retDecay)
+		activePotent += float64(evt.Amount) * weight
 	}
-	s.Node.ScaleHistory = s.Node.ScaleHistory[:validIdx]
+	s.Node.ScaleHistory = validHistory
 
-	baseRe := s.Config.BaseRetentionTime
-	reAmpl := s.Config.RetentionAmplifier
-	perThr := s.Config.PermanentThreshold
+	// 配置参数
+	baseRetention := s.Config.BaseRetentionTime
+	amplifier := s.Config.RetentionAmplifier
+	permanentThreshold := s.Config.PermanentThreshold
+	permanentDuration := s.Config.PermanentDuration
 
-	// 计算 Retention 时间长度
-	retDur := baseRe + time.Duration(reAmpl*activePotent)
-	s.logger.Info("CalculateRetention", slog.String("pre", pre), slog.Any("retDur", retDur))
+	// 公式：额外时间 = amplifier * activePotent (秒)
+	extraRetention := time.Duration(amplifier*activePotent) * time.Second
+	totalRetention := baseRetention + extraRetention
 
-	// 如果超过永久阈值，直接返回永久时间
-	if retDur >= perThr {
-		return now.Add(s.Config.PermanentDuration), StatePermanent
+	s.logger.Info("CalculateRetention", slog.String("pre", pre), slog.Float64("activePotent", activePotent),
+		slog.Duration("extraRetention", extraRetention), slog.Duration("totalRetention", totalRetention))
+
+	if totalRetention >= permanentThreshold {
+		return now.Add(permanentDuration), StatePermanent
 	}
 
-	return now.Add(retDur), StateEnd
+	return now.Add(totalRetention), StateEnd
 }
 
 // 指数衰减函数
 func expDecay(delta time.Duration, tau time.Duration) float64 {
-	return math.Exp(-float64(delta) / float64(tau))
+	deltaSec := delta.Seconds()
+	tauSec := tau.Seconds()
+	return math.Exp(-deltaSec / tauSec)
 }
 
 func setHealthState(apiHost, setState, pre string, logger *slog.Logger) bool {
