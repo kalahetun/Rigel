@@ -7,12 +7,12 @@ import (
 	"log/slog"
 	"rigel-client/config"
 	"rigel-client/upload/gcs"
-	"rigel-client/upload/gcs_client"
+	"rigel-client/upload/gcs-client"
 	"rigel-client/upload/local"
 	"rigel-client/upload/remote"
-	"rigel-client/upload/remote_client"
+	"rigel-client/upload/remote-client"
 	"rigel-client/upload/s3"
-	"rigel-client/upload/s3_client"
+	"rigel-client/upload/s3-client"
 	"rigel-client/util"
 )
 

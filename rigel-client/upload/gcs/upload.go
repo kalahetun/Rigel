@@ -10,7 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	cfg "rigel-client/config"
-	"rigel-client/limit_rate"
+	"rigel-client/limit-rate"
 	"rigel-client/util"
 	"strings"
 	"time"

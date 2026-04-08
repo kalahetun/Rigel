@@ -1,9 +1,9 @@
 package api
 
 import (
-	model "control-plane/receive_info"
+	model "control-plane/receive-info"
 	"control-plane/storage"
-	"control-plane/sync/etcd_client"
+	"control-plane/sync/etcd-client"
 	"control-plane/util"
 	"encoding/json"
 	"fmt"
@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	probeTargets = "probe_targets.json"
+	probeTargets = "probe-targets.json"
 	CloudStorage = "cloud_storage"
 	Node         = "node"
 )

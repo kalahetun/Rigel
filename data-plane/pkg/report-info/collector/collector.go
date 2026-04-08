@@ -1,7 +1,7 @@
 package collector
 
 import (
-	model "data-plane/pkg/report_info"
+	model "data-plane/pkg/report-info"
 	"encoding/json"
 	"log/slog"
 	"time"

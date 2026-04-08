@@ -2,8 +2,8 @@ package main
 
 import (
 	"context"
-	"data-plane/pkg/envoy_manager"
-	"data-plane/pkg/report_info/reporter"
+	"data-plane/pkg/envoy-manager"
+	"data-plane/pkg/report-info/reporter"
 	"data-plane/probing"
 	"data-plane/util"
 	"encoding/json"

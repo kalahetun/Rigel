@@ -1,8 +1,8 @@
 package storage
 
 import (
-	"control-plane/receive_info"
-	"control-plane/sync/etcd_client"
+	"control-plane/receive-info"
+	"control-plane/sync/etcd-client"
 	"control-plane/util"
 	"encoding/json"
 	"fmt"

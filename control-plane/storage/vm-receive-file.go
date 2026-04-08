@@ -1,7 +1,7 @@
 package storage
 
 import (
-	model "control-plane/receive_info"
+	model "control-plane/receive-info"
 	"encoding/json"
 	"errors"
 	"fmt"

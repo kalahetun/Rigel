@@ -12,7 +12,7 @@ import (
 var bandwidthModel *BandwidthCostModel
 
 const (
-	bandwidthPricing = "bandwidth_pricing.json"
+	bandwidthPricing = "bandwidth-price.json"
 )
 
 type BandwidthCostModel struct {

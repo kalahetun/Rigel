@@ -1,7 +1,7 @@
 package api
 
 import (
-	envoymanager2 "control-plane/pkg/envoy_manager"
+	envoymanager2 "control-plane/pkg/envoy-manager"
 	"control-plane/util"
 	"github.com/gin-gonic/gin"
 	"log/slog"

@@ -2,7 +2,7 @@ package collector
 
 import (
 	"bufio"
-	model "data-plane/pkg/report_info"
+	model "data-plane/pkg/report-info"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -107,9 +107,9 @@ func PrintEnvoyBufferReport(ebs model.EnvoyBufferStats, logger *slog.Logger) {
 	logger.Info("单连接缓冲均值：%d 字节\n", ebs.PerConnBuffer)
 	// 阻塞判断（64KB=65536字节阈值）
 	if ebs.PerConnBuffer > 65536 {
-		logger.Info("\033[31m⚠️  单连接缓冲超标：均值＞64KB（65536字节），大概率有连接堆积阻塞\033[0m")
+		logger.Info("单连接缓冲超标：均值＞64KB（65536字节），大概率有连接堆积阻塞\033[0m")
 	} else {
-		logger.Info("\033[32m✅  单连接缓冲正常：均值≤64KB（65536字节）\033[0m")
+		logger.Info("单连接缓冲正常：均值≤64KB（65536字节）\033[0m")
 	}
 
 	// 额外：打印JSON格式结果（便于集成）

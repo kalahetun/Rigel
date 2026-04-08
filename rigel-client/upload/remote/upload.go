@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"rigel-client/limit_rate"
+	"rigel-client/limit-rate"
 	"rigel-client/util"
 	"strings"
 	"time"

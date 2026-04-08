@@ -3,7 +3,7 @@ package scaling
 import (
 	"bytes"
 	"context"
-	em "control-plane/pkg/envoy_manager"
+	em "control-plane/pkg/envoy-manager"
 	"control-plane/scaling/vultr"
 	"control-plane/storage"
 	"control-plane/util"

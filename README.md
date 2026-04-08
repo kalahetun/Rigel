@@ -1,6 +1,6 @@
 # Rigel: Global Cross-Cloud Bulk Data Transfer Platform
 
-![Service Architecture of the Rigel Platform](service_architecture.png)
+![Service Architecture of the Rigel Platform](service-architecture.png)
 
 ## Overview
 Rigel is a high-performance bulk data transfer platform built on a global cross-cloud network, designed to address the key pain points of existing cloud-based data transfer solutions: high costs, single-cloud lock-in, and poor scalability across providers.
