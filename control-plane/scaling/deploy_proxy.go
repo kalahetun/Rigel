@@ -40,88 +40,82 @@ type SSHConfig struct {
 	Username   string
 	Host       string
 	Port       string
-	PrivateKey string
+	PrivateKey string // 留空则使用密码
+	Password   string // 新增：密码字段
 }
 
 func sshToDeployBinary(config *SSHConfig, localPath_, remotePath_, binaryString_, pre string, logger *slog.Logger) error {
 
 	logger.Info("SshToDeployBinary", slog.String("pre", pre))
 
-	//
-	key, err := os.ReadFile(config.PrivateKey)
-	if err != nil {
-		return fmt.Errorf("read private key failed: %v", err)
+	// 构建 SSH 认证方式
+	var authMethods []ssh.AuthMethod
+
+	// 1. 如果有私钥路径 → 使用私钥登录
+	if config.PrivateKey != "" {
+		key, err := os.ReadFile(config.PrivateKey)
+		if err != nil {
+			return fmt.Errorf("read private key failed: %v", err)
+		}
+
+		signer, err := ssh.ParsePrivateKey(key)
+		if err != nil {
+			return fmt.Errorf("parse private key failed: %v", err)
+		}
+
+		authMethods = append(authMethods, ssh.PublicKeys(signer))
+		logger.Info("Using private key auth", slog.String("pre", pre))
+	} else if config.Password != "" {
+		// 2. 没有私钥 → 使用密码登录
+		authMethods = append(authMethods, ssh.Password(config.Password))
+		logger.Info("Using password auth", slog.String("pre", pre))
+	} else {
+		return fmt.Errorf("no private key or password provided")
 	}
 
-	logger.Info("Read private key success", slog.String("pre", pre),
-		slog.String("binaryString", binaryString_))
-
-	signer, err := ssh.ParsePrivateKey(key)
-	if err != nil {
-		return fmt.Errorf("parse private key failed: %v", err)
-	}
-
-	logger.Info("Parse private key success", slog.String("pre", pre),
-		slog.String("binaryString", binaryString_))
-
+	// SSH 配置
 	clientConfig := &ssh.ClientConfig{
-		User: config.Username,
-		Auth: []ssh.AuthMethod{
-			ssh.PublicKeys(signer),
-		},
+		User:            config.Username,
+		Auth:            authMethods,
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		Timeout:         30 * time.Second,
 	}
 
-	//
-	dialer := &net.Dialer{Timeout: 3 * time.Second}
+	// 连接
+	dialer := &net.Dialer{Timeout: 10 * time.Second}
 	tcpConn, err := dialer.Dial("tcp", net.JoinHostPort(config.Host, config.Port))
 	if err != nil {
 		return fmt.Errorf("failed to dial TCP: %v", err)
 	}
 
-	logger.Info("Tcp Dial success", slog.String("pre", pre),
-		slog.String("binaryString", binaryString_))
-
-	//
 	conn, chans, reqs, err := ssh.NewClientConn(tcpConn, net.JoinHostPort(config.Host, config.Port), clientConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create SSH client: %v", err)
 	}
 	defer conn.Close()
 
-	logger.Info("Ssh Dial success", slog.String("pre", pre),
-		slog.String("binaryString", binaryString_))
-
 	client := ssh.NewClient(conn, chans, reqs)
 	defer client.Close()
 
-	logger.Info("Ssh new NewClient", slog.String("pre", pre),
-		slog.String("binaryString", binaryString_))
-
-	//
+	// 上传文件
 	err = UploadDirSFTP(client, localPath_, remotePath_)
 	if err != nil {
 		return fmt.Errorf("failed to upload binary: %v", err)
 	}
-	logger.Info("UploadDirSFTP success", slog.String("pre", pre),
-		slog.String("binaryString", binaryString_))
+	logger.Info("UploadDirSFTP success", slog.String("pre", pre))
 
-	//
+	// 执行命令
 	session, err := client.NewSession()
 	if err != nil {
 		return fmt.Errorf("failed to create session: %v", err)
 	}
 	defer session.Close()
 
-	logger.Info("NewSession success", slog.String("pre", pre),
-		slog.String("binaryString", binaryString_))
-
 	err = startBinaryInBackground(session, remotePath_, binaryString_, pre, logger)
 	if err != nil {
 		return fmt.Errorf("failed to start binary: %v", err)
 	}
-	logger.Info("StartBinaryInBackground success", slog.String("pre", pre),
-		slog.String("binaryString", binaryString_))
+	logger.Info("StartBinaryInBackground success", slog.String("pre", pre))
 
 	return nil
 }
@@ -244,12 +238,15 @@ func startBinaryInBackground(session *ssh.Session, remotePath_ string, binaryStr
 	return nil
 }
 
-func deployBinaryToServer(username, host, port, localPath, remotePath, binaryString, pre string, logger *slog.Logger) error {
-	config := &SSHConfig{
+func deployBinaryToServer(username, host, password, port, localPath, remotePath, binaryString, pre string, logger *slog.Logger) error {
+	config := SSHConfig{
 		Username:   username,
 		Host:       host,
 		Port:       port,
 		PrivateKey: privateKey,
 	}
-	return sshToDeployBinary(config, localPath, remotePath, binaryString, pre, logger)
+	if privateKey == "" {
+		config.Password = password
+	}
+	return sshToDeployBinary(&config, localPath, remotePath, binaryString, pre, logger)
 }

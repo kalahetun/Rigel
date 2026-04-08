@@ -74,6 +74,7 @@ type VM struct {
 	PublicIP  string    `json:"public_ip"`
 	VMName    string    `json:"vm_name"`
 	StartTime time.Time `json:"start_time"`
+	Password  string    `json:"password"`
 	//Status    NodeStatus `json:"status"`
 }
 
@@ -202,7 +203,7 @@ const (
 )
 
 type OperateInterface interface {
-	CreateVM(ctx context.Context, vmName string, pre string, logger *slog.Logger) (string, error)
+	CreateVM(ctx context.Context, vmName string, pre string, logger *slog.Logger) (interface{}, error)
 	GetVMPublicIP(ctx context.Context, vmName string, pre string, logger *slog.Logger) (string, error)
 	DeleteVM(ctx context.Context, vmName string, pre string, logger *slog.Logger) error
 }

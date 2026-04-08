@@ -49,13 +49,13 @@ func (as *ScalingOperate) CreateVM(
 	vmName string,
 	pre string,
 	logger *slog.Logger,
-) (string, error) {
+) (interface{}, error) {
 	// 初始化EC2客户端
 	if as.ec2Client == nil {
 		client, err := as.initEC2Client(ctx)
 		if err != nil {
 			logger.Error("初始化AWS EC2客户端失败", slog.String("pre", pre), "error", err)
-			return "", err
+			return nil, err
 		}
 		as.ec2Client = client
 	}
@@ -116,7 +116,7 @@ func (as *ScalingOperate) CreateVM(
 			slog.String("vmName", vmName),
 			slog.String("region", as.region),
 			"error", err)
-		return "", err
+		return nil, err
 	}
 
 	// 获取实例ID

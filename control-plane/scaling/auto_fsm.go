@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	em "control-plane/pkg/envoy_manager"
+	"control-plane/scaling/vultr"
 	"control-plane/storage"
 	"control-plane/util"
 	"encoding/json"
@@ -402,11 +403,14 @@ func (s *Scaler) createVM(ctx context.Context, pre string, logger *slog.Logger) 
 	vmName := util.Config_.Node.Provider + "-" + util.GenerateRandomLetters_(5)
 	logger.Info("Creating VM", slog.String("pre", pre), slog.String("VM", vmName))
 
+	var password string
+
 	// 1 creating
-	if id, err := s.Interface.Operate.CreateVM(ctx, vmName, pre, logger); err != nil {
+	if instance, err := s.Interface.Operate.CreateVM(ctx, vmName, pre, logger); err != nil {
 		return VM{}, err
-	} else if id != "" {
-		vmName = id
+	} else if instance != nil {
+		vmName = instance.(vultr.CreateInstanceResp).Instance.ID
+		password = instance.(vultr.CreateInstanceResp).Instance.DefaultPassword
 	}
 	logger.Info("Waiting for VM startup & public IP", slog.String("pre", pre), slog.String("VM", vmName))
 
@@ -439,7 +443,7 @@ func (s *Scaler) createVM(ctx context.Context, pre string, logger *slog.Logger) 
 		}
 	}
 END:
-	return VM{ip, vmName, s.now()}, nil
+	return VM{PublicIP: ip, VMName: vmName, StartTime: s.now(), Password: password}, nil
 }
 
 func (s *Scaler) deployAndAttachVM(vm VM, pre string, logger *slog.Logger) error {
@@ -449,6 +453,7 @@ func (s *Scaler) deployAndAttachVM(vm VM, pre string, logger *slog.Logger) error
 	if err := deployBinaryToServer(
 		username,
 		vm.PublicIP,
+		vm.Password,
 		"22",
 		localPathProxy,
 		remotePathProxy,
@@ -469,6 +474,7 @@ func (s *Scaler) deployAndAttachVM(vm VM, pre string, logger *slog.Logger) error
 	if err := deployBinaryToServer(
 		username,
 		vm.PublicIP,
+		vm.Password,
 		"22",
 		localPathPlane,
 		remotePathPlane,

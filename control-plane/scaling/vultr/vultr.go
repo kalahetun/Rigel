@@ -76,17 +76,19 @@ type ScalingOperate struct {
 }
 
 type createInstanceReq struct {
-	Region   string   `json:"region"`
-	Plan     string   `json:"plan"`
-	OsID     int      `json:"os_id"`
-	Label    string   `json:"label,omitempty"`
-	Hostname string   `json:"hostname,omitempty"`
-	SSHKeys  []string `json:"sshkey_id,omitempty"`
+	Region   string `json:"region"`
+	Plan     string `json:"plan"`
+	OsID     int    `json:"os_id"`
+	Label    string `json:"label,omitempty"`
+	Hostname string `json:"hostname,omitempty"`
+	//SSHKeys  []string `json:"sshkey_id,omitempty"`
 }
 
-type createInstanceResp struct {
+type CreateInstanceResp struct {
 	Instance struct {
-		ID string `json:"id"`
+		ID              string `json:"id"`
+		MainIP          string `json:"main_ip"`          // 机器IP
+		DefaultPassword string `json:"default_password"` // 密码
 	} `json:"instance"`
 }
 
@@ -98,7 +100,7 @@ type getInstanceResp struct {
 	} `json:"instance"`
 }
 
-func (vc *ScalingOperate) CreateVM(ctx context.Context, vmName string, pre string, logger *slog.Logger) (string, error) {
+func (vc *ScalingOperate) CreateVM(ctx context.Context, vmName string, pre string, logger *slog.Logger) (interface{}, error) {
 
 	reqBody := createInstanceReq{
 		Region:   vc.region,
@@ -106,14 +108,14 @@ func (vc *ScalingOperate) CreateVM(ctx context.Context, vmName string, pre strin
 		OsID:     vc.osID,
 		Label:    vmName,
 		Hostname: vmName,
-		SSHKeys:  vc.sshKeys,
+		//SSHKeys:  vc.sshKeys,
 	}
 
 	data, err := json.Marshal(reqBody)
 	if err != nil {
 		logger.Error("Failed to serialize request body for creating VM", slog.String("pre", pre),
 			slog.String("vmName", vmName), slog.Any("err", err))
-		return "", err
+		return nil, err
 	}
 
 	req, err := http.NewRequestWithContext(
@@ -124,7 +126,7 @@ func (vc *ScalingOperate) CreateVM(ctx context.Context, vmName string, pre strin
 	)
 	if err != nil {
 		logger.Error("Failed to create VM", slog.String("pre", pre), slog.Any("err", err))
-		return "", err
+		return nil, err
 	}
 
 	req.Header.Set("Authorization", "Bearer "+vc.apiKey)
@@ -134,7 +136,7 @@ func (vc *ScalingOperate) CreateVM(ctx context.Context, vmName string, pre strin
 	resp, err := client.Do(req)
 	if err != nil {
 		logger.Error("Failed to send VM creation request", slog.String("pre", pre), slog.Any("err", err))
-		return "", err
+		return nil, err
 	}
 	defer resp.Body.Close()
 
@@ -142,18 +144,18 @@ func (vc *ScalingOperate) CreateVM(ctx context.Context, vmName string, pre strin
 	if resp.StatusCode >= 300 {
 		err := fmt.Errorf("failed to create Vultr VM: %s", body)
 		logger.Error("Failed to create VM", slog.String("pre", pre), slog.Any("err", err))
-		return "", err
+		return nil, err
 	}
 
-	var result createInstanceResp
+	var result CreateInstanceResp
 	if err := json.Unmarshal(body, &result); err != nil {
 		logger.Error("Failed to parse create VM response", slog.String("pre", pre), slog.Any("err", err))
-		return "", err
+		return nil, err
 	}
 
 	logger.Info("Successfully created VM", slog.String("pre", pre), slog.String("instanceID", result.Instance.ID))
 
-	return result.Instance.ID, nil
+	return result.Instance, nil
 }
 
 func (vc *ScalingOperate) GetVMPublicIP(ctx context.Context, vmName string, pre string, logger *slog.Logger) (string, error) {
