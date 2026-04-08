@@ -3,7 +3,7 @@ package api
 import (
 	"control-plane/routing"
 	"control-plane/util"
-	model "control-plane/vm_info"
+	model "control-plane/collector"
 	"github.com/gin-gonic/gin"
 	"log/slog"
 	"net/http"

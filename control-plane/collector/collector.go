@@ -1,4 +1,4 @@
-package vm_info
+package collector
 
 import (
 	"time"

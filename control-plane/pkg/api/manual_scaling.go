@@ -1,9 +1,9 @@
 package api
 
 import (
+	model "control-plane/collector"
 	"control-plane/scaling"
 	"control-plane/util"
-	model "control-plane/vm_info"
 	"encoding/json"
 	"log/slog"
 	"net/http"

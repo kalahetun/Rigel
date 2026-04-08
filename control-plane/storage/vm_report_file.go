@@ -1,7 +1,7 @@
 package storage
 
 import (
-	model "control-plane/vm_info"
+	model "control-plane/collector"
 	"encoding/json"
 	"errors"
 	"fmt"

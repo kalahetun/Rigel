@@ -1,8 +1,8 @@
 package api
 
 import (
+	model "control-plane/collector"
 	"control-plane/util"
-	model "control-plane/vm_info"
 	"log/slog"
 	"net/http"
 	"strings"
