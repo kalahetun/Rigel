@@ -14,7 +14,7 @@ import (
 
 const (
 	VultrAPIBase = "https://api.vultr.com/v2"
-	OsID         = 535          // Debian 12
+	OsID         = 1744         // Debian 12
 	Plan         = "vc2-1c-1gb" //"voc-g-8c-32gb-160s"
 	//Timeout      = 1 * time.Minute
 )
@@ -153,9 +153,9 @@ func (vc *ScalingOperate) CreateVM(ctx context.Context, vmName string, pre strin
 		return nil, err
 	}
 
-	logger.Info("Successfully created VM", slog.String("pre", pre), slog.String("instanceID", result.Instance.ID))
+	logger.Info("Successfully created VM", slog.String("pre", pre), slog.Any("result", result))
 
-	return result.Instance, nil
+	return result, nil
 }
 
 func (vc *ScalingOperate) GetVMPublicIP(ctx context.Context, vmName string, pre string, logger *slog.Logger) (string, error) {
