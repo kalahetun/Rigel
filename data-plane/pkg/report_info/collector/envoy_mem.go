@@ -2,7 +2,7 @@ package collector
 
 import (
 	"bufio"
-	model "data-plane/pkg/local_info_report"
+	model "data-plane/pkg/report_info"
 	"encoding/json"
 	"fmt"
 	"log/slog"

@@ -3,7 +3,7 @@ package collector
 import (
 	"time"
 
-	model "data-plane/pkg/local_info_report"
+	model "data-plane/pkg/report_info"
 	"github.com/shirou/gopsutil/v3/cpu"
 	"github.com/shirou/gopsutil/v3/load"
 )

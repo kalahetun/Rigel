@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"data-plane/pkg/envoy_manager"
-	"data-plane/pkg/local_info_report/reporter"
+	"data-plane/pkg/report_info/reporter"
 	"data-plane/probing"
 	"data-plane/util"
 	"encoding/json"
@@ -189,9 +189,9 @@ func main() {
 	//InitEnvoy(logger, logger1)
 
 	// 4. 启动API服务
-	logger.Info("API端口启动", slog.String("pre", logPre), "addr", ":8082")
+	logger.Info("API端口启动", slog.String("pre", logPre), slog.String("addr", ":8082"))
 	if err := router.Run(":8082"); err != nil {
-		logger.Error("API服务启动失败", slog.String("pre", logPre), "error", err)
+		logger.Error("API服务启动失败", slog.String("pre", logPre), slog.Any("err", err))
 		os.Exit(1)
 	}
 }

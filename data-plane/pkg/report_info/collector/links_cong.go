@@ -1,7 +1,7 @@
 package collector
 
 import (
-	model "data-plane/pkg/local_info_report"
+	model "data-plane/pkg/report_info"
 	"data-plane/probing"
 )
 

@@ -1,4 +1,4 @@
-package local_info_report
+package report_info
 
 import (
 	"data-plane/probing"

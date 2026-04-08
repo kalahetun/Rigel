@@ -2,7 +2,7 @@ package reporter
 
 import (
 	"bytes"
-	"data-plane/pkg/local_info_report/collector"
+	"data-plane/pkg/report_info/collector"
 	"data-plane/util"
 	"encoding/json"
 	"fmt"
@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"time"
 
-	model "data-plane/pkg/local_info_report"
+	model "data-plane/pkg/report_info"
 	"github.com/google/uuid"
 )
 

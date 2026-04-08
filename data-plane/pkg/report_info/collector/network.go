@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	model "data-plane/pkg/local_info_report"
+	model "data-plane/pkg/report_info"
 	"github.com/shirou/gopsutil/v3/net"
 	net1 "net"
 )
