@@ -188,6 +188,22 @@ func startBinaryInBackground(session *ssh.Session, remotePath_ string, binaryStr
 		return fmt.Errorf("remotePath or binaryString is empty")
 	}
 
+	transOptimizationPath := remotePath_ + "/trans_optimization.sh"
+	if binaryString_ == "data-proxy" {
+
+		optimizeCmd := fmt.Sprintf(`if [ -x %q ]; then chmod +x %q; %q; fi`,
+			transOptimizationPath,
+			transOptimizationPath,
+			transOptimizationPath,
+		)
+		logger.Info("Running BBR optimization script before starting data-proxy", slog.String("pre", pre))
+		err := session.Run(optimizeCmd)
+		if err != nil {
+			logger.Warn("Optimization script failed (ignore if not exists)",
+				slog.String("pre", pre), slog.String("err", err.Error()))
+		}
+	}
+
 	cmd := fmt.Sprintf(
 		`cd %q && test -x %q && nohup ./%q > nohup.out 2>&1 < /dev/null & >/dev/null 2>&1`,
 		remotePath_,

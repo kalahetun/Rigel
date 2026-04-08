@@ -457,11 +457,11 @@ func (s *Scaler) deployAndAttachVM(vm VM, pre string, logger *slog.Logger) error
 		logger,
 	); err != nil {
 		s.logger.Error("DeployAndAttachVM failed", slog.String("pre", pre),
-			slog.String("binaryPlane", binaryPlane), slog.Any("vm", vm), slog.Any("err", err))
+			slog.String("binaryProxy", binaryProxy), slog.Any("VM", vm), slog.Any("err", err))
 		return err
 	} else {
 		s.logger.Info("deployAndAttachVM success", slog.String("pre", pre),
-			slog.String("binaryPlane", binaryPlane), slog.Any("vm", vm))
+			slog.String("binaryProxy", binaryProxy), slog.Any("VM", vm))
 	}
 
 	time.Sleep(2 * time.Second)
