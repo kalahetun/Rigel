@@ -231,7 +231,7 @@ func InitInterface(provider, config string, pre string, logger *slog.Logger) VMS
 			logger.Error("ExtractVultrFromInterface failed", slog.String("pre", pre), slog.Any("err", err))
 			return vs
 		}
-		vs.Operate = vultr.NewScalingOperate(vultrCfg, util.Config_.Scaling.SshKey, pre, logger)
+		vs.Operate = vultr.NewScalingOperate(vultrCfg, pre, logger)
 	case AWS:
 		awsCfg, err := aws.ExtractAWSFromInterface(config)
 		if err != nil {

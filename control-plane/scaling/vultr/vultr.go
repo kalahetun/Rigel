@@ -26,16 +26,16 @@ type Config struct {
 	//SSHKeys string `json:"sshKeys"`
 }
 
-func NewScalingOperate(cfg *Config, sshKey string, pre string, logger *slog.Logger) *ScalingOperate {
+func NewScalingOperate(cfg *Config, pre string, logger *slog.Logger) *ScalingOperate {
 
-	var sshKeys []string
-	sshKeys = append(sshKeys, sshKey)
+	//var sshKeys []string
+	//sshKeys = append(sshKeys, sshKey)
 
 	so := &ScalingOperate{
-		apiKey:  cfg.APIKey,
-		region:  cfg.Region,
-		plan:    Plan,
-		sshKeys: sshKeys,
+		apiKey: cfg.APIKey,
+		region: cfg.Region,
+		plan:   Plan,
+		//sshKeys: sshKeys,
 		osID:    OsID,
 		timeout: 1 * time.Minute,
 	}
@@ -67,11 +67,11 @@ func ExtractVultrFromInterface(data string) (*Config, error) {
 }
 
 type ScalingOperate struct {
-	apiKey  string   // Vultr API
-	region  string   // region
-	plan    string   // specification
-	sshKeys []string //
-	osID    int      // os
+	apiKey string // Vultr API
+	region string // region
+	plan   string // specification
+	//sshKeys []string //
+	osID    int // os
 	timeout time.Duration
 }
 
