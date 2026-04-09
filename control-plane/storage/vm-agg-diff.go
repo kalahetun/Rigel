@@ -64,7 +64,7 @@ func CalcClusterWeightedAvg(fs *FileStorage, interval time.Duration,
 		slog.Duration("间隔", interval), slog.String("存储目录", fs.storageDir))
 
 	// 临时链路统计结构体，补充json tag适配JSON解析/序列化
-	type tempLinksCongStruct struct {
+	type linksCongestion struct {
 		TargetIP         string                 `json:"target_ip"`
 		PacketLosses     []float64              `json:"packet_losses"`     // 若为单个丢包率则用packet_loss，数组用packet_losses
 		AverageLatencies []float64              `json:"average_latencies"` // 单个延迟则用average_latency，数组用average_latencies
@@ -89,9 +89,9 @@ func CalcClusterWeightedAvg(fs *FileStorage, interval time.Duration,
 		var (
 			totalWeightedCache float64 // 总加权缓存：Σ(ActiveConnections*AvgCachePerConn)
 			totalActiveConn    float64 // 总活跃连接数：Σ(ActiveConnections)
-			totalLinksCong     map[string]tempLinksCongStruct
+			totalLinksCong     map[string]linksCongestion
 		)
-		totalLinksCong = make(map[string]tempLinksCongStruct)
+		totalLinksCong = make(map[string]linksCongestion)
 
 		// 6. 遍历GetAll()结果，累加统计值
 		for _, report := range allReports {
@@ -102,7 +102,7 @@ func CalcClusterWeightedAvg(fs *FileStorage, interval time.Duration,
 			//探测任务copy
 			for _, v := range report.LinksCongestion {
 				if _, ok := totalLinksCong[v.TargetIP]; !ok {
-					t := tempLinksCongStruct{}
+					t := linksCongestion{}
 					t.TargetIP = v.TargetIP
 					t.ProbeTask = v.Target
 					totalLinksCong[t.TargetIP] = t
@@ -116,9 +116,7 @@ func CalcClusterWeightedAvg(fs *FileStorage, interval time.Duration,
 				totalLinksCong[v.TargetIP] = t
 			}
 		}
-		b, _ := json.Marshal(totalLinksCong)
-		logger.Info("totalLinksCong info", slog.String("pre", logPre),
-			slog.String("data", string(b)))
+		logger.Info("totalLinksCong info", slog.String("pre", logPre), slog.Any("data", totalLinksCong))
 
 		// 7. 避免除以0，输出计算结果
 		var avgWeightedCache float64 = 0
@@ -170,12 +168,10 @@ func CalcClusterWeightedAvg(fs *FileStorage, interval time.Duration,
 		// 4. 结构体序列化为JSON（Etcd存储二进制数据，JSON格式易解析）
 		jsonData, err := json.MarshalIndent(result, "", "  ")
 		if err != nil {
-			logger.Warn("结构体JSON序列化失败，跳过本次发送",
-				slog.String("pre", logPre), slog.Any("错误", err))
+			logger.Warn("结构体JSON序列化失败，跳过本次发送", slog.String("pre", logPre), slog.Any("err", err))
 			continue
 		}
-		logger.Info("结构体JSON序列化成功", slog.String("pre", logPre),
-			slog.String("data", string(jsonData)))
+		logger.Info("结构体JSON序列化成功", slog.String("pre", logPre), slog.String("data", string(jsonData)))
 
 		// 5. 发送（写入）数据到Etcd（*clientv3.Client核心操作）
 		ip, _ := util.GetPublicIP()
@@ -187,7 +183,6 @@ func CalcClusterWeightedAvg(fs *FileStorage, interval time.Duration,
 		queue.Push(result)
 		queue.Print(logPre)
 
-		logger.Info("定时计算完成",
-			slog.String("pre", logPre), slog.String("data", string(jsonData)))
+		logger.Info("定时计算完成", slog.String("pre", logPre), slog.String("data", string(jsonData)))
 	}
 }

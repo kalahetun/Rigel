@@ -14,7 +14,7 @@ func BuildLinkCongestion() []model.LinkCongestionInfo {
 		links = append(links, model.LinkCongestionInfo{
 			TargetIP:       target,
 			Target:         r.Target,
-			PacketLoss:     r.LossRate * 100,                 // 转成百分比
+			PacketLoss:     r.LossRate,
 			WeightedCache:  0,                                // 如果有缓存数据可以填入
 			AverageLatency: float64(r.AvgRTT.Milliseconds()), // 毫秒
 			BandwidthUsage: 0,                                // 如果有带宽数据可以填入
